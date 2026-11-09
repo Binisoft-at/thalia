@@ -55,5 +55,8 @@ Status: [ ] offen · [~] in Arbeit · [x] erledigt (CI/Gerät-Prüfung steht in 
 - Alles nur lokal geprüft (`make check`): **App-Code ungebaut**, weil GitHub Actions bis zum Öffentlich-Schalten keine Jobs startet.
 - [x] Repo öffentlich, Historie von Bini auf einen Commit (d3909a5) neu geschrieben, CI-Branches gelöscht.
 - [x] CI run 14: erster Mac-Build von v3 grün (iOS, macOS, Watch, Widgets); Screenshots geprüft → Mac-Wochentabelle: Titel bekommen Vorrang, Tagesspalten 38 pt.
-- [x] CloudKit-Import (flagsRaw) erfolgreich → wartet auf Bini 5.3 Deploy.
+- [x] CloudKit-Import (flagsRaw) erfolgreich, Bini hat nach Production deployt.
+- [x] **TestFlight 1.2.0 (25)** iOS + macOS hochgeladen, VALID, IN_BETA_TESTING (run 25).
+- [ ] CI run 15 (Mac-Wochentabelle schmaler) – Screenshot prüfen, sobald veröffentlicht.
+- Nächster Schritt: Bini testet v3 (TESTING.md „v3“), Feedback → v4.
 - Nächster Schritt (alt), sobald Bini „öffentlich“ meldet: CI neu starten → Compile-Fehler beheben → `[screenshots]` prüfen → cloudkit-schema-Workflow (5.2) → Bini 5.3 → TestFlight 1.2.0.

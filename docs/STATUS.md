@@ -31,6 +31,9 @@ Letzte Aktualisierung: 2026-11-04 · Arbeitsliste: [TASKS-v2.md](TASKS-v2.md) ·
 ## v2 – Fortschritt
 Siehe Status-Häkchen in [TASKS-v2.md](TASKS-v2.md). Nächster Schritt steht dort unter „Jetzt“.
 
+Stand 9. Nov. 2026: v3 fertig – Repo öffentlich (Historie auf einen Commit neu geschrieben), CI grün,
+**TestFlight 1.2.0 (25)**. Aufgaben und Plan: [TASKS-v3.md](TASKS-v3.md).
+
 Stand 4. Nov. 2026: v2 fertig gebaut. CI run 8 grün (4131b80), Screenshots geprüft, CloudKit-Schema
 importiert (run 4) und von Bini nach Production deployt (5.3), **TestFlight 1.1.0 (16)** für iOS und
 macOS hochgeladen (run 16, 810df85). Tour-Version 2 („Neu in Thalia“ für die geänderten Schritte).
