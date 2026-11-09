@@ -1,0 +1,365 @@
+// Thalia – CloudKit schema of iCloud.at.binisoft.thalia (SwiftData mirroring: CD_ prefix, one
+// record type per synced @Model, no relationships – records refer to each other by keys).
+//
+// Generated from Shared/Models.swift by tools/schema-from-models.py. HealthValue is device-only (App Store guideline
+// 5.1.3(ii)) and has no record type. Order on every model change:
+//   1. add the field here   2. Actions → CloudKit schema (imports into Development)
+//   3. CloudKit Console → Deploy Schema Changes to Production   4. then the TestFlight build.
+// Production only accepts additive changes: never rename or remove a field.
+
+DEFINE SCHEMA
+
+    RECORD TYPE CD_AnnualGoal (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_createdAt  TIMESTAMP,
+        CD_deletedAt  TIMESTAMP,
+        CD_details    STRING,
+        CD_entityName STRING,
+        CD_key        STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_title      STRING,
+        CD_uuid       STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_TrackCategory (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_createdAt  TIMESTAMP,
+        CD_deletedAt  TIMESTAMP,
+        CD_details    STRING,
+        CD_entityName STRING,
+        CD_goalKey    STRING,
+        CD_key        STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_title      STRING,
+        CD_uuid       STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_WeekPlan (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_closedAt         TIMESTAMP,
+        CD_createdAt        TIMESTAMP,
+        CD_deletedAt        TIMESTAMP,
+        CD_details          STRING,
+        CD_entityName       STRING,
+        CD_finalGoalScores  STRING,
+        CD_finalGoalsScored INT64,
+        CD_finalScore       DOUBLE,
+        CD_importedAt       TIMESTAMP,
+        CD_modifiedAt       TIMESTAMP,
+        CD_recordedScore    DOUBLE,
+        CD_scoringModel     STRING,
+        CD_title            STRING,
+        CD_uuid             STRING,
+        CD_weekKey          STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_PlanDay (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_closedAt   TIMESTAMP,
+        CD_createdAt  TIMESTAMP,
+        CD_dayKey     STRING,
+        CD_dayType    STRING,
+        CD_entityName STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_note       STRING,
+        CD_uuid       STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_PlanItem (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_categoryKey STRING,
+        CD_code        STRING,
+        CD_createdAt   TIMESTAMP,
+        CD_daysMask    INT64,
+        CD_deletedAt   TIMESTAMP,
+        CD_details     STRING,
+        CD_entityName  STRING,
+        CD_flagsRaw    STRING,
+        CD_isKnockout  INT64,
+        CD_measureCode STRING,
+        CD_modifiedAt  TIMESTAMP,
+        CD_position    INT64,
+        CD_scheduleRaw STRING,
+        CD_targetRaw   STRING,
+        CD_title       STRING,
+        CD_uuid        STRING,
+        CD_weekKey     STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_MeasureDefinition (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_aggregationRaw STRING,
+        CD_categoryKey    STRING,
+        CD_code           STRING,
+        CD_createdAt      TIMESTAMP,
+        CD_daysMask       INT64,
+        CD_deletedAt      TIMESTAMP,
+        CD_details        STRING,
+        CD_entityName     STRING,
+        CD_flagsRaw       STRING,
+        CD_modifiedAt     TIMESTAMP,
+        CD_periodRaw      STRING,
+        CD_position       INT64,
+        CD_sourceRaw      STRING,
+        CD_targetRaw      STRING,
+        CD_title          STRING,
+        CD_unit           STRING,
+        CD_uuid           STRING,
+        CD_weekKey        STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_ItemMark (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_createdAt  TIMESTAMP,
+        CD_dayKey     STRING,
+        CD_entityName STRING,
+        CD_itemCode   STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_note       STRING,
+        CD_uuid       STRING,
+        CD_valueRaw   STRING,
+        CD_weekKey    STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_MeasureEntry (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_code       STRING,
+        CD_createdAt  TIMESTAMP,
+        CD_dayKey     STRING,
+        CD_deletedAt  TIMESTAMP,
+        CD_entityName STRING,
+        CD_isEstimate INT64,
+        CD_modifiedAt TIMESTAMP,
+        CD_note       STRING,
+        CD_recordedAt TIMESTAMP,
+        CD_text       STRING,
+        CD_uuid       STRING,
+        CD_value      DOUBLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_WorkBlock (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_categoryKey STRING,
+        CD_createdAt   TIMESTAMP,
+        CD_dayKey      STRING,
+        CD_deletedAt   TIMESTAMP,
+        CD_endedAt     TIMESTAMP,
+        CD_entityName  STRING,
+        CD_importID    STRING,
+        CD_isRunning   INT64,
+        CD_kindRaw     STRING,
+        CD_minutes     INT64,
+        CD_modifiedAt  TIMESTAMP,
+        CD_nextStep    STRING,
+        CD_powerHours  DOUBLE,
+        CD_result      STRING,
+        CD_startedAt   TIMESTAMP,
+        CD_task        STRING,
+        CD_uuid        STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_DayNote (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_createdAt  TIMESTAMP,
+        CD_dayKey     STRING,
+        CD_deletedAt  TIMESTAMP,
+        CD_entityName STRING,
+        CD_importID   STRING,
+        CD_kindRaw    STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_text       STRING,
+        CD_uuid       STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_Reflection (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_createdAt  TIMESTAMP,
+        CD_entityName STRING,
+        CD_field      STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_scope      STRING,
+        CD_text       STRING,
+        CD_uuid       STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_ScoreOverride (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_categoryKey STRING,
+        CD_createdAt   TIMESTAMP,
+        CD_dayKey      STRING,
+        CD_deletedAt   TIMESTAMP,
+        CD_entityName  STRING,
+        CD_modifiedAt  TIMESTAMP,
+        CD_reason      STRING,
+        CD_score       DOUBLE,
+        CD_uuid        STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_AppSetting (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_entityName STRING,
+        CD_key        STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_uuid       STRING,
+        CD_value      STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_WeekArchive (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_archivedAt TIMESTAMP,
+        CD_csv        STRING,
+        CD_entityName STRING,
+        CD_itemCount  INT64,
+        CD_markCount  INT64,
+        CD_modifiedAt TIMESTAMP,
+        CD_title      STRING,
+        CD_uuid       STRING,
+        CD_weekKey    STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_PlanChange (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        CD_carryOver  INT64,
+        CD_code       STRING,
+        CD_createdAt  TIMESTAMP,
+        CD_detail     STRING,
+        CD_entityName STRING,
+        CD_kindRaw    STRING,
+        CD_modifiedAt TIMESTAMP,
+        CD_targetRaw  STRING,
+        CD_title      STRING,
+        CD_uuid       STRING,
+        CD_weekKey    STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Users (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        roles           LIST<INT64>,
+        GRANT WRITE TO "_creator",
+        GRANT READ TO "_world"
+    );

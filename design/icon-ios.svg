@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#17808D"/>
+      <stop offset="1" stop-color="#0B4450"/>
+    </linearGradient>
+    <linearGradient id="seg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFD27A"/>
+      <stop offset="1" stop-color="#F2A93B"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#bg)"/>
+  
+    <g transform="translate(0,0) scale(1)">
+      <circle cx="512" cy="512" r="300" fill="rgba(255,255,255,0.05)"/>
+      <path d="M525.63,140.25 A372,372 0 0 1 719.48,203.24 L671.52,274.62 A286,286 0 0 0 522.48,226.19 Z" fill="url(#seg)"/>
+<path d="M741.54,219.26 A372,372 0 0 1 861.34,384.16 L780.58,413.71 A286,286 0 0 0 688.47,286.94 Z" fill="url(#seg)"/>
+<path d="M869.77,410.09 A372,372 0 0 1 869.77,613.91 L787.06,590.35 A286,286 0 0 0 787.06,433.65 Z" fill="url(#seg)"/>
+<path d="M861.34,639.84 A372,372 0 0 1 741.54,804.74 L688.47,737.06 A286,286 0 0 0 780.58,610.29 Z" fill="url(#seg)"/>
+<path d="M719.48,820.76 A372,372 0 0 1 525.63,883.75 L522.48,797.81 A286,286 0 0 0 671.52,749.38 Z" fill="url(#seg)"/>
+<path d="M498.37,883.75 A372,372 0 0 1 304.52,820.76 L352.48,749.38 A286,286 0 0 0 501.52,797.81 Z" fill="url(#seg)"/>
+<path d="M282.46,804.74 A372,372 0 0 1 162.66,639.84 L243.42,610.29 A286,286 0 0 0 335.53,737.06 Z" fill="url(#seg)"/>
+<path d="M154.23,613.91 A372,372 0 0 1 154.23,410.09 L236.94,433.65 A286,286 0 0 0 236.94,590.35 Z" fill="rgba(255,255,255,0.16)"/>
+<path d="M162.66,384.16 A372,372 0 0 1 282.46,219.26 L335.53,286.94 A286,286 0 0 0 243.42,413.71 Z" fill="rgba(255,255,255,0.16)"/>
+<path d="M304.52,203.24 A372,372 0 0 1 498.37,140.25 L501.52,226.19 A286,286 0 0 0 352.48,274.62 Z" fill="rgba(255,255,255,0.16)"/>
+      <path d="M392 524 L478 608 L648 420" fill="none" stroke="#FFF6E5" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+</svg>

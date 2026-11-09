@@ -1,0 +1,28 @@
+/* German for the BinisoftKit labels (SwiftUI looks literal keys up in the app's bundle).
+   Thalia's own texts are written in German directly. */
+
+"Back" = "Zurück";
+"Clear" = "Leeren";
+"Close" = "Schließen";
+"Close Tour" = "Tour schließen";
+"Copied" = "Kopiert";
+"Copy log" = "Protokoll kopieren";
+"Share log" = "Protokoll teilen";
+"Show" = "Zeigen";
+"Import my data" = "Meine Daten importieren";
+"Undo" = "Widerrufen";
+"Where your data lives" = "Wo deine Daten liegen";
+"Where Your Data Lives" = "Wo deine Daten liegen";
+"Storage" = "Speicher";
+"Sync" = "Synchronisation";
+"iCloud account" = "iCloud-Account";
+"iCloud container" = "iCloud-Container";
+"iCloud sync" = "iCloud-Sync";
+"iCloud & Data" = "iCloud & Daten";
+"Appearance" = "Erscheinungsbild";
+"Status on this device" = "Status auf diesem Gerät";
+"Nothing logged yet." = "Noch nichts protokolliert.";
+"The log stays on this device. When something doesn't work, copy it into the chat." = "Das Protokoll bleibt auf diesem Gerät. Wenn etwas nicht funktioniert: kopieren und in den Chat einfügen.";
+"%lld entries" = "%lld Einträge";
+"Step %lld of %lld" = "Schritt %lld von %lld";
+"App Log" = "App-Protokoll";
