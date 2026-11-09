@@ -1,0 +1,11 @@
+Validating cloudkit/schema.ckdb against iCloud.at.binisoft.thalia (Development)…
+Validation: {
+  "isValid": true,
+  "errorMessage": ""
+}
+Importing into Development…
+Import: {
+  "statusCode": 202,
+  "description": "Accepted schema import."
+}
+NEXT: CloudKit Console → iCloud.at.binisoft.thalia → Development → Deploy Schema Changes… → Deploy (before the next TestFlight build).
