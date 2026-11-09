@@ -57,6 +57,6 @@ Status: [ ] offen · [~] in Arbeit · [x] erledigt (CI/Gerät-Prüfung steht in 
 - [x] CI run 14: erster Mac-Build von v3 grün (iOS, macOS, Watch, Widgets); Screenshots geprüft → Mac-Wochentabelle: Titel bekommen Vorrang, Tagesspalten 38 pt.
 - [x] CloudKit-Import (flagsRaw) erfolgreich, Bini hat nach Production deployt.
 - [x] **TestFlight 1.2.0 (25)** iOS + macOS hochgeladen, VALID, IN_BETA_TESTING (run 25).
-- [ ] CI run 15 (Mac-Wochentabelle schmaler) – Screenshot prüfen, sobald veröffentlicht.
+- [x] CI run 15 grün, Mac-Wochentabelle im Screenshot geprüft: Titel ganz lesbar, Tagesspalten passen bei 1024 px.
 - Nächster Schritt: Bini testet v3 (TESTING.md „v3“), Feedback → v4.
 - Nächster Schritt (alt), sobald Bini „öffentlich“ meldet: CI neu starten → Compile-Fehler beheben → `[screenshots]` prüfen → cloudkit-schema-Workflow (5.2) → Bini 5.3 → TestFlight 1.2.0.
