@@ -53,4 +53,7 @@ Status: [ ] offen · [~] in Arbeit · [x] erledigt (CI/Gerät-Prüfung steht in 
 - [x] Modelle: `PlanItem.flagsRaw`, `MeasureDefinition.flagsRaw` → `cloudkit/schema.ckdb` (additiv) → **5.2 Import + Bini 5.3 Deploy nötig vor TestFlight**.
 - [x] UI: Wochenziele-Karte, eingeklappte Nebensachen/erfüllte Wochenpunkte, Alle-offenen-Menü, Inline-PH, Zeitwähler ohne „Jetzt“, Tagesabschluss neu, Gewichtung überschreiben, Editoren (Nebensache, freie Tage), HeroCard mit animiertem Verlauf + Feier, Teilen-Bilder (Aurora/Klar/Nacht), Wochen-PDF, Tour v3, Version 1.2.0.
 - Alles nur lokal geprüft (`make check`): **App-Code ungebaut**, weil GitHub Actions bis zum Öffentlich-Schalten keine Jobs startet.
-- Nächster Schritt, sobald Bini „öffentlich“ meldet: CI neu starten → Compile-Fehler beheben → `[screenshots]` prüfen → cloudkit-schema-Workflow (5.2) → Bini 5.3 → TestFlight 1.2.0.
+- [x] Repo öffentlich, Historie von Bini auf einen Commit (d3909a5) neu geschrieben, CI-Branches gelöscht.
+- [x] CI run 14: erster Mac-Build von v3 grün (iOS, macOS, Watch, Widgets); Screenshots geprüft → Mac-Wochentabelle: Titel bekommen Vorrang, Tagesspalten 38 pt.
+- [x] CloudKit-Import (flagsRaw) erfolgreich → wartet auf Bini 5.3 Deploy.
+- Nächster Schritt (alt), sobald Bini „öffentlich“ meldet: CI neu starten → Compile-Fehler beheben → `[screenshots]` prüfen → cloudkit-schema-Workflow (5.2) → Bini 5.3 → TestFlight 1.2.0.

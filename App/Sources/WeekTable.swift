@@ -11,7 +11,7 @@ struct WeekTable: View {
     @Environment(AppModel.self) private var app
     @AppStorage("week.summary") private var showsSummary = true
 
-    static let dayWidth: CGFloat = 44
+    static let dayWidth: CGFloat = 38
 
     var body: some View {
         ScrollView {
@@ -44,7 +44,7 @@ struct WeekTable: View {
         .navigationTitle("\(context.week.label) · \(context.week.rangeLabel)")
         .inspector(isPresented: $showsSummary) {
             WeekSummaryPanel(context: context)
-                .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
+                .inspectorColumnWidth(min: 240, ideal: 270, max: 360)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -112,7 +112,7 @@ private struct WeekTableHeader: View {
             Text("Woche")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 52, alignment: .trailing)
+                .frame(width: 44, alignment: .trailing)
         }
         .padding(.vertical, 8)
         .background(.bar)
@@ -164,18 +164,21 @@ private struct WeekTableCategory: View {
             HStack(spacing: 4) {
                 HStack(spacing: 8) {
                     KeyBadge(key: category.key)
+                        .fixedSize()
                     Text(category.title)
                         .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
                 ForEach(context.week.days, id: \.self) { day in
                     WeekTableCategoryDay(entry: context.score.category(category.key, on: day))
                 }
                 Text(Format.score(context.score.categoryWeek[category.key], outOf: false))
                     .font(.callout.weight(.semibold))
                     .monospacedDigit()
-                    .frame(width: 52, alignment: .trailing)
+                    .frame(width: 44, alignment: .trailing)
             }
             .padding(.top, 14)
             .padding(.bottom, 4)
@@ -231,9 +234,11 @@ private struct WeekTableRow: View {
                 Text(item.title)
                     .font(.callout)
                     .lineLimit(2)
+                    .help(item.title)
                 meta
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
             .contentShape(.rect)
             .onTapGesture { app.sheet = .item(item, detailDay) }
             ForEach(context.week.days, id: \.self) { day in
@@ -252,7 +257,7 @@ private struct WeekTableRow: View {
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(width: 52, alignment: .trailing)
+                .frame(width: 44, alignment: .trailing)
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 4)
