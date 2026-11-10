@@ -20,7 +20,7 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 3
+    public static let version = 4
 
     public static let catalog = TourCatalog<ThaliaTourSnapshot>(
         version: version,
@@ -77,6 +77,15 @@ public enum ThaliaTour {
                 id: "weekly-goals", since: 3, symbol: "chart.bar.fill", title: "Wochenziele zählen von selbst",
                 body: "Oben in einer Kategorie stehen ihre Wochenziele als Balken: Woche, „heute +x“ und die Tempo-Marke. Trag einfach die Power-Hours oder den Wert ein – „daran gearbeitet“ hakt Thalia selbst ab und bewertet am Wochenende rückwirkend. Nebensachen liegen eingeklappt unter „Weitere“, mit dem Listen-Symbol setzt du alles Offene auf einmal.",
                 macBody: "Oben in einer Kategorie stehen ihre Wochenziele als Balken. Trag den Wert ein – „daran gearbeitet“ hakt Thalia selbst ab. Nebensachen liegen unter „Weitere“, das Listen-Symbol setzt alles Offene auf einmal."
+            ),
+            TourStep(
+                id: "colours", since: 4, symbol: "paintpalette", title: "Farben, Namen, klare Knöpfe",
+                body: "Jedes Jahresziel hat jetzt seine Farbe. Oben siehst du die Kategorien mit Namen – das Raster-Symbol zeigt alle auf einmal. Die Knöpfe sagen, was sie tun: Erledigt, Teilweise, Nicht, Entfällt; bei Zahlen steht der Schritt drauf (− 0,5 / + 0,5), unter „…“ gibt es mehr.",
+                macBody: "Jedes Jahresziel hat jetzt seine Farbe. Die Knöpfe sagen, was sie tun: Erledigt, Teilweise, Nicht, Entfällt; bei Zahlen steht der Schritt drauf, unter „…“ gibt es mehr."
+            ),
+            TourStep(
+                id: "pdf", since: 4, symbol: "doc.richtext", title: "Berichte als PDF",
+                body: "Woche und Tag gibt es als PDF mit Titelseite, Zielen in Farbe und allen Punkten – erst ansehen, dann teilen. Zu finden im Tages- und Wochenabschluss und in der Tagesübersicht."
             ),
             TourStep(
                 id: "share", since: 3, symbol: "square.and.arrow.up", title: "Teilen und PDF",

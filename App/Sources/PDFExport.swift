@@ -423,7 +423,8 @@ private struct WeekCoverPage: View {
         ]
         if !weekly.isEmpty { list.append(("Wochenziele erreicht", "\(reached)/\(weekly.count)", GoalPalette.color(goal: "8"))) }
         if let best, let score = best.weekScore(context) {
-            list.append(("Bestes Ziel: \(best.title)", Format.score(score), best.color))
+            let short: String = best.title.split(separator: " ").first.map(String.init) ?? best.title
+            list.append(("Bestes Ziel · \(short)", Format.score(score), best.color))
         }
         return list
     }

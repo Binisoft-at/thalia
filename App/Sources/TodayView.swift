@@ -1178,7 +1178,7 @@ struct MeasureInput: View {
             .disabled((value ?? 0) <= 0)
             .accessibilityLabel("\(measure.title) minus \(Format.number(step)) \(unit)")
             HStack(spacing: 3) {
-                TextField("0", text: $text)
+                TextField("–", text: $text)
                     .multilineTextAlignment(.trailing)
                     .font(.system(.callout, design: .rounded).weight(.bold))
                     .monospacedDigit()

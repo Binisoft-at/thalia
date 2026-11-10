@@ -308,6 +308,8 @@ struct ContentTests {
         // v2 took the tour → v3 offers only the new steps.
         let v3 = ThaliaTour.catalog.steps(newerThan: 2).map(\.id)
         #expect(v3.contains("weekly-goals") && v3.contains("share") && !v3.contains("mark"))
+        let v4 = ThaliaTour.catalog.steps(newerThan: 3).map(\.id)
+        #expect(v4.contains("colours") && v4.contains("pdf") && !v4.contains("share"))
     }
 
     @Test func tourStepsTickOff() {
