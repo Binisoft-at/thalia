@@ -23,3 +23,5 @@ Status: [ ] offen · [x] in Arbeit · [x] erledigt.
 ## Jetzt
 - [x] Umgesetzt in c20b7a9 (lokal geprüft): PDFExport.swift (Woche: Titelseite, Details, Tabellen; Tag: Titelseite, Tabellen; Vorschau), Style.swift (Zielfarben), Chips + Kategorie-Übersicht, farbiger Kategorie-Kopf, Markier-Knöpfe mit Wort, Eingaben „− 0,5 / + 0,5“ + „…“, Messwertzeilen zweizeilig, Balken-Legende.
 - [x] CI run 16 grün; Screenshots geprüft (Heute mit Pillen/Kopf/Knöpfen, PDF Woche + Tag inkl. Vorschau, Mac-Abschluss). Nachgebessert: leeres Feld zeigt „–“ statt „0“, „Bestes Ziel“ kürzer. Tour-Version 4 (Farben/Knöpfe, PDF), Version 1.3.0 → TestFlight.
+- [x] **TestFlight 1.3.0 (29)** iOS + macOS hochgeladen, VALID, IN_BETA_TESTING (keine Schema-Änderung nötig).
+- Nächster Schritt: Bini testet v4 (TESTING.md „v4“), Feedback → v5.

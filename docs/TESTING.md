@@ -77,3 +77,12 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 - [ ] Tag abschließen: Kopf mit Verlauf; Fehlende Werte eingeklappt mit Eingabe; nach dem Abschließen bleibt das Fenster offen → Wertung, kleine Feier ab 8, „Tag als Bild teilen“.
 - [ ] Woche abschließen / Bericht: „Woche teilen“ (Vorlagen Aurora, Klar, Nacht; Zielnamen optional) und „PDF erstellen → PDF teilen“ (Zusammenfassung + alle Kategorien × Mo–So).
 - [ ] Zahlen: Wertungen mit bis zu 2 Nachkommastellen (7,25 · 8,5 · 10).
+
+## v4 (ab Version 1.3.0)
+- [ ] Heute: Pillen oben zeigen Nummer + Kurzname in Zielfarbe; Raster-Symbol links → alle Kategorien nach Ziel, Tippen springt hin.
+- [ ] Kategorie-Kopf farbig mit Ring (Prozent, nach Abschluss der Kategorie die Wertung) und „Alle …“.
+- [ ] Knöpfe „Erledigt · Teilweise · Nicht · Entfällt“ – ein Tipp setzt, nochmal tippen leert.
+- [ ] Zahlen: „− 0,5“ / „+ 0,5“ (Schritt steht drauf), Feld mit Einheit, „…“ für mehr Mengen und „Auf 0 setzen“.
+- [ ] Wochenziel-Balken: Strich = „Soll bis heute“, Erklärung darunter.
+- [ ] PDF: Tag abschließen → „Tag als PDF“, Woche abschließen/Bericht → „Woche als PDF“, Tagesübersicht → „PDF“: Vorschau prüfen (Titelseite, Ziele in Farbe, Tabellen), dann teilen (Dateien, AirDrop, Mail).
+
