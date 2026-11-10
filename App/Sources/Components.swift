@@ -183,8 +183,8 @@ struct KeyBadge: View {
             .monospacedDigit()
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Brand.accent.opacity(0.14), in: .capsule)
-            .foregroundStyle(Brand.accent)
+            .background(GoalPalette.color(category: key).opacity(0.16), in: .capsule)
+            .foregroundStyle(GoalPalette.color(category: key))
     }
 }
 

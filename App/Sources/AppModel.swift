@@ -42,6 +42,7 @@ enum AppSheet: Identifiable {
     case dayOverview(DayKey)
     case conditionals(DayKey)
     case archive
+    case pdf(PDFKind)
     case dayInfo(DayKey)
     case weekInfo(WeekKey)
     case report(WeekKey)
@@ -64,6 +65,7 @@ enum AppSheet: Identifiable {
         case .dayOverview(let day): "overview-" + day.string
         case .conditionals(let day): "conditionals-" + day.string
         case .archive: "archive"
+        case .pdf(let kind): "pdf-" + kind.id
         case .dayInfo(let day): "day-" + day.string
         case .weekInfo(let week): "week-" + week.string
         case .report(let week): "report-" + week.string
@@ -342,6 +344,10 @@ final class AppModel {
             sheet = .work(WorkDraft(day: today))
         case "overview":
             sheet = .dayOverview(today)
+        case "pdf-week":
+            sheet = .pdf(.week(today.week.adding(weeks: -1)))
+        case "pdf-day":
+            sheet = .pdf(.day(today))
         case "report":
             sheet = .report(today.week.adding(weeks: -1))
         case "explainer":

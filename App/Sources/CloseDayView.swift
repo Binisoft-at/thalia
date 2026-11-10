@@ -57,6 +57,7 @@ struct CloseDayForm: View {
                         Label("Tag als Bild teilen", systemImage: "square.and.arrow.up")
                     }
                 }
+                PDFButton(kind: .day(day), context: context, title: "Tag als PDF")
             } footer: {
                 Text("Tagsüber erfassen, was passiert. Abends bewerten, was es bedeutet.")
             }

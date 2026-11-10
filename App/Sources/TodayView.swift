@@ -360,77 +360,192 @@ private struct CategoryChips: View {
     let day: DayKey
     let pages: [TrackCategory]
     @Binding var page: TodayPage
+    @State private var showsPicker = false
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(pages) { category in
-                        chip(category)
+        HStack(spacing: 0) {
+            Button {
+                showsPicker = true
+            } label: {
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 42, height: 44)
+                    .foregroundStyle(Brand.accent)
+                    .background(Brand.accent.opacity(0.12), in: .rect(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16)
+            .accessibilityLabel("Alle Kategorien zeigen")
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(pages) { category in
+                            CategoryChip(category: category, entry: context.score.category(category.key, on: day),
+                                         selected: page == .category(category.key)) {
+                                withAnimation(.snappy) { page = .category(category.key) }
+                            }
                             .id(TodayPage.category(category.key))
-                    }
-                    Button {
-                        withAnimation(.snappy) { page = .day }
-                    } label: {
-                        Image(systemName: "moon.stars")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(width: 40, height: 34)
+                        }
+                        Button {
+                            withAnimation(.snappy) { page = .day }
+                        } label: {
+                            VStack(spacing: 1) {
+                                Image(systemName: "moon.stars.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("Abschluss")
+                                    .font(.system(size: 9.5, weight: .semibold))
+                            }
+                            .frame(width: 70, height: 44)
                             .foregroundStyle(page == .day ? Color.white : Color.primary)
-                            .background(page == .day ? Brand.accent : Color.secondary.opacity(0.12), in: .capsule)
+                            .background(page == .day ? AnyShapeStyle(Brand.accent.gradient) : AnyShapeStyle(Color.secondary.opacity(0.12)),
+                                        in: .rect(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .id(TodayPage.day)
+                        .accessibilityLabel("Tag abschließen und Notizen")
                     }
-                    .buttonStyle(.plain)
-                    .id(TodayPage.day)
-                    .accessibilityLabel("Tag abschließen und Notizen")
+                    .padding(.horizontal, 8)
+                    .padding(.trailing, 8)
                 }
-                .padding(.horizontal, 16)
+                .onChange(of: page) { _, value in
+                    withAnimation(.snappy) { proxy.scrollTo(value, anchor: .center) }
+                }
+                .onAppear { proxy.scrollTo(page, anchor: .center) }
             }
-            .onChange(of: page) { _, value in
-                withAnimation(.snappy) { proxy.scrollTo(value, anchor: .center) }
-            }
-            .onAppear { proxy.scrollTo(page, anchor: .center) }
+        }
+        .sheet(isPresented: $showsPicker) {
+            CategoryPicker(context: context, day: day, pages: pages, page: $page)
+                .presentationDetents([.medium, .large])
         }
     }
+}
 
-    private func chip(_ category: TrackCategory) -> some View {
-        let entry = context.score.category(category.key, on: day)
-        let selected = page == .category(category.key)
-        return Button {
-            withAnimation(.snappy) { page = .category(category.key) }
-        } label: {
-            HStack(spacing: 5) {
-                Text(category.key)
-                    .font(.subheadline.weight(.bold))
-                    .monospacedDigit()
-                if entry.due > 0 {
-                    if entry.isComplete {
+/// Number, short name and fill in the goal's colour (W4).
+private struct CategoryChip: View {
+    let category: TrackCategory
+    let entry: CategoryDay
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                ZStack {
+                    if entry.due > 0, entry.isComplete {
                         Image(systemName: "checkmark")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(selected ? Color.white : Color.green)
+                            .font(.system(size: 10, weight: .heavy))
                     } else {
-                        MiniFill(fill: entry.fill, inverted: selected)
+                        MiniFill(fill: entry.due > 0 ? entry.fill : 0, inverted: selected, tint: category.color)
                     }
                 }
+                .frame(width: 16, height: 16)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(category.key)
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                    Text(category.shortTitle)
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                        .opacity(selected ? 0.9 : 0.75)
+                }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 34)
+            .padding(.horizontal, 10)
+            .frame(height: 44)
             .foregroundStyle(selected ? Color.white : Color.primary)
-            .background(selected ? Brand.accent : Color.secondary.opacity(0.12), in: .capsule)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected ? AnyShapeStyle(GoalPalette.gradient(goal: category.key)) : AnyShapeStyle(category.color.opacity(0.12)))
+            }
+            .overlay(alignment: .bottom) {
+                if !selected {
+                    Capsule().fill(category.color).frame(width: 18, height: 3).padding(.bottom, 3)
+                }
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(category.key) \(category.title), \(percent(entry.fill)) Prozent erfasst")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Every category of the day, grouped by goal, with fill – tap to jump (W4).
+private struct CategoryPicker: View {
+    let context: WeekContext
+    let day: DayKey
+    let pages: [TrackCategory]
+    @Binding var page: TodayPage
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(context.goals) { goal in
+                    let categories: [TrackCategory] = pages.filter { $0.goalKey == goal.key }
+                    if !categories.isEmpty {
+                        Section {
+                            ForEach(categories) { category in
+                                let entry: CategoryDay = context.score.category(category.key, on: day)
+                                Button {
+                                    page = .category(category.key)
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Text(category.key)
+                                            .font(.caption.weight(.heavy))
+                                            .monospacedDigit()
+                                            .foregroundStyle(.white)
+                                            .frame(width: 34, height: 26)
+                                            .background(category.color.gradient, in: .rect(cornerRadius: 8, style: .continuous))
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(category.title)
+                                                .foregroundStyle(.primary)
+                                            ProgressView(value: entry.due > 0 ? entry.fill : 0)
+                                                .tint(entry.isComplete ? .green : category.color)
+                                        }
+                                        Text(entry.due == 0 ? "–" : (entry.isComplete ? Format.score(entry.score, outOf: false) : "\(percent(entry.fill)) %"))
+                                            .font(.callout.weight(.semibold))
+                                            .monospacedDigit()
+                                            .foregroundStyle(entry.isComplete ? .primary : .secondary)
+                                            .frame(width: 56, alignment: .trailing)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } header: {
+                            Label("\(goal.key) \(goal.title)", systemImage: "circle.fill")
+                                .foregroundStyle(goal.color)
+                        }
+                    }
+                }
+                Section {
+                    Button {
+                        page = .day
+                        dismiss()
+                    } label: {
+                        Label("Tag abschließen, Notizen", systemImage: "moon.stars.fill")
+                    }
+                }
+            }
+            .navigationTitle("Kategorien")
+            .inlineNavigationTitle()
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+            }
+        }
     }
 }
 
 private struct MiniFill: View {
     let fill: Double
     var inverted = false
+    var tint: Color = Brand.accent
 
     var body: some View {
         ZStack {
-            Circle().stroke((inverted ? Color.white : Color.secondary).opacity(0.3), lineWidth: 2.5)
+            Circle().stroke((inverted ? Color.white : tint).opacity(0.3), lineWidth: 2.5)
             Circle()
                 .trim(from: 0, to: CGFloat(fill))
-                .stroke(inverted ? Color.white : Brand.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .stroke(inverted ? Color.white : tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
         .frame(width: 12, height: 12)
@@ -638,67 +753,84 @@ struct CategoryPage: View {
         .scrollDismissesKeyboard(.interactively)
     }
 
+    private func statusLine(_ entry: CategoryDay) -> String {
+        if entry.due == 0 { return "Heute nichts zu bewerten" }
+        if entry.isComplete { return "Alles erfasst · Zwischenstand \(Format.score(entry.score, outOf: false))" }
+        return "\(entry.due - entry.blank) von \(entry.due) erfasst"
+    }
+
+    /// The category head in its goal's colour (W2): name, goal, how much is filled in, the
+    /// result once complete, and "Alle …" for all open items at once.
     private func header(_ entry: CategoryDay, tickable: [PlanItem]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                KeyBadge(key: category.key)
-                Text(category.title)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(2)
-                Spacer(minLength: 4)
-                if !tickable.isEmpty {
-                    QuickAllMenu(items: tickable, day: day, context: context, scope: category.title)
+        let goal: AnnualGoal? = context.goal(of: category)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(goal.map { "Ziel \($0.key) · \($0.title)" } ?? "Kategorie")
+                        .font(.caption.weight(.semibold))
+                        .opacity(0.85)
+                    Text("\(category.key)  \(category.title)")
+                        .font(.title3.weight(.bold))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                if !category.details.isEmpty || context.goal(of: category) != nil {
+                Spacer(minLength: 8)
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.28), lineWidth: 5)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(entry.due > 0 ? entry.fill : 0))
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    if entry.isComplete, let score = entry.score {
+                        Text(Format.score(score))
+                            .font(.system(size: 13, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.6)
+                            .padding(4)
+                    } else {
+                        Text("\(percent(entry.due > 0 ? entry.fill : 0))%")
+                            .font(.system(size: 11, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                    }
+                }
+                .frame(width: 50, height: 50)
+                .animation(.snappy, value: entry.fill)
+            }
+            HStack(spacing: 8) {
+                Text(statusLine(entry))
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                if entry.knockedOut || entry.overridden {
+                    Image(systemName: entry.overridden ? "hand.raised.fill" : "exclamationmark.octagon.fill")
+                        .font(.caption)
+                        .accessibilityLabel(entry.overridden ? "Eigene Wertung" : "Null-Regel")
+                }
+                Spacer(minLength: 4)
+                if !category.details.isEmpty {
                     Button {
                         withAnimation(.snappy) { showsInfo.toggle() }
                     } label: {
                         Image(systemName: showsInfo ? "info.circle.fill" : "info.circle")
+                            .font(.body)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Details zu \(category.title)")
                 }
-            }
-            HStack(spacing: 10) {
-                if entry.due > 0 {
-                    ProgressView(value: entry.fill)
-                        .tint(entry.isComplete ? .green : Brand.accent)
-                        .frame(maxWidth: 140)
-                    Text(entry.isComplete ? "alles erfasst" : "\(entry.due - entry.blank) von \(entry.due) erfasst")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                Spacer(minLength: 0)
-                if entry.knockedOut || entry.overridden {
-                    Image(systemName: entry.overridden ? "hand.raised.fill" : "exclamationmark.octagon.fill")
-                        .foregroundStyle(.orange)
-                        .accessibilityLabel(entry.overridden ? "Eigene Wertung" : "Null-Regel")
-                }
-                if entry.isComplete, let score = entry.score {
-                    Text("Zwischenstand \(Format.score(score))")
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Brand.accent.opacity(0.14), in: .capsule)
+                if !tickable.isEmpty {
+                    QuickAllMenu(items: tickable, day: day, context: context, scope: category.title, title: "Alle …", onTint: true)
                 }
             }
-            if showsInfo {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let goal = context.goal(of: category) {
-                        Text("Ziel \(goal.key): \(goal.title)")
-                            .font(.caption.weight(.semibold))
-                    }
-                    if !category.details.isEmpty {
-                        Text(category.details)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .transition(.opacity)
+            if showsInfo, !category.details.isEmpty {
+                Text(category.details)
+                    .font(.caption)
+                    .opacity(0.9)
+                    .transition(.opacity)
             }
         }
+        .foregroundStyle(.white)
+        .padding(16)
+        .background(GoalPalette.gradient(goal: category.key), in: .rect(cornerRadius: 20, style: .continuous))
+        .shadow(color: category.color.opacity(0.3), radius: 10, y: 4)
         .padding(.vertical, 4)
     }
 }
@@ -823,45 +955,77 @@ struct MarkBar: View {
     var body: some View {
         HStack(spacing: 6) {
             ForEach(options, id: \.self) { option in
-                let selected = mark == option
-                Button {
-                    onSet(selected ? nil : option)
-                } label: {
-                    Text(title(option))
-                        .font(.system(.subheadline, design: .rounded).weight(.bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .foregroundStyle(selected ? Color.white : Optional(option).color)
-                        .background(selected ? Optional(option).color : Color.secondary.opacity(0.1),
-                                    in: .rect(cornerRadius: 10, style: .continuous))
-                        .overlay {
-                            if suggestion == option, mark == nil {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(Optional(option).color, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                            }
-                        }
-                        .contentShape(.rect)
+                MarkOptionButton(option: option, selected: mark == option, suggested: suggestion == option && mark == nil,
+                                 isProgress: isProgress) {
+                    onSet(mark == option ? nil : option)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(accessibility(option))
-                .accessibilityAddTraits(selected ? .isSelected : [])
-                .accessibilityHint(selected ? "Nochmal tippen leert die Bewertung" : (suggestion == option ? "Vorschlag aus dem Messwert" : ""))
             }
         }
         .sensoryFeedback(.selection, trigger: mark)
     }
+}
 
-    private func title(_ option: Mark) -> String {
-        if isProgress {
-            return option == .done ? "✓ Gearbeitet" : "Nicht heute"
+/// One choice: symbol and word (W2.2 – it says what tapping does). Selected = filled, a
+/// measurement's suggestion = dashed outline. Tapping the selected one clears it.
+private struct MarkOptionButton: View {
+    let option: Mark
+    let selected: Bool
+    let suggested: Bool
+    let isProgress: Bool
+    let action: () -> Void
+
+    private var tint: Color { Optional(option).color }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .bold))
+                Text(word)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .foregroundStyle(selected ? Color.white : tint)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.1)))
+            }
+            .overlay {
+                if suggested {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(tint, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                }
+            }
+            .scaleEffect(selected ? 1.0 : 0.97)
+            .animation(.snappy(duration: 0.18), value: selected)
+            .contentShape(.rect)
         }
-        return option == .notApplicable ? "N/A" : option.symbol
+        .buttonStyle(.plain)
+        .accessibilityLabel(word)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityHint(selected ? "Nochmal tippen leert die Bewertung" : (suggested ? "Vorschlag aus dem Messwert" : ""))
     }
 
-    private func accessibility(_ option: Mark) -> String {
-        if isProgress { return option == .done ? "Daran gearbeitet" : "Nicht heute" }
-        return option.label
+    private var symbol: String {
+        if isProgress { return option == .done ? "checkmark" : "moon.zzz" }
+        switch option {
+        case .done: return "checkmark"
+        case .partial: return "circle.lefthalf.filled"
+        case .missed: return "xmark"
+        case .notApplicable: return "minus"
+        }
+    }
+
+    private var word: String {
+        if isProgress { return option == .done ? "Gearbeitet" : "Nicht heute" }
+        switch option {
+        case .done: return "Erledigt"
+        case .partial: return "Teilweise"
+        case .missed: return "Nicht"
+        case .notApplicable: return "Entfällt"
+        }
     }
 }
 
@@ -882,47 +1046,49 @@ struct MeasureRow: View {
     private var isWeekly: Bool { record?.period == .week }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(measure.title)
-                        .font(.body.weight(.medium))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let met = record.flatMap({ Measures.isMet($0, value: isWeekly ? context.weekValue(measure) : value) }) {
-                        Image(systemName: met ? "checkmark.circle.fill" : "circle")
-                            .font(.caption)
-                            .foregroundStyle(met ? .green : .secondary)
-                            .accessibilityLabel(met ? "Ziel erreicht" : "Ziel noch nicht erreicht")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(measure.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let met = record.flatMap({ Measures.isMet($0, value: isWeekly ? context.weekValue(measure) : value) }) {
+                    Image(systemName: met ? "checkmark.circle.fill" : "circle")
+                        .font(.caption)
+                        .foregroundStyle(met ? .green : .secondary)
+                        .accessibilityLabel(met ? "Ziel erreicht" : "Ziel noch nicht erreicht")
+                }
+                Spacer(minLength: 4)
+                Button {
+                    app.sheet = .measure(code: measure.code, day: day)
+                } label: {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Verlauf und Details zu \(measure.title)")
+            }
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    if let healthSuggestion {
+                        Button {
+                            app.store.adoptHealth(code: measure.code, day: day, value: healthSuggestion)
+                        } label: {
+                            Label("Health: \(Format.measure(healthSuggestion, unit: measure.unit)) übernehmen", systemImage: "heart.text.square")
+                                .font(.caption2.weight(.medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .tint(.pink)
                     }
                 }
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                if let healthSuggestion {
-                    Button {
-                        app.store.adoptHealth(code: measure.code, day: day, value: healthSuggestion)
-                    } label: {
-                        Label("Health: \(Format.measure(healthSuggestion, unit: measure.unit)) übernehmen", systemImage: "heart.text.square")
-                            .font(.caption2.weight(.medium))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .tint(.pink)
-                }
+                Spacer(minLength: 6)
+                MeasureInput(measure: measure, context: context, day: day)
             }
-            .layoutPriority(1)
-            Spacer(minLength: 4)
-            MeasureInput(measure: measure, context: context, day: day)
-            Button {
-                app.sheet = .measure(code: measure.code, day: day)
-            } label: {
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Verlauf und Details zu \(measure.title)")
         }
         .padding(.vertical, 2)
         .contextMenu { MeasureMenu(measure: measure, context: context, day: day) }
@@ -1001,58 +1167,75 @@ struct MeasureInput: View {
 
     // MARK: Number / PH
 
+    /// W2.1: the buttons say what they do ("− 0,5" / "+ 0,5"), the field shows the unit, and the
+    /// quick amounts sit behind a visible "…" instead of a hidden long press.
     private func stepper(step: Double, unitLabel: String?, set: @escaping (Double?) -> Void) -> some View {
-        HStack(spacing: 4) {
-            Button {
+        let unit: String = unitLabel ?? Units.display(measure.unit)
+        return HStack(spacing: 5) {
+            StepButton(title: "− \(Format.number(step))", prominent: false) {
                 set(max(0, (value ?? 0) - step))
-            } label: {
-                Image(systemName: "minus")
-                    .font(.callout.weight(.bold))
-                    .frame(width: 32, height: 32)
-                    .background(Color.secondary.opacity(0.12), in: .circle)
             }
-            .buttonStyle(.plain)
             .disabled((value ?? 0) <= 0)
-            .accessibilityLabel("\(measure.title) minus \(Format.number(step))")
-            TextField(unitLabel ?? "–", text: $text)
-                .multilineTextAlignment(.center)
-                .font(.system(.callout, design: .rounded).weight(.bold))
-                .monospacedDigit()
-                .frame(width: 64)
-                .padding(.vertical, 6)
-                .background(Color.secondary.opacity(focused ? 0.16 : 0.08), in: .rect(cornerRadius: 8, style: .continuous))
-                .decimalKeyboard()
-                .focused($focused)
-                .submitLabel(.done)
-                .onSubmit { commit(set) }
-                .onChange(of: focused) { _, isFocused in if !isFocused { commit(set) } }
-                .accessibilityLabel("\(measure.title) in \(unitLabel ?? Units.display(measure.unit))")
+            .accessibilityLabel("\(measure.title) minus \(Format.number(step)) \(unit)")
+            HStack(spacing: 3) {
+                TextField("0", text: $text)
+                    .multilineTextAlignment(.trailing)
+                    .font(.system(.callout, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                    .decimalKeyboard()
+                    .focused($focused)
+                    .submitLabel(.done)
+                    .onSubmit { commit(set) }
+                    .onChange(of: focused) { _, isFocused in if !isFocused { commit(set) } }
+                    .accessibilityLabel("\(measure.title) in \(unit), tippen zum Eintippen")
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 74)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 6)
+            .background(Color.secondary.opacity(focused ? 0.18 : 0.09), in: .rect(cornerRadius: 9, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(focused ? Brand.accent : Color.clear, lineWidth: 1.5)
+            }
+            StepButton(title: "+ \(Format.number(step))", prominent: true) {
+                set((value ?? 0) + step)
+            }
+            .accessibilityLabel("\(measure.title) plus \(Format.number(step)) \(unit)")
             Menu {
                 if let workCategory {
-                    ForEach(PowerHour.quick, id: \.self) { quick in
-                        Button("+ \(Format.powerHours(quick))") { app.addPowerHours(quick, categoryKey: workCategory, day: day) }
+                    Section("Hinzufügen") {
+                        ForEach(PowerHour.quick, id: \.self) { quick in
+                            Button("+ \(Format.powerHours(quick))") { app.addPowerHours(quick, categoryKey: workCategory, day: day) }
+                        }
                     }
-                    Divider()
-                    Button("Mit Ergebnis und nächstem Schritt…", systemImage: "square.and.pencil") {
+                    Button("Mit Beschreibung, Ergebnis …", systemImage: "square.and.pencil") {
                         app.sheet = .work(WorkDraft(day: day, categoryKey: workCategory))
                     }
                 } else {
-                    ForEach([1.0, 2.0, 5.0, 10.0].map { $0 * step }, id: \.self) { amount in
-                        Button("+ \(Format.number(amount))") { set((value ?? 0) + amount) }
+                    Section("Hinzufügen") {
+                        ForEach([1.0, 2.0, 5.0, 10.0].map { $0 * step }, id: \.self) { amount in
+                            Button("+ \(Format.number(amount)) \(unit)") { set((value ?? 0) + amount) }
+                        }
                     }
                 }
+                if value != nil {
+                    Button("Auf 0 setzen", systemImage: "arrow.counterclockwise", role: .destructive) { set(workCategory == nil ? nil : 0) }
+                }
             } label: {
-                Image(systemName: "plus")
+                Image(systemName: "ellipsis")
                     .font(.callout.weight(.bold))
-                    .frame(width: 32, height: 32)
-                    .background(Brand.accent.opacity(0.15), in: .circle)
-                    .foregroundStyle(Brand.accent)
-            } primaryAction: {
-                set((value ?? 0) + step)
+                    .frame(width: 30, height: 34)
+                    .foregroundStyle(.secondary)
             }
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .accessibilityLabel("\(measure.title) plus \(Format.number(step)); halten für mehr")
+            .accessibilityLabel("Weitere Mengen für \(measure.title)")
         }
         .onAppear { text = value.map { Format.number($0) } ?? "" }
         .onChange(of: value) { _, newValue in
@@ -1143,6 +1326,29 @@ struct MeasureInput: View {
     }
 }
 
+/// "− 0,5" / "+ 0,5": the step is written on the button.
+struct StepButton: View {
+    let title: String
+    let prominent: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(minWidth: 42, minHeight: 34)
+                .padding(.horizontal, 4)
+                .foregroundStyle(prominent ? Color.white : Color.primary)
+                .background(prominent ? AnyShapeStyle(Brand.accent.gradient) : AnyShapeStyle(Color.secondary.opacity(0.14)),
+                            in: .rect(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: Weekly goals (V2)
 
 /// A weekly target: bar for the week with an even-pace marker, what today added, the value
@@ -1176,17 +1382,29 @@ struct WeeklyGoalRow: View {
                     .foregroundStyle(reached ? Color.white : Brand.accent)
                     .background(reached ? Color.green : Brand.accent.opacity(0.14), in: .capsule)
             }
-            GoalBar(fraction: fraction, expected: pace.map { targetValue > 0 ? min(1, $0.expected / targetValue) : 0 }, reached: reached)
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(Format.measure(weekValue, unit: unit)) von \(Format.measure(targetValue, unit: unit))")
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
-                    Text(today > 0 ? "heute +\(Format.measure(today, unit: unit))" : "heute noch nichts")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
+            GoalBar(fraction: fraction, expected: pace.map { targetValue > 0 ? min(1, $0.expected / targetValue) : 0 }, reached: reached,
+                    tint: GoalPalette.color(category: goal.measure.categoryKey))
+            HStack(spacing: 10) {
+                Text("\(Format.measure(weekValue, unit: unit)) von \(Format.measure(targetValue, unit: unit))")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                Text(today > 0 ? "heute +\(Format.measure(today, unit: unit))" : "heute noch nichts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Spacer(minLength: 0)
+            }
+            if let pace, !reached, pace.expected > 0 {
+                // W3: the grey tick explained.
+                Label("Strich = Soll bis heute: \(Format.measure(pace.expected, unit: unit)) (gleichmäßig über die geplanten Tage)",
+                      systemImage: "line.diagonal")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Heute eintragen")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 6)
                 MeasureInput(measure: goal.measure, context: context, day: day)
             }
@@ -1214,25 +1432,26 @@ struct GoalBar: View {
     let fraction: Double
     var expected: Double?
     var reached = false
+    var tint: Color = Brand.accent
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.secondary.opacity(0.15))
                 Capsule()
-                    .fill(reached ? AnyShapeStyle(Color.green) : AnyShapeStyle(LinearGradient(colors: [Brand.accent.opacity(0.7), Brand.accent],
-                                                                                              startPoint: .leading, endPoint: .trailing)))
+                    .fill(reached ? AnyShapeStyle(Color.green.gradient) : AnyShapeStyle(LinearGradient(colors: [tint.opacity(0.65), tint],
+                                                                                                       startPoint: .leading, endPoint: .trailing)))
                     .frame(width: max(8, geometry.size.width * fraction))
                 if let expected, !reached, expected > 0 {
                     Rectangle()
-                        .fill(Color.primary.opacity(0.45))
-                        .frame(width: 2, height: 14)
+                        .fill(Color.primary.opacity(0.6))
+                        .frame(width: 2, height: 18)
                         .offset(x: geometry.size.width * expected - 1)
                         .accessibilityHidden(true)
                 }
             }
         }
-        .frame(height: 10)
+        .frame(height: 12)
         .animation(.snappy, value: fraction)
         .accessibilityElement()
         .accessibilityLabel("\(percent(fraction)) Prozent des Wochenziels")
@@ -1464,6 +1683,8 @@ struct QuickAllMenu: View {
     let scope: String
     /// Shown as a labelled row (day page) instead of the icon (category header).
     var title: String?
+    /// White on a coloured head.
+    var onTint = false
     @Environment(AppModel.self) private var app
 
     var body: some View {
@@ -1481,7 +1702,14 @@ struct QuickAllMenu: View {
             }
             .disabled(marked.isEmpty)
         } label: {
-            if let title {
+            if let title, onTint {
+                Label(title, systemImage: "checklist")
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.22), in: .capsule)
+                    .foregroundStyle(.white)
+            } else if let title {
                 Label(title, systemImage: "checklist")
             } else {
                 Image(systemName: "checklist")
@@ -1517,6 +1745,11 @@ struct DayOverviewSheet: View {
             .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+                ToolbarItem(placement: .primaryAction) {
+                    WeekReader(week: day.week, today: app.today) { context in
+                        PDFButton(kind: .day(day), context: context, title: "PDF")
+                    }
+                }
             }
         }
         .sheetFrame(minWidth: 460, minHeight: 600)

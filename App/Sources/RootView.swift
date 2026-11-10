@@ -184,6 +184,7 @@ struct AppChrome: ViewModifier {
 
 private struct SheetContent: View {
     let sheet: AppSheet
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         switch sheet {
@@ -211,6 +212,10 @@ private struct SheetContent: View {
             DayOverviewSheet(day: day)
         case .conditionals(let day):
             ConditionalsSheet(day: day)
+        case .pdf(let kind):
+            WeekReader(week: kind.week, today: app.today) { context in
+                PDFPreviewSheet(kind: kind, context: context)
+            }
         case .archive:
             NavigationStack { ArchiveView() }
                 .sheetFrame(minWidth: 520, minHeight: 560)
