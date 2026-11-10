@@ -1778,6 +1778,14 @@ struct DayOverviewList: View {
                     .listRowBackground(Color.clear)
             }
 
+            Section {
+                GlanceTiles(context: context, day: day)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+
+            OpenToDoSection(context: context, day: day, onOpen: onOpen)
+
             Section("Kategorien") {
                 ForEach(context.todayCategories(day)) { category in
                     let entry = context.score.category(category.key, on: day)
@@ -1968,7 +1976,9 @@ struct TodayToolbar: ToolbarContent {
         #else
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
-                Button("Tagesübersicht", systemImage: "info.circle") { app.sheet = .dayOverview(day) }
+                Button("Heute im Blick", systemImage: "info.circle") { app.sheet = .dayOverview(day) }
+                Button("Fokus (Power-Hours)", systemImage: "bolt") { app.sheet = .focus(day.week) }
+                Button("Ausgaben", systemImage: "eurosign.circle") { app.sheet = .expenses(day) }
                 Button("Wochenplan importieren", systemImage: "square.and.arrow.down") { app.sheet = .importPlan(prompt: true) }
                 Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
                 Divider()

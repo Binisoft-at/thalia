@@ -310,6 +310,7 @@ struct ContentTests {
         #expect(v3.contains("weekly-goals") && v3.contains("share") && !v3.contains("mark"))
         let v4 = ThaliaTour.catalog.steps(newerThan: 3).map(\.id)
         #expect(v4.contains("colours") && v4.contains("pdf") && !v4.contains("share"))
+        #expect(ThaliaTour.catalog.steps(newerThan: 4).map(\.id).contains("glance"))
     }
 
     @Test func tourStepsTickOff() {

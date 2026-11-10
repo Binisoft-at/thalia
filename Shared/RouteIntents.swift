@@ -30,3 +30,29 @@ struct OpenPowerHoursIntent: AppIntent {
         return .result()
     }
 }
+
+/// Opens Thalia at "Erfassen" (Control Center, F3).
+struct OpenCaptureIntent: AppIntent {
+    static let title: LocalizedStringResource = "In Thalia erfassen"
+    static let description: IntentDescription? = IntentDescription("Öffnet Thalia im Fenster „Erfassen“: Power-Hours, Ausgabe, Messwert, Notiz …")
+    static let openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        PendingRoute.open("create")
+        return .result()
+    }
+}
+
+/// Opens Thalia at "Ausgaben" with the amount field ready (Control Center, F1/F3).
+struct OpenExpenseIntent: AppIntent {
+    static let title: LocalizedStringResource = "Ausgabe erfassen"
+    static let description: IntentDescription? = IntentDescription("Öffnet Thalia bei den Ausgaben – Betrag eintippen, fertig.")
+    static let openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        PendingRoute.open("expense")
+        return .result()
+    }
+}

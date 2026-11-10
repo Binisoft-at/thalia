@@ -255,11 +255,58 @@ struct WeekContext {
         }
         let closed = isClosed(today)
         let next = categories.first { score.category($0.key, on: today).blank > 0 }
+        let open = openToDo(on: today)
+        let expenses = expenseMeasure
         return TodaySummary(
             day: today.shortLabel, weekLabel: week.label, dayScore: closed ? overall?.score : nil, weekScore: score.overall,
             fill: overall?.coverage ?? 0, powerHours: totals.powerHours, isClosed: closed,
             nextCategory: next.map { "\($0.key) \($0.title)" }, measures: lines,
             goalScores: goals.map { score.goalWeek[$0.key]?.score }, goalTitles: goals.map(\.title), updatedAt: Date()
-        )
+        ).with { summary in
+            summary.open = open.prefix(5).map { "\($0.categoryKey) \($0.title)" }
+            summary.openCount = open.count
+            summary.weekly = weeklyLines.prefix(4).map { $0 }
+            summary.powerHoursWeek = workTotals().powerHours
+            summary.powerHoursTarget = workTarget
+            summary.expensesToday = expenses.flatMap { dayValue($0, on: today) }
+            summary.expensesWeek = expenses.flatMap { weekValue($0) }
+        }
+    }
+
+    // MARK: At a glance (v5)
+
+    /// Required items still blank today, in plan order (what "noch zu tun" means).
+    func openToDo(on day: DayKey) -> [PlanItem] {
+        items.filter { item in
+            guard applies(item, on: day), !item.isSecondary, !isDerived(item), mark(item, on: day) == nil else { return false }
+            switch item.schedule {
+            case .fixed: return true
+            case .weekly: return !isQuotaMetElsewhere(item, on: day)
+            default: return false
+            }
+        }
+    }
+
+    /// The week's € measurement ("Ausgaben"), if the plan has one.
+    var expenseMeasure: MeasureDefinition? {
+        measures.first { Units.normalized($0.unit) == "€" || $0.code.lowercased().contains("ausgabe") }
+    }
+
+    /// Sum of the weekly power-hour targets of the work measurements.
+    var workTarget: Double? {
+        let targets: [Double] = measures.compactMap { measure in
+            guard let record = measure.record, record.isWork, record.period == .week, let target = record.target else { return nil }
+            return target.scaleMax
+        }
+        return targets.isEmpty ? nil : targets.reduce(0, +)
+    }
+
+    /// Weekly targets as plain numbers (widgets, Mac sidebar).
+    var weeklyLines: [TodaySummary.GoalLine] {
+        measures.compactMap { measure in
+            guard let record = measure.record, record.period == .week, let target = record.target, target.scaleMax > 0 else { return nil }
+            return TodaySummary.GoalLine(title: measure.title, value: weekValue(measure) ?? 0, target: target.scaleMax,
+                                         unit: record.isWork ? "PH" : measure.unit, categoryKey: measure.categoryKey)
+        }
     }
 }

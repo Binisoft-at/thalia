@@ -1065,6 +1065,10 @@ struct ThaliaCreateSheet: View {
             options: [
                 CreateOption(id: "ph", title: "Power-Hours", subtitle: "Bereich, Anzahl, wofür – Nachhilfe inklusive",
                              symbol: "bolt.fill") { app.sheet = .work(WorkDraft(day: day)) },
+                CreateOption(id: "expense", title: "Ausgabe", subtitle: "Betrag und wofür – Tag und Woche im Blick",
+                             symbol: "eurosign.circle.fill", tint: .green) { app.sheet = .expenses(day) },
+                CreateOption(id: "focus", title: "Fokus ansehen", subtitle: "Power-Hours heute und diese Woche, je Bereich",
+                             symbol: "chart.bar.fill", tint: .orange, isFeatured: false) { app.sheet = .focus(day.week) },
                 CreateOption(id: "measure", title: "Messwert eintragen", subtitle: "Gewicht, Aufschläge, Schlaf, TEREA …",
                              symbol: "ruler.fill", tint: .teal) { app.sheet = .measure(code: "", day: day) },
                 CreateOption(id: "note", title: "Notiz", subtitle: "Beobachtung, Auslöser, Erfolg, Idee",

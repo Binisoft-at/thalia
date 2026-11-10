@@ -43,6 +43,8 @@ enum AppSheet: Identifiable {
     case conditionals(DayKey)
     case archive
     case pdf(PDFKind)
+    case focus(WeekKey)
+    case expenses(DayKey)
     case dayInfo(DayKey)
     case weekInfo(WeekKey)
     case report(WeekKey)
@@ -66,6 +68,8 @@ enum AppSheet: Identifiable {
         case .conditionals(let day): "conditionals-" + day.string
         case .archive: "archive"
         case .pdf(let kind): "pdf-" + kind.id
+        case .focus(let week): "focus-" + week.string
+        case .expenses(let day): "expenses-" + day.string
         case .dayInfo(let day): "day-" + day.string
         case .weekInfo(let week): "week-" + week.string
         case .report(let week): "report-" + week.string
@@ -307,6 +311,16 @@ final class AppModel {
             tab = .today
             sidebar = .today
             sheet = .work(WorkDraft(day: today))
+        case "create":
+            tab = .today
+            sidebar = .today
+            sheet = .create
+        case "expense":
+            sheet = .expenses(today)
+        case "focus":
+            sheet = .focus(today.week)
+        case "glance":
+            sheet = .dayOverview(today)
         default:
             tab = .today
             sidebar = .today
@@ -344,6 +358,10 @@ final class AppModel {
             sheet = .work(WorkDraft(day: today))
         case "overview":
             sheet = .dayOverview(today)
+        case "focus":
+            sheet = .focus(today.week)
+        case "expenses":
+            sheet = .expenses(today)
         case "pdf-week":
             sheet = .pdf(.week(today.week.adding(weeks: -1)))
         case "pdf-day":

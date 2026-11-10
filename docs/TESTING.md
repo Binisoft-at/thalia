@@ -86,3 +86,12 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 - [ ] Wochenziel-Balken: Strich = „Soll bis heute“, Erklärung darunter.
 - [ ] PDF: Tag abschließen → „Tag als PDF“, Woche abschließen/Bericht → „Woche als PDF“, Tagesübersicht → „PDF“: Vorschau prüfen (Titelseite, Ziele in Farbe, Tabellen), dann teilen (Dateien, AirDrop, Mail).
 
+## v5 (ab Version 1.4.0)
+- [ ] Heute → Ring oben (oder unten „Heute …“) → „Heute im Blick“: Kacheln Fokus / Ausgaben / Wochenziele, „Noch zu tun“ (tippen springt in die Kategorie).
+- [ ] Fokus: PH heute/Woche gegen Ziel, Balken Mo–So je Bereich in Farbe, Bereiche gegen ihr Wochenziel, Einträge (tippen bearbeitet, wischen löscht).
+- [ ] Ausgaben: Betrag sofort eintippen, „wofür“ optional (Vorschläge), „Hinzufügen“; heute/Woche, Balken, Liste. Ohne €-Messwert: „„Ausgaben“ anlegen“.
+- [ ] „+“ unten → „Ausgabe“ und „Fokus ansehen“.
+- [ ] Widgets neu hinzufügen (alte entfernen): klein, mittel (offene Punkte, PH, €), groß (Tag + Wochenziele + Kacheln Fokus/Ausgaben/Woche – jede Kachel öffnet ihre Ansicht), Sperrbildschirm rechteckig/inline.
+- [ ] Kontrollzentrum: „Thalia erfassen“ (öffnet Erfassen) und „Ausgabe“ (öffnet Ausgaben) zusätzlich zu „Power-Hours“.
+- [ ] Mac: unten links in der Seitenleiste grauer Überblick (Heute, Fokus, Ausgaben, Woche) – Klick öffnet die Ansicht; Menü „Gehe zu“: ⌘0 Heute im Blick, ⌘5 Fokus, ⌘6 Ausgaben.
+

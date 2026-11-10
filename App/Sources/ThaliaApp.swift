@@ -108,6 +108,13 @@ struct ThaliaCommands: Commands {
             Button("Rückblick") { app.sidebar = .review; app.tab = .review }
                 .keyboardShortcut("4")
             Divider()
+            Button("Heute im Blick") { app.commandTarget.sheet = .dayOverview(app.commandTarget.today) }
+                .keyboardShortcut("0")
+            Button("Fokus (Power-Hours)") { app.commandTarget.sheet = .focus(app.commandTarget.today.week) }
+                .keyboardShortcut("5")
+            Button("Ausgaben") { app.commandTarget.sheet = .expenses(app.commandTarget.today) }
+                .keyboardShortcut("6")
+            Divider()
             Button("Vorheriger Tag") { app.selectedDay = app.selectedDay.adding(days: -1) }
                 .keyboardShortcut("[")
             Button("Nächster Tag") { app.selectedDay = app.selectedDay.adding(days: 1) }

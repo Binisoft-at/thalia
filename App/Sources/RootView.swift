@@ -149,7 +149,11 @@ private struct MacRoot: View {
                 Label("Ziele", systemImage: "target").tag(AppTab.goals)
                 Label("Rückblick", systemImage: "chart.bar.xaxis").tag(AppTab.review)
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 300)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
+            .safeAreaInset(edge: .bottom) {
+                // F4.1: today and the week in a few grey lines, always in view.
+                SidebarGlance()
+            }
         } detail: {
             NavigationStack {
                 switch app.sidebar ?? .today {
@@ -212,6 +216,10 @@ private struct SheetContent: View {
             DayOverviewSheet(day: day)
         case .conditionals(let day):
             ConditionalsSheet(day: day)
+        case .focus(let week):
+            FocusSheet(week: week)
+        case .expenses(let day):
+            ExpensesSheet(day: day)
         case .pdf(let kind):
             WeekReader(week: kind.week, today: app.today) { context in
                 PDFPreviewSheet(kind: kind, context: context)

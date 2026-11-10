@@ -118,6 +118,9 @@ struct ThaliaShortcuts: AppShortcutsProvider {
         AppShortcut(intent: OpenPowerHoursIntent(),
                     phrases: ["Power-Hours in \(.applicationName) eintragen"],
                     shortTitle: "PH mit Beschreibung", systemImageName: "square.and.pencil")
+        AppShortcut(intent: OpenExpenseIntent(),
+                    phrases: ["Ausgabe in \(.applicationName) erfassen", "\(.applicationName) Ausgabe"],
+                    shortTitle: "Ausgabe", systemImageName: "eurosign.circle")
         AppShortcut(intent: CloseDayIntent(),
                     phrases: ["Tag in \(.applicationName) abschließen", "\(.applicationName) Tagesabschluss"],
                     shortTitle: "Tag abschließen", systemImageName: "moon.stars")

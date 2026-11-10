@@ -20,7 +20,7 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 4
+    public static let version = 5
 
     public static let catalog = TourCatalog<ThaliaTourSnapshot>(
         version: version,
@@ -79,6 +79,11 @@ public enum ThaliaTour {
                 macBody: "Oben in einer Kategorie stehen ihre Wochenziele als Balken. Trag den Wert ein – „daran gearbeitet“ hakt Thalia selbst ab. Nebensachen liegen unter „Weitere“, das Listen-Symbol setzt alles Offene auf einmal."
             ),
             TourStep(
+                id: "glance", since: 5, symbol: "eye", title: "Heute im Blick",
+                body: "Tippe oben auf den Ring (oder unten auf „Heute“): was noch zu tun ist, Fokus, Ausgaben und Wochenziele auf einen Blick. Fokus zeigt alle Power-Hours der Woche je Bereich, bei Ausgaben tippst du nur den Betrag ein. Im Kontrollzentrum gibt es jetzt auch „Thalia erfassen“ und „Ausgabe“.",
+                macBody: "Unten links in der Seitenleiste steht immer, wie der Tag und die Woche laufen – klicken öffnet Heute im Blick, Fokus oder Ausgaben. Kurz: ⌘0, ⌘5, ⌘6."
+            ),
+            TourStep(
                 id: "colours", since: 4, symbol: "paintpalette", title: "Farben, Namen, klare Knöpfe",
                 body: "Jedes Jahresziel hat jetzt seine Farbe. Oben siehst du die Kategorien mit Namen – das Raster-Symbol zeigt alle auf einmal. Die Knöpfe sagen, was sie tun: Erledigt, Teilweise, Nicht, Entfällt; bei Zahlen steht der Schritt drauf (− 0,5 / + 0,5), unter „…“ gibt es mehr.",
                 macBody: "Jedes Jahresziel hat jetzt seine Farbe. Die Knöpfe sagen, was sie tun: Erledigt, Teilweise, Nicht, Entfällt; bei Zahlen steht der Schritt drauf, unter „…“ gibt es mehr."
@@ -105,7 +110,7 @@ public enum ThaliaTour {
 
 /// The small snapshot widgets and the watch read from the shared App Group – never the full data.
 public struct TodaySummary: Codable, Equatable, Sendable {
-    public static let fileName = "today-v2.json"
+    public static let fileName = "today-v3.json"
 
     public struct MeasureLine: Codable, Equatable, Sendable {
         public var title: String
@@ -139,6 +144,36 @@ public struct TodaySummary: Codable, Equatable, Sendable {
     public var goalTitles: [String]
     public var updatedAt: Date
 
+    /// A weekly target on the large widget (v5).
+    public struct GoalLine: Codable, Equatable, Sendable {
+        public var title: String
+        public var value: Double
+        public var target: Double
+        public var unit: String
+        public var categoryKey: String
+
+        public init(title: String, value: Double, target: Double, unit: String, categoryKey: String) {
+            self.title = title
+            self.value = value
+            self.target = target
+            self.unit = unit
+            self.categoryKey = categoryKey
+        }
+
+        public var fraction: Double { target > 0 ? min(1, value / target) : 0 }
+    }
+
+    /// The next open items of today ("1.1 Protein im Zielbereich"), at most five (v5).
+    public var open: [String] = []
+    public var openCount: Int = 0
+    public var weekly: [GoalLine] = []
+    public var powerHoursWeek: Double = 0
+    /// Sum of the weekly power-hour targets, if the plan has any.
+    public var powerHoursTarget: Double?
+    /// Today's and the week's spending, if the plan has a € measurement.
+    public var expensesToday: Double?
+    public var expensesWeek: Double?
+
     public init(day: String, weekLabel: String, dayScore: Double?, weekScore: Double?, fill: Double, powerHours: Double,
                 isClosed: Bool, nextCategory: String?, measures: [MeasureLine], goalScores: [Double?], goalTitles: [String],
                 updatedAt: Date) {
@@ -166,7 +201,25 @@ public struct TodaySummary: Codable, Equatable, Sendable {
         goalScores: [7.0, 8.1, 6.4, 7.8, 6.0, 7.5, 6.9, 8.4, 5.0, 8.8],
         goalTitles: Template.goals.map(\.title),
         updatedAt: Date(timeIntervalSince1970: 0)
-    )
+    ).with {
+        $0.open = ["2.1 Atemübung", "2.2 Ins Journal eingetragen", "4 Bildschirm aus um 22:30"]
+        $0.openCount = 7
+        $0.weekly = [
+            GoalLine(title: "stammloop", value: 5, target: 8, unit: "PH", categoryKey: "3.2"),
+            GoalLine(title: "Zweite Aufschläge", value: 60, target: 100, unit: "Stück", categoryKey: "1.2"),
+        ]
+        $0.powerHoursWeek = 14.5
+        $0.powerHoursTarget = 28
+        $0.expensesToday = 23.4
+        $0.expensesWeek = 141
+    }
+
+    /// A copy with changes (keeps the long initialiser stable).
+    public func with(_ change: (inout TodaySummary) -> Void) -> TodaySummary {
+        var copy = self
+        change(&copy)
+        return copy
+    }
 
     /// Same content ignoring the time, so widgets reload only when something changed.
     public func hasSameContent(as other: TodaySummary?) -> Bool {

@@ -9,7 +9,9 @@ struct ThaliaWidgets: WidgetBundle {
     var body: some Widget {
         TodayWidget()
         WeekWidget()
+        CaptureControl()
         PowerHoursControl()
+        ExpenseControl()
     }
 }
 
@@ -86,13 +88,32 @@ struct TodayWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "ThaliaToday", provider: SummaryProvider()) { entry in
             TodayWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
-                .widgetURL(URL(string: "thalia://today"))
+                .containerBackground(for: .widget) { WidgetBackground() }
+                .widgetURL(URL(string: "thalia://glance"))
         }
         .configurationDisplayName("Heute")
-        .description("Wie viel heute erfasst ist, was als Nächstes offen ist, Power-Hours und Messwerte.")
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular, .accessoryInline])
+        .description("Was heute läuft: wie viel erfasst ist, was noch offen ist, Power-Hours, Ausgaben – groß auch die Wochenziele.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
+}
+
+/// A soft tint behind the home-screen widgets (the system draws its own on the Lock Screen).
+struct WidgetBackground: View {
+    var body: some View {
+        LinearGradient(colors: [accent.opacity(0.16), accent.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
+/// The goal colours (same as the app's palette).
+func widgetGoalColor(_ key: String) -> Color {
+    let colors: [Color] = [
+        Color(red: 0.93, green: 0.42, blue: 0.33), Color(red: 0.55, green: 0.38, blue: 0.86), Color(red: 0.05, green: 0.55, blue: 0.60),
+        Color(red: 0.30, green: 0.36, blue: 0.80), Color(red: 0.88, green: 0.62, blue: 0.12), Color(red: 0.90, green: 0.36, blue: 0.58),
+        Color(red: 0.36, green: 0.52, blue: 0.62), Color(red: 0.20, green: 0.62, blue: 0.36), Color(red: 0.95, green: 0.50, blue: 0.18),
+        Color(red: 0.76, green: 0.28, blue: 0.44),
+    ]
+    let number: Int = Int(key.split(separator: ".").first.map(String.init) ?? key) ?? 1
+    return colors[(max(1, number) - 1) % colors.count]
 }
 
 struct TodayWidgetView: View {
@@ -107,71 +128,246 @@ struct TodayWidgetView: View {
             Gauge(value: summary.dayScore.map { $0 / 10 } ?? summary.fill, in: 0...1) {
                 Image(systemName: summary.isClosed ? "checkmark.seal" : "checklist")
             } currentValueLabel: {
-                Text(summary.dayScore.map { Format.score($0) } ?? summary.fillText.replacingOccurrences(of: " %", with: ""))
+                Text(summary.dayScore.map { Format.score($0) } ?? "\(Int((summary.fill * 100).rounded()))")
             }
             .gaugeStyle(.accessoryCircular)
         case .accessoryInline:
-            Text("\(summary.statusText) · \(Format.powerHours(summary.powerHours))")
+            Text(inlineText)
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                Text(summary.isClosed ? "Tag \(Format.score(summary.dayScore, outOf: true))" : "Heute \(summary.fillText)")
+                Text(summary.isClosed ? "Tag \(Format.score(summary.dayScore, outOf: true))" : "Heute \(summary.fillText) · \(summary.openCount) offen")
                     .font(.headline)
-                Text(next)
+                    .lineLimit(1)
+                Text(summary.open.first ?? "Alles Wichtige erfasst")
                     .font(.caption)
                     .lineLimit(1)
-                Text(Format.powerHours(summary.powerHours))
+                Text(moneyAndFocus)
                     .font(.caption)
+                    .lineLimit(1)
             }
+        case .systemSmall:
+            small
         case .systemMedium:
-            HStack(spacing: 14) {
-                VStack(spacing: 6) {
-                    WidgetRing(summary: summary)
-                        .frame(width: 72, height: 72)
-                    Text(summary.isClosed ? "abgeschlossen" : summary.day)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            medium
+        default:
+            large
+        }
+    }
+
+    private var inlineText: String {
+        if summary.isClosed { return "Tag \(Format.score(summary.dayScore, outOf: false)) · \(Format.powerHours(summary.powerHours))" }
+        return "\(summary.fillText) · \(summary.openCount) offen · \(Format.powerHours(summary.powerHours))"
+    }
+
+    private var moneyAndFocus: String {
+        var parts: [String] = [Format.powerHours(summary.powerHours)]
+        if let expenses = summary.expensesToday { parts.append(Format.measure(expenses, unit: "€")) }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: Small
+
+    private var small: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                WidgetRing(summary: summary, lineWidth: 6)
+                    .frame(width: 58, height: 58)
+                Spacer(minLength: 0)
+                Text(summary.day)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+            Spacer(minLength: 0)
+            Text(summary.isClosed ? "Abgeschlossen" : (summary.openCount == 0 ? "Alles erfasst" : "\(summary.openCount) offen"))
+                .font(.subheadline.weight(.bold))
+            Label(Format.powerHours(summary.powerHours), systemImage: "bolt.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(widgetGoalColor("3"))
+        }
+    }
+
+    // MARK: Medium
+
+    private var medium: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                WidgetRing(summary: summary, lineWidth: 7)
+                    .frame(width: 70, height: 70)
+                Text(summary.isClosed ? "abgeschlossen" : summary.day)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(summary.openCount == 0 ? "Alles Wichtige erfasst" : "Noch zu tun · \(summary.openCount)")
+                    .font(.caption.weight(.bold))
+                ForEach(summary.open.prefix(3), id: \.self) { line in
+                    OpenLine(text: line)
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(next).font(.caption.weight(.semibold)).lineLimit(1)
-                    Text(Format.powerHours(summary.powerHours)).font(.caption)
-                    ForEach(summary.measures.prefix(3), id: \.title) { line in
-                        HStack(spacing: 4) {
-                            Image(systemName: line.met == true ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(line.met == true ? .green : .secondary)
-                            Text("\(line.title) \(line.value)")
-                            Text(line.target).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                HStack(spacing: 10) {
+                    Link(destination: URL(string: "thalia://focus")!) {
+                        FocusChip(summary: summary)
+                    }
+                    if let expenses = summary.expensesToday {
+                        Link(destination: URL(string: "thalia://expense")!) {
+                            Label(Format.measure(expenses, unit: "€"), systemImage: "eurosign.circle.fill")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(widgetGoalColor("8"))
                         }
-                        .font(.caption2)
-                        .lineLimit(1)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: Large
+
+    private var large: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                WidgetRing(summary: summary, lineWidth: 7)
+                    .frame(width: 64, height: 64)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Heute · \(summary.day)")
+                        .font(.headline)
+                    Text(summary.isClosed ? "Abgeschlossen" : "\(summary.fillText) erfasst · \(summary.openCount) offen")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let next = summary.nextCategory, !summary.isClosed {
+                        Text("Weiter: \(next)")
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
             }
-        default:
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top) {
-                    WidgetRing(summary: summary, lineWidth: 5)
-                        .frame(width: 54, height: 54)
-                    Spacer()
-                    Text(summary.weekLabel)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+            if !summary.open.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(summary.open.prefix(4), id: \.self) { line in
+                        OpenLine(text: line)
+                    }
                 }
-                Text(next)
-                    .font(.caption2.weight(.semibold))
-                    .lineLimit(2)
-                Text(Format.powerHours(summary.powerHours))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            }
+            if !summary.weekly.isEmpty {
+                Divider()
+                Text("Wochenziele · \(summary.weekLabel)")
+                    .font(.caption.weight(.bold))
+                ForEach(summary.weekly.prefix(3), id: \.title) { line in
+                    WeeklyLine(line: line)
+                }
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                Link(destination: URL(string: "thalia://focus")!) {
+                    WidgetTile(symbol: "bolt.fill", title: "Fokus", value: Format.powerHours(summary.powerHoursWeek),
+                               detail: summary.powerHoursTarget.map { "von \(Format.number($0)) PH" } ?? "Woche", tint: widgetGoalColor("3"))
+                }
+                Link(destination: URL(string: "thalia://expense")!) {
+                    WidgetTile(symbol: "eurosign.circle.fill", title: "Ausgaben",
+                               value: Format.measure(summary.expensesToday ?? 0, unit: "€"),
+                               detail: summary.expensesWeek.map { "Woche \(Format.measure($0, unit: "€"))" } ?? "erfassen", tint: widgetGoalColor("8"))
+                }
+                Link(destination: URL(string: "thalia://week")!) {
+                    WidgetTile(symbol: "calendar", title: "Woche", value: Format.score(summary.weekScore, outOf: false),
+                               detail: summary.weekLabel, tint: accent)
+                }
             }
         }
     }
+}
 
-    /// "Weiter: 2.1 Mentale Routinen" / "Alles erfasst" / "Abgeschlossen".
-    private var next: String {
-        if summary.isClosed { return "Tag abgeschlossen" }
-        if let next = summary.nextCategory { return "Weiter: \(next)" }
-        return summary.fill >= 1 ? "Alles erfasst – abschließen" : "Heute"
+private struct OpenLine: View {
+    let text: String
+
+    var body: some View {
+        let key: String = String(text.split(separator: " ").first ?? "")
+        HStack(spacing: 6) {
+            Circle()
+                .strokeBorder(widgetGoalColor(key), lineWidth: 1.5)
+                .frame(width: 9, height: 9)
+            Text(text)
+                .font(.caption)
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct WeeklyLine: View {
+    let line: TodaySummary.GoalLine
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(line.title)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Text("\(Format.number(line.value)) / \(Format.number(line.target)) \(line.unit)")
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(widgetGoalColor(line.categoryKey).opacity(0.18))
+                    Capsule().fill(widgetGoalColor(line.categoryKey))
+                        .frame(width: max(4, geometry.size.width * CGFloat(line.fraction)))
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+}
+
+private struct FocusChip: View {
+    let summary: TodaySummary
+
+    var body: some View {
+        let fraction: Double = summary.powerHoursTarget.map { $0 > 0 ? min(1, summary.powerHoursWeek / $0) : 0 } ?? 0
+        VStack(alignment: .leading, spacing: 3) {
+            Label("\(Format.powerHours(summary.powerHours)) heute", systemImage: "bolt.fill")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(widgetGoalColor("3"))
+            if summary.powerHoursTarget != nil {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(widgetGoalColor("3").opacity(0.18))
+                        Capsule().fill(widgetGoalColor("3")).frame(width: max(4, geometry.size.width * CGFloat(fraction)))
+                    }
+                }
+                .frame(width: 80, height: 4)
+            }
+        }
+    }
+}
+
+private struct WidgetTile: View {
+    let symbol: String
+    let title: String
+    let value: String
+    let detail: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(.subheadline, design: .rounded).weight(.bold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(detail)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.12), in: .rect(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -181,7 +377,7 @@ struct WeekWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "ThaliaWeek", provider: SummaryProvider()) { entry in
             WeekWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(for: .widget) { WidgetBackground() }
                 .widgetURL(URL(string: "thalia://week"))
         }
         .configurationDisplayName("Woche")
@@ -232,7 +428,33 @@ struct WeekWidgetView: View {
     }
 }
 
-// MARK: Control Center (U11)
+// MARK: Control Center (U11, F3)
+
+/// "Thalia erfassen": opens the app at "Erfassen" (power-hours, spending, measurement, note …).
+struct CaptureControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "at.binisoft.thalia.capture") {
+            ControlWidgetButton(action: OpenCaptureIntent()) {
+                Label("Thalia erfassen", systemImage: "plus.circle.fill")
+            }
+        }
+        .displayName("Thalia erfassen")
+        .description("Öffnet Thalia im Fenster „Erfassen“.")
+    }
+}
+
+/// "Ausgabe erfassen": opens the app at the spending sheet, amount field ready.
+struct ExpenseControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "at.binisoft.thalia.expense") {
+            ControlWidgetButton(action: OpenExpenseIntent()) {
+                Label("Ausgabe", systemImage: "eurosign.circle.fill")
+            }
+        }
+        .displayName("Ausgabe erfassen")
+        .description("Öffnet Thalia bei den Ausgaben.")
+    }
+}
 
 /// "Power-Hours erfassen" in Control Center, on the Lock Screen or the Action button: opens Thalia
 /// at the power-hour sheet.
