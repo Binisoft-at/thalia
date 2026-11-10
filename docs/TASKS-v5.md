@@ -20,4 +20,5 @@ Quelle: Binis Nachricht „Thalia Korrekturen v5“. Status: [ ] offen · [~] in
 ## Jetzt
 - [x] Umgesetzt (lokal geprüft): TodaySummary v3 (offene Punkte, Wochenziele, PH Woche/Ziel, Ausgaben), WeekContext openToDo/expenseMeasure/workTarget/weeklyLines, Glance.swift (Fokus, Ausgaben, Kacheln, Noch zu tun, Mac-Seitenleiste), Widgets neu (klein/mittel/groß/Sperrbildschirm, Links zu Fokus/Ausgaben/Woche), Controls „Thalia erfassen“ + „Ausgabe“, Kurzbefehl „Ausgabe“, Menü ⌘0/⌘5/⌘6, Tour v5, Version 1.4.0.
 - [x] CI run 18 grün; Screenshots geprüft (Heute im Blick, Fokus, Ausgaben, Mac mit grauem Überblick). Nachgebessert: Kacheltitel ohne Umbruch, Bereiche im Fokus mit eigenen Farben (Diagramm = Zeilen).
-- Nächster Schritt: TestFlight 1.4.0.
+- [x] **TestFlight 1.4.0 (32)** iOS + macOS: VALID, IN_BETA_TESTING. iOS brauchte bei Apple ~1 h; ein zweiter iOS-Upload (33, identischer Code) folgt als Duplikat.
+- Nächster Schritt: Bini testet v5 (TESTING.md „v5“), Feedback → v6.
