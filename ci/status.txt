@@ -1,0 +1,3 @@
+run 19 (push) commit 183b43476511cb63a7102b12abc5fb8486329f86
+core-tests=success build=success
+details: https://github.com/Binisoft-at/thalia/actions/runs/42853880434

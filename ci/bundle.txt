@@ -1,0 +1,4 @@
+Bundle layout of Thalia.app:
+Debug-iphonesimulator/Thalia.app
+Debug-iphonesimulator/Thalia.app/PlugIns/ThaliaWidgets.appex
+Debug-iphonesimulator/Thalia.app/Watch/ThaliaWatch.app
