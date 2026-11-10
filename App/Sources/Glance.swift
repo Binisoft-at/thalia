@@ -55,8 +55,9 @@ struct FocusContent: View {
         let todayTotals = context.workTotals(on: today)
         let target: Double? = context.workTarget
         let bars: [DayBar] = dayBars
-        let areaKeys: [String] = Array(Set(bars.map(\.category))).sorted()
         let areas: [MeasureDefinition] = context.measures.filter { $0.record?.isWork == true }
+        // One colour per area, the same in the chart and in the rows below.
+        let areaKeys: [String] = Array(Set(bars.map(\.category) + areas.map { workCategory($0) })).sorted()
         List {
             Section {
                 HeroCard(title: "Power-Hours", subtitle: week.isEmpty ? "Noch nichts erfasst" : week.explanation,
@@ -75,7 +76,7 @@ struct FocusContent: View {
                             .foregroundStyle(by: .value("Bereich", bar.category))
                             .cornerRadius(4)
                     }
-                    .chartForegroundStyleScale(domain: areaKeys, range: areaKeys.map { GoalPalette.color(category: $0) })
+                    .chartForegroundStyleScale(domain: areaKeys, range: areaKeys.map { FocusContent.areaColor($0, among: areaKeys) })
                     .chartXScale(domain: context.week.days.map(\.weekday.short))
                     .frame(height: 170)
                 }
@@ -83,7 +84,8 @@ struct FocusContent: View {
             if !areas.isEmpty {
                 Section("Bereiche · Woche gegen Ziel") {
                     ForEach(areas) { measure in
-                        AreaRow(context: context, measure: measure, today: today)
+                        AreaRow(context: context, measure: measure, today: today,
+                                tint: FocusContent.areaColor(workCategory(measure), among: areaKeys))
                     }
                 }
             }
@@ -133,6 +135,17 @@ struct FocusContent: View {
         .compactListSections()
     }
 
+    /// Areas side by side need different colours (several share goal 3's colour elsewhere).
+    static let areaPalette: [Color] = [
+        Color(red: 0.05, green: 0.55, blue: 0.60), Color(red: 0.95, green: 0.50, blue: 0.18), Color(red: 0.55, green: 0.38, blue: 0.86),
+        Color(red: 0.90, green: 0.36, blue: 0.58), Color(red: 0.20, green: 0.62, blue: 0.36), Color(red: 0.30, green: 0.36, blue: 0.80),
+    ]
+
+    static func areaColor(_ key: String, among keys: [String]) -> Color {
+        let index: Int = keys.firstIndex(of: key) ?? 0
+        return areaPalette[index % areaPalette.count]
+    }
+
     private var dayBars: [DayBar] {
         var sums: [String: DayBar] = [:]
         for record in context.workRecords {
@@ -141,6 +154,11 @@ struct FocusContent: View {
             sums[key] = DayBar(day: record.day, category: record.categoryKey, hours: previous + record.powerHours)
         }
         return sums.values.sorted { $0.id < $1.id }
+    }
+
+    private func workCategory(_ measure: MeasureDefinition) -> String {
+        if case .work(let category)? = measure.record?.source { return category }
+        return measure.categoryKey
     }
 
     private func average(_ total: Double) -> String {
@@ -154,6 +172,7 @@ private struct AreaRow: View {
     let context: WeekContext
     let measure: MeasureDefinition
     let today: DayKey
+    let tint: Color
 
     var body: some View {
         let value: Double = context.weekValue(measure) ?? 0
@@ -171,7 +190,7 @@ private struct AreaRow: View {
                     .foregroundStyle(reached ? .green : .primary)
             }
             if target > 0 {
-                GoalBar(fraction: min(1, value / target), reached: reached, tint: GoalPalette.color(category: measure.categoryKey))
+                GoalBar(fraction: min(1, value / target), reached: reached, tint: tint)
             }
             Text(todayValue > 0 ? "heute \(Format.powerHours(todayValue))" : "heute noch nichts")
                 .font(.caption)
@@ -420,8 +439,8 @@ struct GlanceTiles: View {
                        tint: GoalPalette.color(goal: "8")) {
                 app.sheet = .expenses(day)
             }
-            GlanceTile(symbol: "chart.bar.fill", title: "Wochenziele", value: goals.isEmpty ? "–" : "\(reached)/\(goals.count)",
-                       detail: goals.isEmpty ? "keine" : "erreicht", tint: GoalPalette.color(goal: "2")) {
+            GlanceTile(symbol: "chart.bar.fill", title: "Ziele", value: goals.isEmpty ? "–" : "\(reached)/\(goals.count)",
+                       detail: goals.isEmpty ? "keine Wochenziele" : "Wochenziele erreicht", tint: GoalPalette.color(goal: "2")) {
                 app.sheet = .focus(day.week)
             }
         }
@@ -441,6 +460,8 @@ private struct GlanceTile: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label(title, systemImage: symbol)
                     .font(.caption.weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .foregroundStyle(tint)
                 Text(value)
                     .font(.system(.title3, design: .rounded).weight(.bold))
