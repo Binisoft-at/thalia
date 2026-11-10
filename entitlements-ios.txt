@@ -1,0 +1,3 @@
+ok: Thalia.app has every entitlement from Config/iOS/Thalia.entitlements
+ok: Thalia.app/Watch/ThaliaWatch.app has every entitlement from Config/watchOS/ThaliaWatch.entitlements
+ok: Thalia.app/PlugIns/ThaliaWidgets.appex has every entitlement from Config/Widgets/ThaliaWidgets.entitlements

@@ -1,0 +1,3 @@
+run 33 (workflow_dispatch) commit 183b43476511cb63a7102b12abc5fb8486329f86
+prune=success upload=success build=33
+details: https://github.com/Binisoft-at/thalia/actions/runs/42859502189
