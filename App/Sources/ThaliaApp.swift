@@ -14,10 +14,6 @@ struct ThaliaApp: App {
     #endif
     @State private var app: AppModel
     @State private var health = HealthService()
-    #if os(macOS)
-    /// Thalia in the menu bar (R96), on by default, switch in Settings.
-    @AppStorage(MenuBarSettings.enabledKey) private var menuBarEnabled = true
-    #endif
 
     init() {
         AppLog.bootstrap(appName: AppInfo.name)
@@ -75,7 +71,7 @@ struct ThaliaApp: App {
             .frame(minWidth: 540, minHeight: 640)
         }
 
-        MenuBarExtra(isInserted: $menuBarEnabled) {
+        MenuBarExtra(isInserted: menuBarInserted) {
             MenuBarContent()
                 .environment(app)
                 .environment(health)
@@ -97,6 +93,19 @@ struct ThaliaApp: App {
         }
         #endif
     }
+
+    #if os(macOS)
+    /// Thalia in the menu bar (R96), on by default, switch in Settings. Writes only real changes.
+    private var menuBarInserted: Binding<Bool> {
+        let model: AppModel = app
+        #if DEBUG
+        // CI check: the close-day screenshot starts without the menu bar extra, to tell whether
+        // it is involved should the main window stay away again.
+        if model.launch.isDemo && model.launch.screen == "close-day" { return .constant(false) }
+        #endif
+        return Binding(get: { model.menuBarEnabled }, set: { model.menuBarEnabled = $0 })
+    }
+    #endif
 
     private var mainContent: some View {
         RootView()

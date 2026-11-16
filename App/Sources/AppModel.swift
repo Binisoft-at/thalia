@@ -149,6 +149,10 @@ final class AppModel {
     var mainWindowHeight: CGFloat = 800
     /// Mac menu bar label: "73 %", "7,5" once closed, "" without a plan (R96).
     var menuBarTitle = ""
+    /// Mac: Thalia in the menu bar (R96). Kept here and written to UserDefaults only on a real
+    /// change – an `@AppStorage` on the App struct bound to `MenuBarExtra(isInserted:)` left the
+    /// main thread hanging at launch, before the main window was built (CI runs 21–23).
+    private var menuBarStorage: Bool = UserDefaults.standard.object(forKey: MenuBarSettings.enabledKey) as? Bool ?? true
 
     static let inspectorKey = "today.inspector"
     private var inspectorStorage: Bool = UserDefaults.standard.bool(forKey: AppModel.inspectorKey)
@@ -195,6 +199,15 @@ final class AppModel {
         }
     }
 
+    var menuBarEnabled: Bool {
+        get { menuBarStorage }
+        set {
+            guard newValue != menuBarStorage else { return }
+            menuBarStorage = newValue
+            if !isSandbox { UserDefaults.standard.set(newValue, forKey: MenuBarSettings.enabledKey) }
+        }
+    }
+
     // MARK: The day (R1, R6, R7, R18)
 
     /// Watches the system day: midnight, time changes (iPhone) and the app becoming active (Mac).
@@ -212,8 +225,10 @@ final class AppModel {
             })
         }
         #if os(macOS)
-        observers.append(center.addObserver(forName: ModelContext.didSave, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateMenuBarTitle() }
+        // Delivered on the posting thread and handed to the main actor afterwards: a save on a
+        // background context never waits for the main thread here.
+        observers.append(center.addObserver(forName: ModelContext.didSave, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor in self?.updateMenuBarTitle() }
         })
         #endif
     }

@@ -15,16 +15,16 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @AppStorage(TodaySettings.askConditionalsKey) private var askConditionals = false
-    #if os(macOS)
-    @AppStorage(MenuBarSettings.enabledKey) private var menuBarEnabled = true
-    #endif
 
     var body: some View {
         Form {
             Section("Darstellung") {
                 GermanAppearancePicker()
                 #if os(macOS)
-                Toggle("Thalia in der Menüleiste", isOn: $menuBarEnabled)
+                Toggle("Thalia in der Menüleiste", isOn: Binding(
+                    get: { app.menuBarEnabled },
+                    set: { app.menuBarEnabled = $0 }
+                ))
                 #endif
             }
 
