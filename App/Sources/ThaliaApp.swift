@@ -3,6 +3,9 @@ import SwiftData
 import UserNotifications
 import BinisoftKit
 import ThaliaCore
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct ThaliaApp: App {
@@ -18,6 +21,9 @@ struct ThaliaApp: App {
 
     init() {
         AppLog.bootstrap(appName: AppInfo.name)
+        #if os(macOS)
+        NSWindow.allowsAutomaticWindowTabbing = false
+        #endif
         BinisoftTips.configure()
         let opened = Persistence.shared
         let model = AppModel(container: opened.container, mode: opened.mode)
@@ -39,8 +45,11 @@ struct ThaliaApp: App {
 
     var body: some Scene {
         #if os(macOS)
-        // Exactly one main window (R30): no "New Window", ⌘N stays power-hours.
-        Window("Thalia", id: "main") {
+        // One main window (R30): the File menu has no "New Window" (⌘N stays power-hours), tabs
+        // are off, and every "open Thalia" goes through MainWindow.show, which brings the existing
+        // window to the front. A single `Window` scene did not open at launch next to the menu bar
+        // extra – not even after a reopen event – so this stays a WindowGroup.
+        WindowGroup(id: "main") {
             mainContent
         }
         .defaultSize(width: 1180, height: 820)
@@ -95,6 +104,27 @@ struct ThaliaApp: App {
 }
 
 #if os(macOS)
+/// The one main window on the Mac (R30): shows the existing window if there is one, and opens a
+/// new one only when it was closed.
+@MainActor
+enum MainWindow {
+    static var existing: NSWindow? {
+        NSApp.windows.first { window in
+            (window.identifier?.rawValue.hasPrefix("main") ?? false) && (window.isVisible || window.isMiniaturized)
+        }
+    }
+
+    static func show(_ openWindow: OpenWindowAction) {
+        if let window = existing {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            openWindow(id: "main")
+        }
+        NSApp.activate()
+    }
+}
+
 /// The Mac Settings window is a toast layer while it is in front: import and archive open inside
 /// it (R24), so their "Widerrufen" shows there and not behind it on the main window (R13).
 /// The host sits on an empty overlay, so the settings content keeps its state when it toggles.

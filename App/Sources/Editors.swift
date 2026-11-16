@@ -575,6 +575,7 @@ struct MeasureForm: View {
                 TextField("Text", text: $text, axis: .vertical)
             } else if isTime {
                 DatePicker("Uhrzeit", selection: $time, displayedComponents: .hourAndMinute)
+                    .thaliaDateLocale()
             } else {
                 HStack {
                     TextField("Wert", text: $valueText)
@@ -1425,8 +1426,10 @@ struct MeasureDefinitionEditor: View {
     private var targetFields: some View {
         if usesTime {
             DatePicker(isRange ? "Von" : "Uhrzeit", selection: $lowerTime, displayedComponents: .hourAndMinute)
+                .thaliaDateLocale()
             if isRange {
                 DatePicker("Bis", selection: $upperTime, displayedComponents: .hourAndMinute)
+                    .thaliaDateLocale()
             }
         } else {
             HStack {

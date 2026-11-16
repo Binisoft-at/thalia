@@ -137,9 +137,9 @@ struct SettingsView: View {
     private func startTour() {
         #if os(macOS)
         if inSettingsWindow {
-            openWindow(id: "main")
-            NSApp.activate()
-            NSApp.keyWindow?.close()
+            let settings = NSApp.keyWindow
+            MainWindow.show(openWindow)
+            settings?.close()
         }
         #endif
         app.startTour()
@@ -307,6 +307,7 @@ struct RemindersSettingsView: View {
                 Toggle("Morgenstart", isOn: $settings.morning)
                 if settings.morning {
                     DatePicker("Uhrzeit", selection: minutesBinding(\.morningMinutes), displayedComponents: .hourAndMinute)
+                        .thaliaDateLocale()
                     HStack(spacing: 4) {
                         ForEach(Weekday.allCases, id: \.self) { day in
                             let on = DayMask(rawValue: settings.morningDays).contains(day)
@@ -326,6 +327,7 @@ struct RemindersSettingsView: View {
                 Toggle("Tagesabschluss", isOn: $settings.evening)
                 if settings.evening {
                     DatePicker("Uhrzeit", selection: minutesBinding(\.eveningMinutes), displayedComponents: .hourAndMinute)
+                        .thaliaDateLocale()
                 }
             } footer: {
                 Text("Abends Belege prüfen, Fehlendes ergänzen, reflektieren. Ist der Tag schon abgeschlossen, kommt keine Erinnerung; „In 30 Min.“ erinnert später noch einmal.")
@@ -337,6 +339,7 @@ struct RemindersSettingsView: View {
                         ForEach(Weekday.allCases, id: \.self) { day in Text(day.name).tag(day.rawValue) }
                     }
                     DatePicker("Uhrzeit", selection: minutesBinding(\.weeklyMinutes), displayedComponents: .hourAndMinute)
+                        .thaliaDateLocale()
                 }
             } footer: {
                 #if os(macOS)
@@ -427,7 +430,9 @@ struct GoalYearSettingsView: View {
         Form {
             Section {
                 DatePicker("Beginn", selection: dayBinding(\.start), displayedComponents: .date)
+                    .thaliaDateLocale()
                 DatePicker("Ende", selection: dayBinding(\.end), displayedComponents: .date)
+                    .thaliaDateLocale()
                 Picker("Zielüberprüfung", selection: $period.reviewWeek) {
                     ForEach(0..<60, id: \.self) { offset in
                         let week = period.start.week.adding(weeks: offset)

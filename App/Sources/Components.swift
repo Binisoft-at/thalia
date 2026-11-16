@@ -515,6 +515,7 @@ struct CaptureDayRow: View {
                 ChipButton(title: "Gestern", isSelected: day == yesterday) { day = yesterday }
                 DatePicker("Datum", selection: date, displayedComponents: .date)
                     .labelsHidden()
+                    .thaliaDateLocale()
                     .datePickerStyle(.compact)
             }
             if day != today {

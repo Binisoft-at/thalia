@@ -45,6 +45,12 @@ extension View {
     func thaliaPrimaryAction() -> some View {
         self.buttonStyle(.glassProminent).tint(Color.accentFill)
     }
+
+    /// Date and time pickers in German (16.11.26, 23:00) like every other date in the app, also
+    /// on a device set to another language.
+    func thaliaDateLocale() -> some View {
+        environment(\.locale, Locale(identifier: "de_AT"))
+    }
 }
 
 // MARK: Contrast (R44)

@@ -27,7 +27,8 @@ struct SummaryTile: View {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -549,11 +550,18 @@ private struct GlanceTile: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                Label(title, systemImage: symbol)
-                    .font(.caption.weight(.bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .foregroundStyle(tint)
+                // Icon and text separately, so a long title ("Wochenziele") shrinks instead of
+                // being cut off in a narrow tile.
+                HStack(spacing: 4) {
+                    Image(systemName: symbol)
+                        .imageScale(.small)
+                    Text(title)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint)
+                .accessibilityElement(children: .combine)
                 Text(value)
                     .font(.system(.title3, design: .rounded).weight(.bold))
                     .monospacedDigit()

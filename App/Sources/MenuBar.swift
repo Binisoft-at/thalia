@@ -177,8 +177,7 @@ struct MenuBarContent: View {
     // MARK: Window
 
     private func openMain() {
-        openWindow(id: "main")
-        NSApp.activate()
+        MainWindow.show(openWindow)
     }
 
     private func closeDay() {

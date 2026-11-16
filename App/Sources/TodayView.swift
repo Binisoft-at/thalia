@@ -1152,7 +1152,9 @@ struct CategoryPage: View {
                 Text("\(category.key)  \(category.title)")
                     .font(.headline)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .truncationMode(.tail)
+                    .layoutPriority(1)
                 Spacer(minLength: 4)
                 if entry.knockedOut || entry.overridden {
                     Image(systemName: entry.overridden ? "hand.raised.fill" : "exclamationmark.octagon.fill")
@@ -1190,7 +1192,7 @@ struct CategoryPage: View {
                 } else if !tickable.isEmpty {
                     QuickAllMenu(items: tickable, day: day, context: context, scope: category.title, title: "Alle …",
                                  onTint: true, offersClear: false)
-                        .fixedSize()
+                        .frame(width: 34, height: 28)
                 }
             }
             if showsInfo, !info.isEmpty {
@@ -1888,6 +1890,7 @@ struct MeasureInput: View {
                 set: { app.setValue(MeasureInput.pickedMinutes($0), for: measure, day: day, toast: false) }
             ), displayedComponents: .hourAndMinute)
             .labelsHidden()
+            .thaliaDateLocale()
         } else {
             HStack(spacing: 6) {
                 DatePicker("", selection: Binding(
@@ -1898,6 +1901,7 @@ struct MeasureInput: View {
                     }
                 ), displayedComponents: .hourAndMinute)
                 .labelsHidden()
+                .thaliaDateLocale()
                 .opacity(0.45)
                 .accessibilityLabel("\(measure.title): Uhrzeit wählen")
                 Button {
@@ -2413,13 +2417,14 @@ struct QuickAllMenu: View {
                 .disabled(marked.isEmpty)
             }
         } label: {
-            if let title, onTint {
-                Label(title, systemImage: "checklist")
-                    .font(.caption.weight(.bold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.22), in: .capsule)
+            if onTint {
+                // A small fixed capsule in the one-line category head (R38): the menu label grew to
+                // a tall pill and pushed the category title out (CI run 21).
+                Image(systemName: "checklist")
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(.white)
+                    .frame(width: 34, height: 28)
+                    .background(Color.white.opacity(0.22), in: .capsule)
             } else if let title {
                 Label(title, systemImage: "checklist")
             } else {
