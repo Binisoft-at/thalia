@@ -10,6 +10,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        let _ = diagBody("RootView")
         navigation
             .modifier(AppChrome(app: app, health: health))
             .modifier(TourPresenter(app: app, health: health))
@@ -227,6 +228,7 @@ private struct MacRoot: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        let _ = diagBody("MacRoot")
         @Bindable var app = app
         NavigationSplitView {
             List(selection: $app.sidebar) {
@@ -255,8 +257,10 @@ private struct MacRoot: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { height in
+            diagNote("main window height \(Int(height))")
             app.mainWindowHeight = height
         }
+        .onAppear { diagNote("MacRoot appeared") }
     }
 }
 #endif

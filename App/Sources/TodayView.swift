@@ -10,7 +10,9 @@ struct TodayView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        let _ = diagBody("TodayView")
         WeekReader(week: app.selectedDay.week, today: app.today) { context in
+            let _ = diagBody("TodayContent")
             TodayContent(context: context)
         }
     }

@@ -23,6 +23,9 @@ struct ThaliaApp: App {
         AppLog.bootstrap(appName: AppInfo.name)
         #if os(macOS)
         NSWindow.allowsAutomaticWindowTabbing = false
+        #if DEBUG
+        LaunchDiagnostics.start()
+        #endif
         #endif
         BinisoftTips.configure()
         let opened = Persistence.shared
@@ -44,6 +47,7 @@ struct ThaliaApp: App {
     }
 
     var body: some Scene {
+        let _ = diagBody("App")
         #if os(macOS)
         // One main window (R30): the File menu has no "New Window" (⌘N stays power-hours), tabs
         // are off, and every "open Thalia" goes through MainWindow.show, which brings the existing
@@ -79,6 +83,7 @@ struct ThaliaApp: App {
                 .appearanceFromSettings()
                 .tint(Brand.accent)
         } label: {
+            let _ = diagBody("MenuBarLabel")
             MenuBarLabel(title: app.menuBarTitle)
         }
         .menuBarExtraStyle(.window)
@@ -149,6 +154,7 @@ struct ThaliaCommands: Commands {
     let app: AppModel
 
     var body: some Commands {
+        let _ = diagBody("Commands")
         CommandGroup(replacing: .newItem) {
             Button("Power-Hours erfassen…") { present { .work(WorkDraft(day: $0.captureDay)) } }
                 .keyboardShortcut("n")

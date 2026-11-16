@@ -860,6 +860,7 @@ struct SidebarGlance: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        let _ = diagBody("SidebarGlance")
         WeekReader(week: app.today.week, today: app.today) { context in
             SidebarGlanceText(context: context, day: app.today)
         }
