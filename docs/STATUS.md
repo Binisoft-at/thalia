@@ -10,8 +10,12 @@ Letzte Aktualisierung: 2026-11-16 · Arbeitsliste: [TASKS-v7.md](TASKS-v7.md) ·
 - Neue Dateien: `App/Sources/SheetChrome.swift` (Toasts im obersten Fenster, `thaliaSheetFrame`, ×-Knopf), `Glance.swift`,
   `Focus.swift`, `Expenses.swift`, `MenuBar.swift`; `Shared/WidgetPublisher.swift`, `WidgetActions.swift`, `GoalPalette.swift`;
   Core `Merge.swift`, `SyncGerman.swift`; `WatchWidgets/`. Kontrastfarben (R44) als Assets `ThaliaAccentFill`, `Mark…Text`.
-- Nächste Schritte: Push mit `[screenshots]` → Bilder prüfen (Heute iPhone mit Titelmenü, Heute im Blick, Fokus, Ausgaben,
-  Woche, Wochenziele, Zielüberprüfung, Mac Heute/Woche/Abschluss/Heute im Blick) → `[testflight]` → TESTING.md „v7“.
+- CI: Lauf 21 sofort grün (Build), Screenshots geprüft. Mac zeigte in 21–24 kein Fenster: `@AppStorage` im App-Struct an
+  `MenuBarExtra(isInserted:)` blockierte den Hauptthread nach dem Start (gefunden mit `LaunchDiagnostics`, nur Debug).
+  Behoben in Lauf 25 (Schalter im AppModel). Dazu: Datum/Uhrzeit-Picker immer deutsch, Kategorie-Kopf einzeilig.
+- Mac-Layout nur am CI-Bildschirm (1024 × 768) gesehen: dort wird die Seitenleiste schmal und rechts abgeschnitten;
+  auf normalen Mac-Bildschirmen (Fenster 1180 pt) prüfen.
+- Nächste Schritte: `[testflight]` (iOS erst nach der App-ID `…watchkitapp.widgets`) → TESTING.md „v7“.
 - Bekannte Risiken mit Ausweichweg: [TASKS-v7.md](TASKS-v7.md) Abschnitt 7 (Widget-Abhaken aus der Erweiterung, `#Index`
   mit CloudKit, Transaktion-Betrag, Ziffernblock-Leiste).
 

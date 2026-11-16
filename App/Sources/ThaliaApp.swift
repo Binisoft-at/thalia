@@ -98,11 +98,6 @@ struct ThaliaApp: App {
     /// Thalia in the menu bar (R96), on by default, switch in Settings. Writes only real changes.
     private var menuBarInserted: Binding<Bool> {
         let model: AppModel = app
-        #if DEBUG
-        // CI check: the close-day screenshot starts without the menu bar extra, to tell whether
-        // it is involved should the main window stay away again.
-        if model.launch.isDemo && model.launch.screen == "close-day" { return .constant(false) }
-        #endif
         return Binding(get: { model.menuBarEnabled }, set: { model.menuBarEnabled = $0 })
     }
     #endif
