@@ -21,8 +21,12 @@ struct LogPowerHourIntent: AppIntent {
     @Parameter(title: "Anzahl", default: 1)
     var count: Double
 
+    /// Required (K1): power-hours always say what they were for.
+    @Parameter(title: "Wofür")
+    var task: String
+
     static var parameterSummary: some ParameterSummary {
-        Summary("\(\.$count) Power-Hour für \(\.$area) erfassen")
+        Summary("\(\.$count) Power-Hour für \(\.$area): \(\.$task)")
     }
 
     @MainActor
@@ -35,10 +39,14 @@ struct LogPowerHourIntent: AppIntent {
             return .result(dialog: "Den Bereich „\(area)“ kenne ich nicht. Zum Beispiel: stammloop, HAEB, Sonstige Aufgaben.")
         }
         let powerHours = max(0.25, min(12, (count * 4).rounded() / 4))
-        store.addWork(day: .today(), categoryKey: category.key, task: "", powerHours: powerHours)
+        let what = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !what.isEmpty else {
+            return .result(dialog: "Woran hast du gearbeitet? Ohne Beschreibung trage ich keine Power-Hours ein.")
+        }
+        store.addWork(day: .today(), categoryKey: category.key, task: what, powerHours: powerHours)
         let today = DayKey.today()
         let total = store.weekContext(for: today.week, today: today).workTotals(on: today)
-        return .result(dialog: "\(Format.powerHours(powerHours)) für \(category.title) erfasst. Heute: \(total.shortText).")
+        return .result(dialog: "\(Format.powerHours(powerHours)) für \(category.title) (\(what)) erfasst. Heute: \(total.shortText).")
     }
 }
 

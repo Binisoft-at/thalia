@@ -667,8 +667,16 @@ struct CategoryPage: View {
             ForEach(groups, id: \.group) { group in
                 Section {
                     ForEach(group.measures) { measure in
-                        MeasureRow(measure: measure, context: context, day: day,
-                                   healthSuggestion: context.dayValue(measure, on: day) == nil ? health.suggestion(code: measure.code, day: day) : nil)
+                        if context.isExpense(measure) {
+                            // K2: every spending on its own line, with what it was for.
+                            ExpenseInputRow(measure: measure, context: context, day: day)
+                            ForEach(context.expenseEntries(measure, on: day)) { entry in
+                                ExpenseEntryRow(entry: entry)
+                            }
+                        } else {
+                            MeasureRow(measure: measure, context: context, day: day,
+                                       healthSuggestion: context.dayValue(measure, on: day) == nil ? health.suggestion(code: measure.code, day: day) : nil)
+                        }
                     }
                 } header: {
                     Text(group.group.label)
@@ -1155,7 +1163,37 @@ struct MeasureInput: View {
 
     var body: some View {
         if let workCategory {
-            stepper(step: 0.5, unitLabel: "PH") { app.setWorkTotal($0, categoryKey: workCategory, day: day) }
+            // K1: no bare + / − – power-hours are always entered with what they were for.
+            HStack(spacing: 8) {
+                Text(value.map { Format.powerHours($0) } ?? "0 PH")
+                    .font(.system(.callout, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                Button {
+                    app.sheet = .work(WorkDraft(day: day, categoryKey: workCategory))
+                } label: {
+                    Label("Erfassen", systemImage: "plus")
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .foregroundStyle(.white)
+                        .background(Brand.accent.gradient, in: .capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Power-Hours für \(measure.title) mit Beschreibung erfassen")
+            }
+        } else if context.isExpense(measure) {
+            Button {
+                app.sheet = .expenses(day)
+            } label: {
+                Label(value.map { Format.measure($0, unit: "€") } ?? "Ausgabe", systemImage: "plus")
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(.white)
+                    .background(GoalPalette.color(goal: "8").gradient, in: .capsule)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Ausgabe mit Betrag und Zweck erfassen")
         } else if record?.isTime ?? false {
             timeControl
         } else if record?.isText ?? false {
@@ -1208,24 +1246,13 @@ struct MeasureInput: View {
             }
             .accessibilityLabel("\(measure.title) plus \(Format.number(step)) \(unit)")
             Menu {
-                if let workCategory {
-                    Section("Hinzufügen") {
-                        ForEach(PowerHour.quick, id: \.self) { quick in
-                            Button("+ \(Format.powerHours(quick))") { app.addPowerHours(quick, categoryKey: workCategory, day: day) }
-                        }
-                    }
-                    Button("Mit Beschreibung, Ergebnis …", systemImage: "square.and.pencil") {
-                        app.sheet = .work(WorkDraft(day: day, categoryKey: workCategory))
-                    }
-                } else {
-                    Section("Hinzufügen") {
-                        ForEach([1.0, 2.0, 5.0, 10.0].map { $0 * step }, id: \.self) { amount in
-                            Button("+ \(Format.number(amount)) \(unit)") { set((value ?? 0) + amount) }
-                        }
+                Section("Hinzufügen") {
+                    ForEach([1.0, 2.0, 5.0, 10.0].map { $0 * step }, id: \.self) { amount in
+                        Button("+ \(Format.number(amount)) \(unit)") { set((value ?? 0) + amount) }
                     }
                 }
                 if value != nil {
-                    Button("Auf 0 setzen", systemImage: "arrow.counterclockwise", role: .destructive) { set(workCategory == nil ? nil : 0) }
+                    Button("Leeren", systemImage: "arrow.counterclockwise", role: .destructive) { set(nil) }
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -1575,17 +1602,32 @@ struct InlineWorkRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(spacing: 0) {
-                Text(Format.number(block.hours))
-                    .font(.system(.headline, design: .rounded))
-                    .monospacedDigit()
-                Text("PH")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            Menu {
+                Section("Menge") {
+                    ForEach(PowerHour.quick, id: \.self) { value in
+                        Button(Format.powerHours(value)) { app.store.setPowerHours(block, value) }
+                    }
+                }
+                Button("+ 0,25 PH", systemImage: "plus") { app.store.setPowerHours(block, block.hours + 0.25) }
+                Button("− 0,25 PH", systemImage: "minus") { app.store.setPowerHours(block, block.hours - 0.25) }
+                    .disabled(block.hours <= 0.25)
+            } label: {
+                VStack(spacing: 0) {
+                    Text(Format.number(block.hours))
+                        .font(.system(.headline, design: .rounded))
+                        .monospacedDigit()
+                    Text("PH ▾")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 48, height: 40)
+                .background(GoalPalette.color(category: block.categoryKey).opacity(0.12), in: .rect(cornerRadius: 9, style: .continuous))
             }
-            .frame(width: 44)
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Menge \(Format.powerHours(block.hours)) ändern")
             VStack(alignment: .leading, spacing: 2) {
-                TextField("Wofür? (z. B. Lena – Mathe)", text: $task)
+                TextField(block.task.isEmpty ? "Beschreibung fehlt – woran?" : "Wofür?", text: $task)
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { app.store.setTask(block, task) }
@@ -1596,6 +1638,11 @@ struct InlineWorkRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if block.task.isEmpty {
+                        Label("Beschreibung fehlt", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    }
                 }
             }
         }
@@ -1643,17 +1690,19 @@ struct NewWorkRow: View {
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
                 .accessibilityLabel("Menge: \(Format.powerHours(powerHours))")
-                TextField("Neu: wofür?", text: $task)
+                TextField("Wofür? (Pflicht)", text: $task)
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit(add)
                 Button(action: add) {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
-                        .foregroundStyle(Brand.accent)
+                        .foregroundStyle(canAdd ? Brand.accent : Color.secondary.opacity(0.5))
                 }
                 .buttonStyle(.plain)
+                .disabled(!canAdd)
                 .accessibilityLabel("Power-Hours hinzufügen")
+                .accessibilityHint(canAdd ? "" : "Erst eintragen, woran du gearbeitet hast")
             }
             if !suggestions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -1668,7 +1717,10 @@ struct NewWorkRow: View {
         .padding(.vertical, 2)
     }
 
+    private var canAdd: Bool { !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     private func add() {
+        guard canAdd else { return }
         app.addPowerHours(powerHours, categoryKey: categoryKey, task: task, day: day)
         task = ""
         focused = false
@@ -1720,6 +1772,130 @@ struct QuickAllMenu: View {
         .menuIndicator(.hidden)
         .buttonStyle(.borderless)
         .accessibilityLabel("Alle Punkte von \(scope) auf einmal setzen")
+    }
+}
+
+/// K2: a spending in one line – amount, what for (required), add. Suggestions from earlier ones.
+struct ExpenseInputRow: View {
+    let measure: MeasureDefinition
+    let context: WeekContext
+    let day: DayKey
+    @Environment(AppModel.self) private var app
+    @State private var amount = ""
+    @State private var what = ""
+    @FocusState private var focus: Field?
+
+    private enum Field { case amount, what }
+
+    private var canAdd: Bool {
+        Format.parse(amount) != nil && !what.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        let total: Double = context.dayValue(measure, on: day) ?? 0
+        let suggestions: [String] = context.expenseSuggestions(measure).filter { what.isEmpty || $0.localizedCaseInsensitiveContains(what) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(measure.title)
+                    .font(.body.weight(.medium))
+                Spacer(minLength: 6)
+                Text("heute \(Format.measure(total, unit: "€"))")
+                    .font(.callout.weight(.semibold))
+                    .monospacedDigit()
+                Button {
+                    app.sheet = .expenses(day)
+                } label: {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Alle Ausgaben der Woche")
+            }
+            HStack(spacing: 6) {
+                HStack(spacing: 3) {
+                    TextField("Betrag", text: $amount)
+                        .multilineTextAlignment(.trailing)
+                        .font(.system(.callout, design: .rounded).weight(.bold))
+                        .monospacedDigit()
+                        .decimalKeyboard()
+                        .focused($focus, equals: .amount)
+                        .submitLabel(.next)
+                        .onSubmit { focus = .what }
+                    Text("€")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 92)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 6)
+                .background(Color.secondary.opacity(0.09), in: .rect(cornerRadius: 9, style: .continuous))
+                TextField("Wofür? (Pflicht)", text: $what)
+                    .focused($focus, equals: .what)
+                    .submitLabel(.done)
+                    .onSubmit(add)
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 8)
+                    .background(Color.secondary.opacity(0.09), in: .rect(cornerRadius: 9, style: .continuous))
+                Button(action: add) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(canAdd ? GoalPalette.color(goal: "8") : Color.secondary.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAdd)
+                .accessibilityLabel("Ausgabe hinzufügen")
+                .accessibilityHint(canAdd ? "" : "Betrag und Zweck eintragen")
+            }
+            if focus != nil, !suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(suggestions.prefix(6), id: \.self) { suggestion in
+                            ChipButton(title: suggestion, isSelected: what == suggestion) { what = suggestion }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func add() {
+        guard canAdd, let value = Format.parse(amount) else { return }
+        app.addExpense(value, what: what, measure: measure, day: day)
+        amount = ""
+        what = ""
+        focus = .amount
+    }
+}
+
+/// One spending of the day: what for and how much; swipe or context menu deletes it.
+struct ExpenseEntryRow: View {
+    let entry: MeasureEntry
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "eurosign.circle.fill")
+                .foregroundStyle(GoalPalette.color(goal: "8"))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entry.note.isEmpty ? "ohne Angabe" : entry.note)
+                    .foregroundStyle(entry.note.isEmpty ? .orange : .primary)
+                Text(entry.recordedAt, format: .dateTime.hour().minute())
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 6)
+            Text(Format.measure(entry.value ?? 0, unit: "€"))
+                .font(.callout.weight(.semibold))
+                .monospacedDigit()
+        }
+        .padding(.leading, 8)
+        .swipeActions(edge: .trailing) {
+            Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([entry]) }
+        }
+        .contextMenu {
+            Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([entry]) }
+        }
     }
 }
 

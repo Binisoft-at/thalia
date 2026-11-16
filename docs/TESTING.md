@@ -95,3 +95,11 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 - [ ] Kontrollzentrum: „Thalia erfassen“ (öffnet Erfassen) und „Ausgabe“ (öffnet Ausgaben) zusätzlich zu „Power-Hours“.
 - [ ] Mac: unten links in der Seitenleiste grauer Überblick (Heute, Fokus, Ausgaben, Woche) – Klick öffnet die Ansicht; Menü „Gehe zu“: ⌘0 Heute im Blick, ⌘5 Fokus, ⌘6 Ausgaben.
 
+## v6 (ab Version 1.5.0)
+- [ ] Kategorie mit PH (stammloop, Nachhilfe …): Kachel zeigt nur die Summe + „Erfassen“; kein + / − mehr ohne Beschreibung.
+- [ ] „Power-Hours heute“: „1 PH · Wofür? (Pflicht) · +“ – der Knopf wird erst mit Beschreibung aktiv; Menge eines Eintrags über „PH ▾“ ändern; alte Einträge ohne Text zeigen „Beschreibung fehlt“.
+- [ ] „+“ unten → Power-Hours: Bereich muss gewählt werden, „Sichern“ erst mit Beschreibung.
+- [ ] Kategorie mit Ausgaben (Finanzen): „Betrag € · Wofür? · +“ direkt in der Liste, jede Ausgabe steht einzeln darunter (wischen = löschen); Vorschläge beim Tippen.
+- [ ] Watch: Power-Hours → Bereich → Menge → „Zuletzt“ antippen oder diktieren.
+- [ ] Siri/Kurzbefehl „Power-Hour in Thalia erfassen“ fragt nach „Wofür“.
+

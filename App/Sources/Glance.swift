@@ -277,7 +277,7 @@ struct ExpensesContent: View {
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
-                    TextField("Wofür? (optional)", text: $what)
+                    TextField("Wofür? (Pflicht)", text: $what)
                         .submitLabel(.done)
                         .onSubmit { add(measure) }
                     if !suggestions.isEmpty {
@@ -296,7 +296,7 @@ struct ExpensesContent: View {
                             .frame(maxWidth: .infinity)
                     }
                     .primaryActionStyle()
-                    .disabled(Format.parse(amount) == nil)
+                    .disabled(Format.parse(amount) == nil || what.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .padding(.vertical, 4)
             } header: {
@@ -353,10 +353,8 @@ struct ExpensesContent: View {
     }
 
     private func add(_ measure: MeasureDefinition) {
-        guard let value = Format.parse(amount) else { return }
-        let rounded: Double = (value * 100).rounded() / 100
-        app.store.addEntry(code: measure.code, day: day, value: rounded, note: what.trimmingCharacters(in: .whitespacesAndNewlines))
-        app.toasts.show("\(Format.measure(rounded, unit: "€"))\(what.isEmpty ? "" : " · \(what)")", symbol: "eurosign.circle.fill")
+        guard let value = Format.parse(amount), !what.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        app.addExpense(value, what: what, measure: measure, day: day)
         amount = ""
         what = ""
         amountFocused = true

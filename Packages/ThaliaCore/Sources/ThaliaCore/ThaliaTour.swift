@@ -20,7 +20,7 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 5
+    public static let version = 6
 
     public static let catalog = TourCatalog<ThaliaTourSnapshot>(
         version: version,
@@ -77,6 +77,10 @@ public enum ThaliaTour {
                 id: "weekly-goals", since: 3, symbol: "chart.bar.fill", title: "Wochenziele zählen von selbst",
                 body: "Oben in einer Kategorie stehen ihre Wochenziele als Balken: Woche, „heute +x“ und die Tempo-Marke. Trag einfach die Power-Hours oder den Wert ein – „daran gearbeitet“ hakt Thalia selbst ab und bewertet am Wochenende rückwirkend. Nebensachen liegen eingeklappt unter „Weitere“, mit dem Listen-Symbol setzt du alles Offene auf einmal.",
                 macBody: "Oben in einer Kategorie stehen ihre Wochenziele als Balken. Trag den Wert ein – „daran gearbeitet“ hakt Thalia selbst ab. Nebensachen liegen unter „Weitere“, das Listen-Symbol setzt alles Offene auf einmal."
+            ),
+            TourStep(
+                id: "described", since: 6, symbol: "text.badge.checkmark", title: "Immer mit „wofür“",
+                body: "Power-Hours gibt es nur noch mit Bereich und Beschreibung: in der Kategorie „Menge · Wofür · +“, die Menge eines Eintrags änderst du über „PH ▾“. Ausgaben trägst du direkt in der Kategorie ein – Betrag, wofür, +; jede Ausgabe steht einzeln darunter."
             ),
             TourStep(
                 id: "glance", since: 5, symbol: "eye", title: "Heute im Blick",

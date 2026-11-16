@@ -104,21 +104,57 @@ private struct WatchPowerHourPicker: View {
 private struct WatchPowerHourAmounts: View {
     let category: TrackCategory
     let day: DayKey
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
             ForEach(PowerHour.quick, id: \.self) { value in
-                Button {
-                    TrackerStore(context: modelContext).addWork(day: day, categoryKey: category.key, task: "", powerHours: value)
-                    dismiss()
+                NavigationLink {
+                    WatchPowerHourTask(category: category, day: day, powerHours: value)
                 } label: {
-                    Label("+ \(Format.powerHours(value))", systemImage: "bolt.fill")
+                    Label(Format.powerHours(value), systemImage: "bolt.fill")
                 }
             }
         }
         .navigationTitle(category.title)
+    }
+}
+
+/// K1: what the power-hours were for – a recent description with one tap, or dictate a new one.
+private struct WatchPowerHourTask: View {
+    let category: TrackCategory
+    let day: DayKey
+    let powerHours: Double
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @State private var task = ""
+
+    private var store: TrackerStore { TrackerStore(context: modelContext) }
+
+    var body: some View {
+        List {
+            Section {
+                TextField("Woran? (diktieren)", text: $task)
+                Button("Sichern") { save(task) }
+                    .disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .tint(Brand.accent)
+            }
+            let suggestions: [String] = store.workSuggestions(categoryKey: category.key, limit: 6)
+            if !suggestions.isEmpty {
+                Section("Zuletzt") {
+                    ForEach(suggestions, id: \.self) { suggestion in
+                        Button(suggestion) { save(suggestion) }
+                    }
+                }
+            }
+        }
+        .navigationTitle(Format.powerHours(powerHours))
+    }
+
+    private func save(_ text: String) {
+        let what = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !what.isEmpty else { return }
+        store.addWork(day: day, categoryKey: category.key, task: what, powerHours: powerHours)
+        dismiss()
     }
 }
 

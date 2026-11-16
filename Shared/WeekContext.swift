@@ -289,7 +289,24 @@ struct WeekContext {
 
     /// The week's € measurement ("Ausgaben"), if the plan has one.
     var expenseMeasure: MeasureDefinition? {
-        measures.first { Units.normalized($0.unit) == "€" || $0.code.lowercased().contains("ausgabe") }
+        measures.first { isExpense($0) }
+    }
+
+    /// A spending measurement: every entry is one spending with what it was for (K2).
+    func isExpense(_ measure: MeasureDefinition) -> Bool {
+        Units.normalized(measure.unit) == "€" || measure.code.lowercased().contains("ausgabe")
+    }
+
+    /// The day's spendings, newest first.
+    func expenseEntries(_ measure: MeasureDefinition, on day: DayKey) -> [MeasureEntry] {
+        entries.filter { $0.code == measure.code && $0.dayKey == day.string }.sorted { $0.recordedAt > $1.recordedAt }
+    }
+
+    /// What earlier spendings were for (one-tap suggestions).
+    func expenseSuggestions(_ measure: MeasureDefinition) -> [String] {
+        var counts: [String: Int] = [:]
+        for entry in entries where entry.code == measure.code && !entry.note.isEmpty { counts[entry.note, default: 0] += 1 }
+        return counts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
     }
 
     /// Sum of the weekly power-hour targets of the work measurements.

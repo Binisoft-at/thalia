@@ -333,32 +333,12 @@ struct TrackerStore {
         save()
     }
 
-    /// Sets a category's power-hours for a day (− / typed value on a work tile, V7): more adds a
-    /// block, less shrinks the newest blocks (and removes those that reach 0).
-    func setWorkTotal(categoryKey: String, day: DayKey, powerHours target: Double) {
-        let dayKey = day.string
-        let blocks = fetch(FetchDescriptor<WorkBlock>(predicate: #Predicate<WorkBlock> {
-            $0.categoryKey == categoryKey && $0.dayKey == dayKey && $0.deletedAt == nil
-        })).sorted { $0.createdAt < $1.createdAt }
-        let current = blocks.reduce(0) { $0 + $1.hours }
-        let wanted = max(0, (target * 100).rounded() / 100)
-        if wanted > current + 1e-9 {
-            addWork(day: day, categoryKey: categoryKey, task: "", powerHours: wanted - current)
-            return
-        }
-        var excess = current - wanted
-        for block in blocks.reversed() where excess > 1e-9 {
-            let hours = block.hours
-            if hours <= excess + 1e-9 {
-                block.moveToTrash()
-                excess -= hours
-            } else {
-                block.powerHours = hours - excess
-                block.minutes = Int(PowerHour.minutes(block.powerHours).rounded())
-                block.touch()
-                excess = 0
-            }
-        }
+    /// Changes only the amount of one entry (− / + in the list); its description stays.
+    func setPowerHours(_ block: WorkBlock, _ powerHours: Double) {
+        let value: Double = max(0.25, (powerHours * 100).rounded() / 100)
+        block.powerHours = value
+        block.minutes = Int(PowerHour.minutes(value).rounded())
+        block.touch()
         save()
     }
 

@@ -50,7 +50,7 @@ struct WorkEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Bereich") {
+                Section {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(workCategories.prefix(6)) { category in
@@ -63,10 +63,17 @@ struct WorkEditor: View {
                     }
                     if workCategories.count > 6 {
                         Picker("Anderer Bereich", selection: $categoryKey) {
+                            Text("bitte wählen").tag("")
                             ForEach(workCategories) { category in
                                 Text("\(category.key) \(category.title)").tag(category.key)
                             }
                         }
+                    }
+                } header: {
+                    Text("Bereich (Pflicht)")
+                } footer: {
+                    if categoryKey.isEmpty {
+                        Label("Wähle, wofür die Power-Hours zählen.", systemImage: "hand.point.up.left")
                     }
                 }
                 Section {
@@ -86,7 +93,7 @@ struct WorkEditor: View {
                     Text("1 PH = \(Format.number(Double(PowerHour.minutes))) Minuten konzentrierte Arbeit – Nachhilfe zählt genauso (\(Format.powerHours(powerHours)) = \(Format.duration(minutes: Int(PowerHour.minutes(powerHours).rounded())))).")
                 }
                 Section {
-                    TextField("Wofür? (z. B. Lena – Mathe)", text: $task)
+                    TextField("Woran? (Pflicht, z. B. Lena – Mathe)", text: $task)
                         .focused($taskFocused)
                         .submitLabel(.done)
                     if !suggestions.isEmpty {
@@ -102,9 +109,9 @@ struct WorkEditor: View {
                         }
                     }
                 } header: {
-                    Text("Beschreibung")
+                    Text("Beschreibung (Pflicht)")
                 } footer: {
-                    Text("Vorschläge kommen aus deinen bisherigen Einträgen in diesem Bereich.")
+                    Text("Ohne Beschreibung keine Power-Hours: so weißt du später, woran du gearbeitet hast. Vorschläge kommen aus deinen bisherigen Einträgen in diesem Bereich.")
                 }
                 Section {
                     DisclosureGroup("Ergebnis und nächster Schritt", isExpanded: $showsMore) {
@@ -129,13 +136,14 @@ struct WorkEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Sichern", action: save).disabled(powerHours <= 0 || categoryKey.isEmpty)
+                    Button("Sichern", action: save)
+                        .disabled(powerHours <= 0 || categoryKey.isEmpty || task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .onAppear {
-                if categoryKey.isEmpty || !sortedCategories.contains(where: { $0.key == categoryKey }) {
-                    categoryKey = workCategories.first?.key ?? ""
-                }
+                // K1: an unknown area is cleared – the area is always chosen on purpose.
+                if !categoryKey.isEmpty, !sortedCategories.contains(where: { $0.key == categoryKey }) { categoryKey = "" }
+                if draft.block == nil, categoryKey.isEmpty == false { taskFocused = true }
             }
         }
         .sheetFrame(minWidth: 480, minHeight: 520)

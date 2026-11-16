@@ -18,7 +18,8 @@ struct WorkDraft: Identifiable {
     let id = UUID()
     var block: WorkBlock?
     var day: DayKey
-    var categoryKey: String = "3.2"
+    /// Empty from the global "+": the area is chosen on purpose (K1).
+    var categoryKey: String = ""
     var powerHours: Double = 1
 }
 
@@ -149,11 +150,12 @@ final class AppModel {
         setMark(Mark.cycle(current), item: item, day: day)
     }
 
-    /// Quick power-hours for a category, right away ("+1 PH" on a work tile, the watch, Shortcuts).
-    func addPowerHours(_ powerHours: Double, categoryKey: String, task: String = "", day: DayKey) {
-        let block = store.addWork(day: day, categoryKey: categoryKey, task: task, powerHours: powerHours)
-        let title = task.isEmpty ? categoryTitle(categoryKey) : task
-        toasts.show("\(Format.powerHours(powerHours)) · \(title)", symbol: "bolt.fill") { [weak self] in
+    /// Power-hours always with an area and what they were for (K1).
+    func addPowerHours(_ powerHours: Double, categoryKey: String, task: String, day: DayKey) {
+        let what: String = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !categoryKey.isEmpty, !what.isEmpty else { return }
+        let block = store.addWork(day: day, categoryKey: categoryKey, task: what, powerHours: powerHours)
+        toasts.show("\(Format.powerHours(powerHours)) · \(what)", symbol: "bolt.fill") { [weak self] in
             self?.store.trash([block])
         }
     }
@@ -208,15 +210,13 @@ final class AppModel {
         }
     }
 
-    /// A category's power-hours for a day, set on the tile (− / typed); Undo sets the old total.
-    func setWorkTotal(_ powerHours: Double?, categoryKey: String, day: DayKey) {
-        let old = store.weekContext(for: day.week, today: today).work(on: day)
-            .filter { $0.categoryKey == categoryKey }.reduce(0) { $0 + $1.hours }
-        store.setWorkTotal(categoryKey: categoryKey, day: day, powerHours: powerHours ?? 0)
-        let new = powerHours ?? 0
-        guard abs(new - old) > 1e-9, new < old else { return }
-        toasts.show("\(categoryTitle(categoryKey)): \(Format.powerHours(new))", symbol: "bolt") { [weak self] in
-            self?.store.setWorkTotal(categoryKey: categoryKey, day: day, powerHours: old)
+    /// One spending with what it was for (K2); Undo removes it again.
+    func addExpense(_ amount: Double, what: String, measure: MeasureDefinition, day: DayKey) {
+        let rounded: Double = (amount * 100).rounded() / 100
+        let note: String = what.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entry = store.addEntry(code: measure.code, day: day, value: rounded, note: note)
+        toasts.show("\(Format.measure(rounded, unit: "€")) · \(note)", symbol: "eurosign.circle.fill") { [weak self] in
+            self?.store.trash([entry])
         }
     }
 
