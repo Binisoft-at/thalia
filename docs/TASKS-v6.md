@@ -18,4 +18,4 @@ Quelle: Binis Nachricht „Thalia Korrekturen v6“ (Punkt 3 war leer). Status: 
 - [x] Umgesetzt (lokal geprüft): PH-Kachel nur Summe + „Erfassen“; Schnellmenü und `setWorkTotal` entfernt; `addPowerHours` verlangt Bereich + Beschreibung; neue Zeile/PH-Fenster erst mit Beschreibung aktiv, PH-Fenster ohne vorgewählten Bereich; Menge pro Eintrag über „PH ▾“; „Beschreibung fehlt“-Hinweis; Watch: Bereich → Menge → Wofür; Kurzbefehl mit Pflicht-„Wofür“. Ausgaben: Zeile „Betrag · Wofür · +“ auf der Kategorieseite, jede Ausgabe einzeln darunter (wischen löscht), Ausgaben-Fenster verlangt „Wofür“. Tour v6, Version 1.5.0.
 - [x] CI run 20 grün, Screenshots geprüft (PH-Fenster ohne vorgewählten Bereich, „Sichern“ erst mit Beschreibung).
 - [x] **TestFlight 1.5.0 (36)** iOS + macOS: VALID, IN_BETA_TESTING.
-- Nächster Schritt: App-Durchsicht (Optimierungen) → docs/REVIEW-v7.md.
+- App-Durchsicht (Optimierungen) erledigt: [REVIEW-v7.md](REVIEW-v7.md) – 97 Punkte, empfohlene Runde v7 und offene Fragen dort.
