@@ -1,15 +1,16 @@
+/// Thalia in the Mac menu bar (R96): today's status, power-hours and a spending without opening
+/// the window. On by default, switch in Settings. (The key is known on every platform, because
+/// AppModel reads it.)
+enum MenuBarSettings {
+    static let enabledKey = "menubar.enabled"
+}
+
 #if os(macOS)
 import SwiftUI
 import SwiftData
 import AppKit
 import BinisoftKit
 import ThaliaCore
-
-/// Thalia in the Mac menu bar (R96): today's status, power-hours and a spending without opening
-/// the window. On by default, switch in Settings.
-enum MenuBarSettings {
-    static let enabledKey = "menubar.enabled"
-}
 
 /// The label in the menu bar: the symbol and "73 %" / "7,5" – only the symbol without a plan.
 /// Deliberately just text and an image (no query): that is what the menu bar shows reliably.

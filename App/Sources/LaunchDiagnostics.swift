@@ -16,6 +16,7 @@ func diagNote(_ message: String) {
 
 #if os(macOS) && DEBUG
 import OSLog
+import Darwin
 
 /// Debug builds on the Mac only (CI screenshots): finds out why the main window does not show at
 /// launch. Writes to the system log (`log show`, part of the CI Mac log):
@@ -56,6 +57,8 @@ enum LaunchDiagnostics {
         note("start")
         let queue = DispatchQueue(label: "at.binisoft.thalia.diag")
         var reportedBlock = false
+        var capturedStack = false
+        prepareStackCapture()
         for second in 1...60 {
             queue.asyncAfter(deadline: .now() + .seconds(second)) {
                 DispatchQueue.main.async {
@@ -65,6 +68,10 @@ enum LaunchDiagnostics {
                 if since > 2.5 {
                     if !reportedBlock || second % 10 == 0 {
                         note("main thread blocked for \(Int(since)) s (at \(second) s)")
+                    }
+                    if !capturedStack && since > 4 {
+                        capturedStack = true
+                        captureMainStack()
                     }
                     reportedBlock = true
                 } else if reportedBlock {
@@ -103,4 +110,43 @@ private enum NSAppWindows {
         return list.isEmpty ? "none" : list.joined(separator: " | ")
     }
 }
+
+private let diagStackCapacity: Int32 = 96
+private let diagStackBuffer = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 96)
+nonisolated(unsafe) private var diagStackFD: Int32 = -1
+nonisolated(unsafe) private var diagMainThread: pthread_t?
+
+extension LaunchDiagnostics {
+    /// Call on the main thread at launch.
+    static func prepareStackCapture() {
+        diagMainThread = pthread_self()
+        signal(SIGUSR2) { _ in
+            guard diagStackFD >= 0 else { return }
+            let count = backtrace(diagStackBuffer, diagStackCapacity)
+            backtrace_symbols_fd(diagStackBuffer, count, diagStackFD)
+        }
+    }
+
+    /// From the watchdog thread: interrupts the main thread, which writes its stack to a file;
+    /// the lines then go to the log.
+    static func captureMainStack() {
+        guard let main = diagMainThread else { return }
+        let path = NSTemporaryDirectory() + "thalia-main-stack.txt"
+        FileManager.default.createFile(atPath: path, contents: nil)
+        let fd = open(path, O_WRONLY | O_TRUNC)
+        guard fd >= 0 else { note("stack: cannot open \(path)"); return }
+        diagStackFD = fd
+        pthread_kill(main, SIGUSR2)
+        usleep(500_000)
+        diagStackFD = -1
+        close(fd)
+        let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        let lines = text.split(separator: "\n")
+        note("stack: \(lines.count) frames")
+        for line in lines.prefix(90) {
+            note("stack | \(line)")
+        }
+    }
+}
+
 #endif
