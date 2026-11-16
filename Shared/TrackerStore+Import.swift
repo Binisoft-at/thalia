@@ -9,42 +9,66 @@ extension TrackerStore {
     }
 
     /// One value per measurement and day, the way exports write them and imports compare them.
+    /// Several entries of a day – and every spending – also keep their single entries with the time
+    /// (`parts`, R27), so a backup restores them one by one.
     static func aggregate(_ entries: [MeasureEntry], measures: [MeasureDefinition]) -> [EntryRecord] {
-        var aggregationByWeekCode: [String: Aggregation] = [:]
+        var recordByWeekCode: [String: MeasureRecord] = [:]
         for measure in measures where measure.deletedAt == nil {
-            aggregationByWeekCode["\(measure.weekKey)|\(measure.code)"] = Aggregation(token: measure.aggregationRaw) ?? .sum
+            if let record = measure.record { recordByWeekCode["\(measure.weekKey)|\(measure.code)"] = record }
         }
         let groups = Dictionary(grouping: entries.filter { $0.deletedAt == nil }) { "\($0.code)|\($0.dayKey)" }
         return groups.values.compactMap { group -> EntryRecord? in
             let sorted = group.sorted { $0.recordedAt < $1.recordedAt }
             guard let first = sorted.first, let day = DayKey(first.dayKey) else { return nil }
-            let aggregation = aggregationByWeekCode["\(day.week.string)|\(first.code)"] ?? .sum
+            let record = recordByWeekCode["\(day.week.string)|\(first.code)"]
+            let aggregation = record?.aggregation ?? .sum
             let value = aggregation.apply(sorted.compactMap(\.value))
             let text = sorted.map(\.text).filter { !$0.isEmpty }.last ?? ""
             let note = sorted.map(\.note).filter { !$0.isEmpty }.joined(separator: "; ")
-            return EntryRecord(code: first.code, day: day, value: value, text: text, note: note, estimate: sorted.contains(where: \.isEstimate))
+            let isExpense = record?.isExpense ?? first.code.lowercased().contains("ausgabe")
+            var parts: [EntryPart] = []
+            if (sorted.count > 1 || isExpense), text.isEmpty {
+                parts = sorted.map { entry in
+                    EntryPart(value: entry.value, note: entry.note, minutes: Int(DayKey.minutes(of: entry.recordedAt)),
+                              estimate: entry.isEstimate)
+                }
+            }
+            return EntryRecord(code: first.code, day: day, value: value, text: text, note: note,
+                               estimate: sorted.contains(where: \.isEstimate), parts: parts)
         }
     }
 
-    /// What the app has, keyed the way the import compares.
+    /// What the app has, keyed the way the import compares – always the newest version of a record
+    /// that exists twice (R27), plus the closed days and weeks.
     func existingState() -> ExistingState {
         var state = ExistingState()
         for (key, goal) in liveGoals().latest(by: \.key, modified: \.modifiedAt) { state.goals[key] = goal.record }
         for (key, category) in liveCategories().latest(by: \.key, modified: \.modifiedAt) { state.categories[key] = category.record }
-        for plan in allPlans() where plan.deletedAt == nil { if let record = plan.record { state.weeks[plan.weekKey] = record } }
-        for (key, day) in all(PlanDay.self).latest(by: \.dayKey, modified: \.modifiedAt) { if let record = day.record { state.days[key] = record } }
+        let plans = allPlans().filter { $0.deletedAt == nil }.latest(by: \.weekKey, modified: \.modifiedAt)
+        for (key, plan) in plans {
+            if let record = plan.record { state.weeks[key] = record }
+            if plan.isClosed, let week = plan.week { state.closedWeeks.insert(week) }
+        }
+        for (key, day) in all(PlanDay.self).latest(by: \.dayKey, modified: \.modifiedAt) {
+            if let record = day.record { state.days[key] = record }
+            if day.isClosed, let date = day.day { state.closedDays.insert(date) }
+        }
         let items = all(PlanItem.self).filter { $0.deletedAt == nil }
         for (key, item) in items.latest(by: \.key, modified: \.modifiedAt) { if let record = item.record { state.items[key] = record } }
         let measures = all(MeasureDefinition.self).filter { $0.deletedAt == nil }
         for (key, measure) in measures.latest(by: \.key, modified: \.modifiedAt) { if let record = measure.record { state.measures[key] = record } }
-        for mark in all(ItemMark.self) { if let record = mark.record { state.marks[record.key] = record } }
+        let marks = all(ItemMark.self).latest(by: { "\($0.weekKey)|\($0.itemCode)|\($0.dayKey)" }, modified: \.modifiedAt)
+        for mark in marks.values { if let record = mark.record { state.marks[record.key] = record } }
         for entry in Self.aggregate(all(MeasureEntry.self), measures: measures) { state.entries[entry.key] = entry }
-        for block in all(WorkBlock.self) where block.deletedAt == nil {
-            if let record = block.record { state.work[record.id] = record }
+        let blocks = all(WorkBlock.self).filter { $0.deletedAt == nil }.latest(by: \.recordID, modified: \.modifiedAt)
+        for block in blocks.values { if let record = block.record { state.work[record.id] = record } }
+        let notes = all(DayNote.self).filter { $0.deletedAt == nil }.latest(by: \.recordID, modified: \.modifiedAt)
+        for note in notes.values { if let record = note.record { state.notes[record.id] = record } }
+        for reflection in all(Reflection.self).latest(by: \.key, modified: \.modifiedAt).values {
+            state.reviews[reflection.key] = reflection.record
         }
-        for note in all(DayNote.self) where note.deletedAt == nil { if let record = note.record { state.notes[record.id] = record } }
-        for reflection in all(Reflection.self) { state.reviews[reflection.key] = reflection.record }
-        for score in all(ScoreOverride.self) where score.deletedAt == nil { if let record = score.record { state.scores[record.key] = record } }
+        let scores = all(ScoreOverride.self).filter { $0.deletedAt == nil }.latest(by: \.key, modified: \.modifiedAt)
+        for score in scores.values { if let record = score.record { state.scores[record.key] = record } }
         return state
     }
 
@@ -57,6 +81,8 @@ extension TrackerStore {
         var updated = 0
         var removedItems: [PlanItem] = []
         var archived: [WeekKey] = []
+        /// The archives the replaced weeks went to (R49: Undo restores them).
+        var archives: [WeekArchive] = []
         var week: WeekKey?
 
         var summary: String {
@@ -73,11 +99,15 @@ extension TrackerStore {
     @discardableResult
     func apply(_ preview: ImportPreview, closedDays: [DayKey] = [], closedWeeks: [WeekKey] = []) -> ImportResult {
         guard preview.replacedWeeks.isEmpty else {
-            for week in preview.replacedWeeks { archiveWeek(week, saving: false) }
+            var archives: [WeekArchive] = []
+            for week in preview.replacedWeeks {
+                if let archive = archiveWeek(week, saving: false) { archives.append(archive) }
+            }
             try? context.save()
             var result = apply(ImportPreview(document: preview.document, existing: existingState()),
                                closedDays: closedDays, closedWeeks: closedWeeks)
             result.archived = preview.replacedWeeks
+            result.archives = archives
             return result
         }
         var result = ImportResult()
@@ -190,12 +220,23 @@ extension TrackerStore {
             for entry in preview.entries.entries where entry.action != .unchanged {
                 for old in entries[entry.key] ?? [] { old.moveToTrash(now: now) }
                 let record = entry.record
-                let created = MeasureEntry(code: record.code, dayKey: record.day.string, value: record.value)
-                created.text = record.text
-                created.note = record.note
-                created.isEstimate = record.estimate
-                created.recordedAt = record.order > 0 ? Date(timeIntervalSince1970: record.order) : now
-                context.insert(created)
+                if record.parts.isEmpty {
+                    let created = MeasureEntry(code: record.code, dayKey: record.day.string, value: record.value)
+                    created.text = record.text
+                    created.note = record.note
+                    created.isEstimate = record.estimate
+                    created.recordedAt = record.order > 0 ? Date(timeIntervalSince1970: record.order) : now
+                    context.insert(created)
+                } else {
+                    // Single entries come back one by one, at their time of day (R27).
+                    for part in record.parts {
+                        let created = MeasureEntry(code: record.code, dayKey: record.day.string, value: part.value)
+                        created.note = part.note
+                        created.isEstimate = part.estimate
+                        created.recordedAt = record.day.date(minutes: Double(part.minutes))
+                        context.insert(created)
+                    }
+                }
                 if entry.action == .create { result.created += 1 } else { result.updated += 1 }
             }
         }
@@ -214,7 +255,8 @@ extension TrackerStore {
                 if blocks[entry.key] == nil { result.created += 1 } else { result.updated += 1 }
                 block.dayKey = record.day.string
                 block.categoryKey = record.categoryKey
-                block.task = record.task
+                // An empty description never replaces an existing one (R21, K1).
+                if !record.task.isEmpty || block.task.isEmpty { block.task = record.task }
                 block.result = record.result
                 block.powerHours = record.powerHours
                 block.minutes = Int(record.minutes.rounded())
@@ -272,15 +314,24 @@ extension TrackerStore {
             }
         }
 
-        if !closedDays.isEmpty || !closedWeeks.isEmpty {
+        // Closed days from the file (R27) and from the caller (demo, tour).
+        let daysToClose = Set(closedDays).union(preview.newClosedDays)
+        if !daysToClose.isEmpty || !closedWeeks.isEmpty {
             try? context.save()
-            for day in closedDays { ensureDay(day).closedAt = now }
+            for day in daysToClose.sorted() {
+                let info = ensureDay(day)
+                guard info.closedAt == nil else { continue }
+                info.closedAt = now
+                info.modifiedAt = now
+            }
             for week in closedWeeks { ensurePlan(week).closedAt = now }
         }
 
         result.week = preview.primaryWeek
         AppLog.info("Import: \(result.created) new, \(result.updated) updated, \(result.removedItems.count) removed, \(preview.document.skipped.count) skipped", category: "import")
         save()
+        // Closed weeks from the file get their score like any closed week (R27).
+        for week in preview.newClosedWeeks where !(plan(week)?.isClosed ?? false) { closeWeek(week) }
         return result
     }
 
@@ -324,8 +375,11 @@ extension TrackerStore {
             day.closedAt = nil
             day.modifiedAt = Date()
         }
-        if let plan = plan(week), plan.closedAt != nil {
+        if let plan = plan(week), plan.closedAt != nil || plan.finalScore != nil || !plan.finalGoalScores.isEmpty {
             plan.closedAt = nil
+            plan.finalScore = nil
+            plan.finalGoalScores = ""
+            plan.finalGoalsScored = 0
             plan.touch()
         }
         AppLog.info("Archived \(key): \(items.count) items, \(marks.count) marks", category: "import")
@@ -345,6 +399,20 @@ extension TrackerStore {
 
     func delete(_ archive: WeekArchive) {
         context.delete(archive)
+        save()
+    }
+
+    /// Undo of an import that replaced weeks (R49): every archive comes back, and the archive that
+    /// this creates of the imported week is deleted again.
+    func undoImport(_ result: ImportResult) {
+        for archive in result.archives {
+            let weekKey = archive.weekKey
+            let before = Set(archives().filter { $0.weekKey == weekKey }.map(\.uuid))
+            restore(archive)
+            for created in archives() where created.weekKey == weekKey && !before.contains(created.uuid) {
+                context.delete(created)
+            }
+        }
         save()
     }
 
@@ -370,6 +438,9 @@ extension TrackerStore {
             return false
         }
         doc.scores = state.scores.values.filter { keep(day: $0.day) }
+        // Closings travel as flags; a closed day without type or note still gets its day row (R27).
+        doc.closedDays = state.closedDays.filter { keep(day: $0) }
+        doc.closedWeeks = state.closedWeeks.filter { keep($0) }
         return doc
     }
 

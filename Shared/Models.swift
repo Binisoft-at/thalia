@@ -57,6 +57,7 @@ final class TrackCategory {
 /// A planned (or historical) week.
 @Model
 final class WeekPlan {
+    #Index<WeekPlan>([\.weekKey])
     var uuid: UUID = UUID()
     /// "2026-W45"
     var weekKey: String = ""
@@ -113,6 +114,7 @@ final class WeekPlan {
 /// The kind of day, its note, and whether the evening review closed it.
 @Model
 final class PlanDay {
+    #Index<PlanDay>([\.dayKey])
     var uuid: UUID = UUID()
     /// "2026-11-02"
     var dayKey: String = ""
@@ -134,6 +136,7 @@ final class PlanDay {
 /// One of the ten scored items of a category in a week.
 @Model
 final class PlanItem {
+    #Index<PlanItem>([\.weekKey])
     var uuid: UUID = UUID()
     var weekKey: String = ""
     /// Id within the week ("1.1-03").
@@ -193,6 +196,7 @@ final class PlanItem {
 /// A raw measurement for a week ("Protein, g, ≥ 150 pro Tag").
 @Model
 final class MeasureDefinition {
+    #Index<MeasureDefinition>([\.weekKey])
     var uuid: UUID = UUID()
     var weekKey: String = ""
     var code: String = ""
@@ -253,6 +257,7 @@ final class MeasureDefinition {
 /// ✓ ½ ✗ N/A for one item on one day. An empty `valueRaw` means "cleared" (blank).
 @Model
 final class ItemMark {
+    #Index<ItemMark>([\.weekKey], [\.dayKey])
     var uuid: UUID = UUID()
     var weekKey: String = ""
     var itemCode: String = ""
@@ -280,6 +285,7 @@ final class ItemMark {
 /// One recorded measurement value (several per day add up or the last one counts).
 @Model
 final class MeasureEntry {
+    #Index<MeasureEntry>([\.dayKey], [\.code])
     var uuid: UUID = UUID()
     var code: String = ""
     var dayKey: String = ""
@@ -309,6 +315,7 @@ final class MeasureEntry {
 /// (`minutes`, `kindRaw`, `startedAt`, `endedAt`, `isRunning` are from v1 and stay for CloudKit.)
 @Model
 final class WorkBlock {
+    #Index<WorkBlock>([\.dayKey], [\.categoryKey])
     var uuid: UUID = UUID()
     var dayKey: String = ""
     var categoryKey: String = ""
@@ -352,6 +359,7 @@ final class WorkBlock {
 /// A short note captured during the day (observation, trigger, success, contact, parked idea).
 @Model
 final class DayNote {
+    #Index<DayNote>([\.dayKey])
     var uuid: UUID = UUID()
     var dayKey: String = ""
     var kindRaw: String = "beobachtung"
@@ -379,6 +387,7 @@ final class DayNote {
 /// One answer of the evening or weekly reflection.
 @Model
 final class Reflection {
+    #Index<Reflection>([\.scope])
     var uuid: UUID = UUID()
     /// "2026-11-02" or "2026-W45"
     var scope: String = ""
@@ -400,6 +409,7 @@ final class Reflection {
 /// The person's own score for a category on a day, replacing the calculated one.
 @Model
 final class ScoreOverride {
+    #Index<ScoreOverride>([\.dayKey])
     var uuid: UUID = UUID()
     var categoryKey: String = ""
     var dayKey: String = ""
@@ -426,6 +436,7 @@ final class ScoreOverride {
 /// Small synced settings (the goal year, its motto, the review week).
 @Model
 final class AppSetting {
+    #Index<AppSetting>([\.key])
     var uuid: UUID = UUID()
     var key: String = ""
     var value: String = ""
@@ -464,6 +475,7 @@ final class WeekArchive {
 /// A change to the week's plan made in the app; the next planning prompt lists it.
 @Model
 final class PlanChange {
+    #Index<PlanChange>([\.weekKey])
     var uuid: UUID = UUID()
     var weekKey: String = ""
     /// "neu", "geändert", "gelöscht"
@@ -499,6 +511,7 @@ final class PlanChange {
 /// read Health themselves; what syncs is the person's own mark.
 @Model
 final class HealthValue {
+    #Index<HealthValue>([\.dayKey])
     var uuid: UUID = UUID()
     var code: String = ""
     var dayKey: String = ""

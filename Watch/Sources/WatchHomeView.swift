@@ -1,199 +1,343 @@
 import SwiftUI
 import SwiftData
+import Combine
 import BinisoftKit
 import ThaliaCore
 
-/// Today on the wrist (U16): how much is filled in, quick power-hours, then one page per category
-/// with something open – ✓ with one tap, everything else with two, values with − / +.
+/// Today on the wrist (U16, R34): page 1 shows the ring, power-hours, the categories with something
+/// open and the simple counters; then one page per category with required items or values –
+/// ✓ with one tap, everything else with two, values with − / + or the crown.
 struct WatchHomeView: View {
+    static let firstPage = "today"
+
     @State private var today = DayKey.today()
+    @State private var page = WatchHomeView.firstPage
+    @State private var path = NavigationPath()
+    @State private var banner: String?
+    @State private var bannerID = 0
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         WeekReader(week: today.week, today: today) { context in
-            let pages = context.categories.filter { category in
-                context.items.contains { $0.categoryKey == category.key && context.applies($0, on: today) && !context.isDerived($0) }
-                    || context.measures.contains { $0.categoryKey == category.key && context.applies($0, on: today) && WatchMeasureRow.isQuick($0) }
-            }
-            TabView {
-                NavigationStack { WatchTodayPage(context: context, pages: pages) }
+            let pages = WatchPages.categories(context)
+            TabView(selection: $page) {
+                NavigationStack(path: $path) {
+                    WatchTodayPage(context: context, pages: pages, banner: banner) { key in
+                        page = key
+                    }
+                    .navigationDestination(for: WatchRoute.self) { route in
+                        WatchRouteView(route: route, context: context) { powerHours, area in
+                            powerHoursSaved(powerHours, area: area)
+                        }
+                    }
+                }
+                .tag(WatchHomeView.firstPage)
                 ForEach(pages) { category in
                     NavigationStack { WatchCategoryPage(context: context, category: category) }
+                        .tag(category.key)
                 }
             }
             .tabViewStyle(.verticalPage)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { today = .today() }
+            if phase == .active { refreshToday() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+            refreshToday()
+        }
+        .task(id: bannerID) {
+            guard banner != nil else { return }
+            do {
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+            } catch {
+                return
+            }
+            banner = nil
+        }
+    }
+
+    /// R1: follows the system's day – on return and at midnight while the app stays open.
+    private func refreshToday() {
+        let now = DayKey.today()
+        if now != today { today = now }
+    }
+
+    /// R48: back to page 1 with "+1 PH · stammloop" for two seconds and a success tap.
+    private func powerHoursSaved(_ powerHours: Double, area: String) {
+        path = NavigationPath()
+        page = WatchHomeView.firstPage
+        banner = "+\(Format.powerHours(powerHours)) · \(area)"
+        bannerID += 1
+        WatchHaptic.success.play()
     }
 }
 
+/// Which categories get a page and what page 1 lists (R34, H1).
+enum WatchPages {
+    /// Required today: fixed, n× per week or progress, due, no "Nebensache", not derived, not already
+    /// done often enough on other days.
+    static func isRequired(_ item: PlanItem, in context: WeekContext) -> Bool {
+        let day = context.today
+        guard !item.isSecondary, context.applies(item, on: day), !context.isDerived(item),
+              !context.isQuotaMetElsewhere(item, on: day) else { return false }
+        switch item.schedule {
+        case .fixed, .progress, .weekly: return true
+        case .conditional, .optional: return false
+        }
+    }
+
+    /// A value entered on the watch that is not a page-1 counter (weight …, also from Health – it is never
+    /// counted as missing, H1). Spending never calls for a page of its own (R2).
+    static func isPageValue(_ measure: MeasureDefinition, in context: WeekContext) -> Bool {
+        guard !measure.isSecondary, context.applies(measure, on: context.today) else { return false }
+        switch WatchMeasureKind.of(measure, in: context) {
+        case .value: return !WatchMeasureKind.isCounter(measure, in: context)
+        case .health: return true
+        case .expense, .hidden: return false
+        }
+    }
+
+    /// Pages only for categories with required items or values to enter – no empty pages.
+    static func categories(_ context: WeekContext) -> [TrackCategory] {
+        context.categories.filter { category in
+            context.items.contains { $0.categoryKey == category.key && isRequired($0, in: context) }
+                || context.measures.contains { $0.categoryKey == category.key && isPageValue($0, in: context) }
+        }
+    }
+
+    /// The items listed on a category page (required ones, conditional and optional, "Nebensachen").
+    static func items(in category: TrackCategory, context: WeekContext) -> [PlanItem] {
+        let day = context.today
+        return context.items.filter {
+            $0.categoryKey == category.key && context.applies($0, on: day) && !context.isDerived($0)
+                && !context.isQuotaMetElsewhere($0, on: day)
+        }
+    }
+
+    /// The measurements listed on a category page.
+    static func measures(in category: TrackCategory, context: WeekContext) -> [MeasureDefinition] {
+        context.measures.filter {
+            $0.categoryKey == category.key && context.applies($0, on: context.today) && WatchMeasureKind.of($0, in: context) != .hidden
+        }
+    }
+
+    /// Page 1 "Zähler": day measurements that add up, with − / +.
+    static func counters(_ context: WeekContext) -> [MeasureDefinition] {
+        context.measures.filter { context.applies($0, on: context.today) && WatchMeasureKind.isCounter($0, in: context) }
+    }
+
+    /// Page 1 "Offen": categories with empty required items today ("1.1 Ernährung · 2").
+    static func openGroups(_ context: WeekContext, pages: [TrackCategory]) -> [WatchOpenGroup] {
+        let open = context.openToDo(on: context.today)
+        return pages.compactMap { (category: TrackCategory) -> WatchOpenGroup? in
+            let count = open.filter { $0.categoryKey == category.key }.count
+            guard count > 0 else { return nil }
+            return WatchOpenGroup(key: category.key, title: "\(category.key) \(shortTitle(category.title))", count: count)
+        }
+    }
+
+    /// "Ernährung und Gewicht" → "Ernährung" (the app's rule for chips).
+    static func shortTitle(_ title: String) -> String {
+        let first = title.split(whereSeparator: { $0 == " " || $0 == "&" || $0 == "/" }).first.map(String.init) ?? title
+        return first.count > 13 ? String(first.prefix(12)) + "." : first
+    }
+}
+
+struct WatchOpenGroup: Identifiable {
+    let key: String
+    let title: String
+    let count: Int
+    var id: String { key }
+}
+
+/// Page 1 (R34): ring and status, power-hours, what is open per category (a tap opens its page) and
+/// the counters with − / +.
 private struct WatchTodayPage: View {
     let context: WeekContext
     let pages: [TrackCategory]
-
-    private var day: DayKey { context.today }
+    let banner: String?
+    let onOpen: (String) -> Void
 
     var body: some View {
-        let overall = context.score.days[day]
-        let closed = context.isClosed(day)
-        let work = context.workTotals(on: day)
-        let coverage: Double = overall?.coverage ?? 0
-        let score: Double = overall?.score ?? 0
-        let gaugeValue: Double = closed ? score / 10 : coverage
-        let percent: Int = Int((coverage * 100).rounded())
-        let label: String = closed ? Format.score(overall?.score, outOf: false) : "\(percent)"
-        let tint: Color = (!closed && coverage >= 1) ? .green : Brand.accent
-        let status: String = Self.status(overall, closed: closed)
-        ScrollView {
-            VStack(spacing: 10) {
-                Gauge(value: gaugeValue, in: 0...1) {
-                    Text(closed ? "Tag" : "%")
-                } currentValueLabel: {
-                    Text(label)
-                }
-                .gaugeStyle(.accessoryCircular)
-                .tint(tint)
-                Text(status)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Text(work.isEmpty ? "Noch keine PH" : work.shortText)
-                    .font(.footnote.weight(.semibold))
-                NavigationLink {
-                    WatchPowerHourPicker(context: context)
-                } label: {
+        let groups = WatchPages.openGroups(context, pages: pages)
+        let counters = WatchPages.counters(context)
+        List {
+            Section {
+                WatchDayStatus(context: context)
+                NavigationLink(value: WatchRoute.powerHours) {
                     Label("Power-Hours", systemImage: "bolt.fill")
                 }
                 .tint(Brand.accent)
-                if !pages.isEmpty {
-                    Text("Nach oben wischen: \(pages.count) Kategorien")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+            }
+            if !groups.isEmpty {
+                Section {
+                    ForEach(groups) { group in
+                        Button {
+                            onOpen(group.key)
+                        } label: {
+                            Text("\(group.title) · \(group.count)")
+                                .font(.footnote)
+                                .lineLimit(2)
+                        }
+                        .accessibilityLabel("\(group.title), \(group.count) offen")
+                        .accessibilityHint("Öffnet die Seite der Kategorie")
+                    }
+                } header: {
+                    Text("Offen")
+                }
+            }
+            if !counters.isEmpty {
+                Section {
+                    ForEach(counters) { measure in
+                        WatchMeasureRow(measure: measure, context: context)
+                    }
+                } header: {
+                    Text("Zähler")
                 }
             }
         }
-        .navigationTitle(day.weekday.name)
-    }
-
-    static func status(_ overall: DayOverall?, closed: Bool) -> String {
-        if closed { return "Abgeschlossen" }
-        guard let overall else { return "Nichts fällig" }
-        return overall.blank == 0 ? "Alles erfasst" : "\(overall.blank) offen"
+        .overlay(alignment: .top) {
+            if let banner {
+                WatchBanner(text: banner)
+            }
+        }
+        .navigationTitle(context.today.weekday.name)
     }
 }
 
-/// Area, then amount – two taps for "+1 PH stammloop".
-private struct WatchPowerHourPicker: View {
+/// Ring, status and today's power-hours (R5: "offen" = empty required items).
+private struct WatchDayStatus: View {
     let context: WeekContext
 
     var body: some View {
-        let business = context.categories.filter { $0.goalKey == "3" && $0.key != "3.1" }
-        List {
-            ForEach(business.isEmpty ? context.categories : business) { category in
-                NavigationLink("\(category.key) \(category.title)") {
-                    WatchPowerHourAmounts(category: category, day: context.today)
-                }
+        let day = context.today
+        let overall = context.score.days[day]
+        let closed = context.isClosed(day)
+        let gaugeValue: Double = WatchDayStatus.gaugeValue(overall, closed: closed, hasPlan: context.hasPlan)
+        let label: String = WatchDayStatus.ringLabel(overall, closed: closed, hasPlan: context.hasPlan)
+        let tint: Color = WatchDayStatus.isComplete(overall, closed: closed, hasPlan: context.hasPlan) ? .green : Brand.accent
+        let status: String = WatchDayStatus.status(context, closed: closed)
+        let work = context.workTotals(on: day)
+        HStack(spacing: 10) {
+            Gauge(value: gaugeValue, in: 0...1) {
+                Text(closed ? "Tag" : "%")
+            } currentValueLabel: {
+                Text(label)
+            }
+            .gaugeStyle(.accessoryCircular)
+            .tint(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status)
+                    .font(.footnote.weight(.semibold))
+                Text(work.isEmpty ? "Noch keine PH" : work.shortText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Bereich")
+        .accessibilityElement(children: .combine)
+    }
+
+    static func gaugeValue(_ overall: DayOverall?, closed: Bool, hasPlan: Bool) -> Double {
+        if closed { return (overall?.score ?? 0) / 10 }
+        return hasPlan ? (overall?.coverage ?? 0) : 0
+    }
+
+    static func ringLabel(_ overall: DayOverall?, closed: Bool, hasPlan: Bool) -> String {
+        if closed { return Format.score(overall?.score, outOf: false) }
+        guard hasPlan else { return "–" }
+        return "\(Int(((overall?.coverage ?? 0) * 100).rounded()))"
+    }
+
+    static func isComplete(_ overall: DayOverall?, closed: Bool, hasPlan: Bool) -> Bool {
+        guard !closed, hasPlan, let overall else { return false }
+        return overall.coverage >= 1
+    }
+
+    static func status(_ context: WeekContext, closed: Bool) -> String {
+        if closed { return "Abgeschlossen" }
+        guard context.hasPlan else { return "Kein Plan" }
+        guard (context.score.days[context.today]?.due ?? 0) > 0 else { return "Nichts fällig" }
+        let open = context.openCount(on: context.today)
+        return open == 0 ? "Alles erfasst" : "\(open) offen"
     }
 }
 
-private struct WatchPowerHourAmounts: View {
-    let category: TrackCategory
-    let day: DayKey
+/// "+1 PH · stammloop" after saving power-hours (R48).
+private struct WatchBanner: View {
+    let text: String
 
     var body: some View {
-        List {
-            ForEach(PowerHour.quick, id: \.self) { value in
-                NavigationLink {
-                    WatchPowerHourTask(category: category, day: day, powerHours: value)
-                } label: {
-                    Label(Format.powerHours(value), systemImage: "bolt.fill")
-                }
-            }
-        }
-        .navigationTitle(category.title)
+        Text(text)
+            .font(.footnote.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.green.opacity(0.85), in: Capsule())
+            .foregroundStyle(.white)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityLabel(text)
     }
 }
 
-/// K1: what the power-hours were for – a recent description with one tap, or dictate a new one.
-private struct WatchPowerHourTask: View {
-    let category: TrackCategory
-    let day: DayKey
-    let powerHours: Double
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
-    @State private var task = ""
-
-    private var store: TrackerStore { TrackerStore(context: modelContext) }
-
-    var body: some View {
-        List {
-            Section {
-                TextField("Woran? (diktieren)", text: $task)
-                Button("Sichern") { save(task) }
-                    .disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .tint(Brand.accent)
-            }
-            let suggestions: [String] = store.workSuggestions(categoryKey: category.key, limit: 6)
-            if !suggestions.isEmpty {
-                Section("Zuletzt") {
-                    ForEach(suggestions, id: \.self) { suggestion in
-                        Button(suggestion) { save(suggestion) }
-                    }
-                }
-            }
-        }
-        .navigationTitle(Format.powerHours(powerHours))
-    }
-
-    private func save(_ text: String) {
-        let what = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !what.isEmpty else { return }
-        store.addWork(day: day, categoryKey: category.key, task: what, powerHours: powerHours)
-        dismiss()
-    }
-}
-
+/// One category (R34): its items, its values, then "Nebensachen" on their own.
 private struct WatchCategoryPage: View {
     let context: WeekContext
     let category: TrackCategory
 
-    private var day: DayKey { context.today }
-
     var body: some View {
-        let entry = context.score.category(category.key, on: day)
-        let items = context.items.filter {
-            $0.categoryKey == category.key && context.applies($0, on: day) && !context.isDerived($0) && !context.isQuotaMetElsewhere($0, on: day)
-        }
-        let measures = context.measures.filter { $0.categoryKey == category.key && context.applies($0, on: day) && WatchMeasureRow.isQuick($0) }
+        let entry = context.score.category(category.key, on: context.today)
+        let items = WatchPages.items(in: category, context: context)
+        let mainItems = items.filter { !$0.isSecondary }
+        let secondaryItems = items.filter { $0.isSecondary }
+        let measures = WatchPages.measures(in: category, context: context)
+        let mainMeasures = measures.filter { !$0.isSecondary }
+        let secondaryMeasures = measures.filter { $0.isSecondary }
+        let progress: String = WatchCategoryPage.progressText(entry)
         List {
             Section {
-                ForEach(items) { item in
+                ForEach(mainItems) { item in
                     WatchItemRow(item: item, context: context)
                 }
             } header: {
                 HStack {
                     Text(category.title)
                     Spacer()
-                    if entry.due > 0 {
-                        Text(entry.isComplete ? "✓" : "\(entry.due - entry.blank)/\(entry.due)")
+                    if !progress.isEmpty {
+                        Text(progress)
                             .monospacedDigit()
                     }
                 }
             }
-            if !measures.isEmpty {
-                Section("Werte") {
-                    ForEach(measures) { measure in
+            if !mainMeasures.isEmpty {
+                Section {
+                    ForEach(mainMeasures) { measure in
                         WatchMeasureRow(measure: measure, context: context)
                     }
+                } header: {
+                    Text("Werte")
+                }
+            }
+            if !secondaryItems.isEmpty || !secondaryMeasures.isEmpty {
+                Section {
+                    ForEach(secondaryItems) { item in
+                        WatchItemRow(item: item, context: context)
+                    }
+                    ForEach(secondaryMeasures) { measure in
+                        WatchMeasureRow(measure: measure, context: context)
+                    }
+                } header: {
+                    Text("Nebensachen")
                 }
             }
         }
         .navigationTitle(category.key)
+    }
+
+    /// "✓" when everything due is filled in, else "3/5"; empty when nothing is due.
+    static func progressText(_ entry: CategoryDay) -> String {
+        guard entry.due > 0 else { return "" }
+        return entry.isComplete ? "✓" : "\(entry.due - entry.blank)/\(entry.due)"
     }
 }
 
@@ -206,16 +350,17 @@ private struct WatchItemRow: View {
     var body: some View {
         let day = context.today
         let mark = context.mark(item, on: day)
+        let isProgress = item.schedule == .progress
         HStack(spacing: 8) {
             Button {
-                TrackerStore(context: modelContext).setMark(mark == .done ? nil : .done, item: item, day: day)
+                toggleDone(current: mark, day: day)
             } label: {
                 Image(systemName: mark.watchSymbol)
                     .font(.title3)
                     .foregroundStyle(mark.watchColor)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(mark == .done ? "Erledigt – tippen zum Leeren" : "Als erledigt markieren")
+            .accessibilityLabel(WatchItemRow.quickLabel(mark, progress: isProgress))
             NavigationLink {
                 WatchMarkPicker(item: item, context: context)
             } label: {
@@ -223,10 +368,37 @@ private struct WatchItemRow: View {
                     .font(.footnote)
                     .lineLimit(3)
             }
+            .accessibilityValue(WatchItemRow.markText(mark, progress: isProgress))
         }
+    }
+
+    /// ✓ on, or off again – each with its own tap on the wrist (R82).
+    private func toggleDone(current: Mark?, day: DayKey) {
+        let store = TrackerStore(context: modelContext)
+        if current == .done {
+            store.setMark(nil, item: item, day: day)
+            WatchHaptic.click.play()
+        } else {
+            store.setMark(.done, item: item, day: day)
+            WatchHaptic.success.play()
+        }
+    }
+
+    /// VoiceOver in words (R43): "Erledigt – tippen zum Leeren" · "Als erledigt markieren".
+    static func quickLabel(_ mark: Mark?, progress: Bool) -> String {
+        let word = Mark.done.label(progress: progress)
+        if mark == .done { return "\(word) – tippen zum Leeren" }
+        return "Als \(word.lowercased()) markieren"
+    }
+
+    static func markText(_ mark: Mark?, progress: Bool) -> String {
+        guard let mark else { return "Nicht erfasst" }
+        return mark.label(progress: progress)
     }
 }
 
+/// All marks of one item (R43, R82): words on the buttons, the current mark highlighted, a success tap
+/// when one is set and a click when it is cleared.
 private struct WatchMarkPicker: View {
     let item: PlanItem
     let context: WeekContext
@@ -235,7 +407,9 @@ private struct WatchMarkPicker: View {
 
     var body: some View {
         let day = context.today
-        let options = item.record.map { Scorer.options(for: $0, on: day, data: context.data) } ?? Mark.allCases
+        let current = context.mark(item, on: day)
+        let options = context.options(item, on: day)
+        let isProgress = item.schedule == .progress
         ScrollView {
             VStack(spacing: 8) {
                 Text(item.title)
@@ -243,66 +417,63 @@ private struct WatchMarkPicker: View {
                     .multilineTextAlignment(.center)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(options, id: \.self) { option in
-                        Button {
-                            TrackerStore(context: modelContext).setMark(option, item: item, day: day)
-                            dismiss()
-                        } label: {
-                            Text(item.schedule == .progress ? (option == .done ? "✓" : "Nicht heute") : (option == .notApplicable ? "N/A" : option.symbol))
-                                .font(.title3.weight(.bold))
-                                .frame(maxWidth: .infinity, minHeight: 40)
+                        WatchMarkButton(option: option, isProgress: isProgress, isSelected: option == current) {
+                            set(option, day: day)
                         }
-                        .tint(Optional(option).watchColor)
                     }
                 }
-                if context.mark(item, on: day) != nil {
+                if current != nil {
                     Button("Leeren", role: .destructive) {
-                        TrackerStore(context: modelContext).setMark(nil, item: item, day: day)
-                        dismiss()
+                        set(nil, day: day)
                     }
                 }
             }
         }
+    }
+
+    private func set(_ mark: Mark?, day: DayKey) {
+        TrackerStore(context: modelContext).setMark(mark, item: item, day: day)
+        if mark == nil {
+            WatchHaptic.click.play()
+        } else {
+            WatchHaptic.success.play()
+        }
+        dismiss()
     }
 }
 
-/// A number with − / + (time and text values stay on the phone).
-struct WatchMeasureRow: View {
-    let measure: MeasureDefinition
-    let context: WeekContext
-    @Environment(\.modelContext) private var modelContext
-
-    static func isQuick(_ measure: MeasureDefinition) -> Bool {
-        guard let record = measure.record else { return false }
-        if case .work = record.source { return false }
-        return !record.isText && !record.isTime
-    }
+/// One mark as symbol and word; the chosen one filled (`.borderedProminent`), the others outlined.
+private struct WatchMarkButton: View {
+    let option: Mark
+    let isProgress: Bool
+    let isSelected: Bool
+    let action: () -> Void
 
     var body: some View {
-        let day = context.today
-        let value = context.dayValue(measure, on: day)
-        let step = Units.step(measure.unit)
-        VStack(alignment: .leading, spacing: 4) {
-            Text(measure.title)
-                .font(.footnote)
-            HStack {
-                Button {
-                    TrackerStore(context: modelContext).setDayValue(code: measure.code, day: day, value: max(0, (value ?? 0) - step))
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled((value ?? 0) <= 0)
-                Text(value.map { Format.measure($0, unit: measure.unit) } ?? "–")
-                    .font(.headline.monospacedDigit())
-                    .frame(maxWidth: .infinity)
-                Button {
-                    TrackerStore(context: modelContext).setDayValue(code: measure.code, day: day, value: (value ?? 0) + step)
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .tint(Brand.accent)
-            }
-            .buttonStyle(.bordered)
+        if isSelected {
+            label.buttonStyle(.borderedProminent)
+        } else {
+            label.buttonStyle(.bordered)
         }
+    }
+
+    private var label: some View {
+        let word = option.label(progress: isProgress)
+        return Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: Optional(option).watchSymbol)
+                    .font(.body.weight(.bold))
+                Text(word)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .tint(Optional(option).watchColor)
+        .accessibilityLabel(word)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

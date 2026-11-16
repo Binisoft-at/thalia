@@ -16,11 +16,36 @@ public struct ExistingState: Sendable {
     public var notes: [String: NoteRecord] = [:]
     public var reviews: [String: ReviewRecord] = [:]
     public var scores: [String: ScoreRecord] = [:]
+    /// Closed days and weeks (R27).
+    public var closedDays: Set<DayKey> = []
+    public var closedWeeks: Set<WeekKey> = []
 
     public init() {}
 
     public var categoryTitles: [String: String] { categories.mapValues(\.title) }
     public var measureCodes: Set<String> { Set(measures.values.map(\.code)) }
+}
+
+/// A week whose plan an import replaces (R49): what goes to the archive, said plainly.
+public struct WeekReplacement: Equatable, Sendable {
+    public var week: WeekKey
+    /// Marks set in the week (mark != nil).
+    public var marks: Int
+    /// Values recorded in the week (one per measurement and day).
+    public var values: Int
+    /// "KW47 wird ersetzt – 23 Markierungen und 9 Werte gehen ins Archiv."
+    public var text: String
+    /// "KW47 ersetzen"
+    public var buttonTitle: String
+
+    public init(week: WeekKey, marks: Int, values: Int) {
+        self.week = week
+        self.marks = marks
+        self.values = values
+        text = "\(week.label) wird ersetzt – \(Format.count(marks, "Markierung", "Markierungen")) und "
+            + "\(Format.count(values, "Wert", "Werte")) gehen ins Archiv."
+        buttonTitle = "\(week.label) ersetzen"
+    }
 }
 
 /// The preview shown before anything changes: per kind what is new, updated, unchanged – and which
@@ -45,6 +70,11 @@ public struct ImportPreview {
     /// Weeks whose existing plan this file changes: the old week is archived with its marks and
     /// values, the new one replaces it (unchanged files replace nothing).
     public let replacedWeeks: [WeekKey]
+    /// One per replaced week, with what goes to the archive (R49).
+    public let replacements: [WeekReplacement]
+    /// Closed days and weeks in the file that the app doesn't have closed yet (R27).
+    public let newClosedDays: [DayKey]
+    public let newClosedWeeks: [WeekKey]
 
     public init(document: PlanCSV.Document, existing: ExistingState) {
         self.document = document
@@ -59,7 +89,7 @@ public struct ImportPreview {
             var normalized = entry
             normalized.order = 0
             return (entry.key, normalized)
-        }, existing: existing.entries)
+        }, existing: ImportPreview.comparableEntries(document.entries, existing: existing.entries))
         work = ImportPlan(incoming: document.work.map { ($0.id, $0) }, existing: existing.work)
         notes = ImportPlan(incoming: document.notes.map { ($0.id, $0) }, existing: existing.notes)
         reviews = ImportPlan(incoming: document.reviews.map { ($0.key, $0) }, existing: existing.reviews)
@@ -84,6 +114,52 @@ public struct ImportPreview {
             if changed { replaced.append(week) }
         }
         replacedWeeks = replaced
+        replacements = replaced.map { week in
+            WeekReplacement(week: week,
+                            marks: existing.marks.values.filter { $0.week == week && $0.mark != nil }.count,
+                            values: existing.entries.values.filter { week.contains($0.day) }.count)
+        }
+        newClosedDays = document.closedDays.subtracting(existing.closedDays).sorted()
+        newClosedWeeks = document.closedWeeks.subtracting(existing.closedWeeks).sorted()
+    }
+
+    /// The app's entries prepared for comparing with the file (R27, backwards compatible): against a
+    /// row without single entries (older backup, ChatGPT CSV) only the day's total counts – an old
+    /// file never merges three single spendings into one; with the same single entries, value, note
+    /// and estimate follow from them.
+    static func comparableEntries(_ incoming: [EntryRecord], existing: [String: EntryRecord]) -> [String: EntryRecord] {
+        var result = existing
+        for entry in incoming {
+            guard var current = result[entry.key] else { continue }
+            if entry.parts.isEmpty {
+                current.parts = []
+                // A total written with four decimals is the same total.
+                if same(current.value, entry.value) { current.value = entry.value }
+            } else if partsMatch(current.parts, entry.parts) {
+                current.parts = entry.parts
+                current.value = entry.value
+                current.note = entry.note
+                current.estimate = entry.estimate
+                current.text = entry.text
+            }
+            current.order = 0
+            result[entry.key] = current
+        }
+        return result
+    }
+
+    static func same(_ a: Double?, _ b: Double?) -> Bool {
+        guard let a, let b else { return a == nil && b == nil }
+        return abs(a - b) < 1e-6
+    }
+
+    static func partsMatch(_ a: [EntryPart], _ b: [EntryPart]) -> Bool {
+        guard a.count == b.count else { return false }
+        let left = a.sorted { $0.minutes < $1.minutes }
+        let right = b.sorted { $0.minutes < $1.minutes }
+        return zip(left, right).allSatisfy { x, y in
+            x.minutes == y.minutes && x.note == y.note && x.estimate == y.estimate && same(x.value, y.value)
+        }
     }
 
     public init(text: String, existing: ExistingState) {
@@ -113,18 +189,26 @@ public struct ImportPreview {
         var result = counts.filter { $0.1 + $0.2 + $0.3 > 0 }.map { name, new, changed, same in
             "\(name): \(new) neu · \(changed) geändert · \(same) gleich"
         }
-        for week in replacedWeeks {
-            result.append("\(week.label) ersetzt den bisherigen Plan – der alte wird mit Markierungen und Werten archiviert (Einstellungen → Archiv).")
-        }
+        result.append(contentsOf: replacements.map(\.text))
         if replacedWeeks.isEmpty {
             if !removedItems.isEmpty { result.append("Punkte entfallen: \(removedItems.count)") }
             if !removedMeasures.isEmpty { result.append("Messwerte entfallen: \(removedMeasures.count)") }
         }
+        if let closings = closingsLine { result.append(closings) }
         return result
+    }
+
+    /// "Abschlüsse: 3 Tage, 1 Woche" – closings the app doesn't have yet.
+    var closingsLine: String? {
+        var parts: [String] = []
+        if !newClosedDays.isEmpty { parts.append(Format.count(newClosedDays.count, "Tag", "Tage")) }
+        if !newClosedWeeks.isEmpty { parts.append(Format.count(newClosedWeeks.count, "Woche", "Wochen")) }
+        return parts.isEmpty ? nil : "Abschlüsse: " + parts.joined(separator: ", ")
     }
 
     public var hasChanges: Bool {
         counts.contains { $0.1 + $0.2 > 0 } || !removedItems.isEmpty || !removedMeasures.isEmpty || !replacedWeeks.isEmpty
+            || !newClosedDays.isEmpty || !newClosedWeeks.isEmpty
     }
 
     /// "KW45 2026 (2.–8. Nov.): 180 Punkte in 18 Kategorien · 22 Messwerte"

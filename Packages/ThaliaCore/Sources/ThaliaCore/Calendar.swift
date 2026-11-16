@@ -21,6 +21,11 @@ public enum Weekday: Int, CaseIterable, Comparable, Codable, Sendable {
         ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][rawValue - 1]
     }
 
+    /// "M", "D", "M", "D", "F", "S", "S" (R69).
+    public var letter: String {
+        ["M", "D", "M", "D", "F", "S", "S"][rawValue - 1]
+    }
+
     /// Bit in a `DayMask`.
     public var bit: Int { 1 << (rawValue - 1) }
 
@@ -102,6 +107,50 @@ public struct DayKey: Hashable, Comparable, Codable, Sendable, CustomStringConve
         calendar.timeZone = timeZone
         let c = components
         return calendar.date(from: DateComponents(year: c.year, month: c.month, day: c.day)) ?? Date(timeIntervalSince1970: 0)
+    }
+
+    /// The moment `minutes` after midnight of this day, built from calendar components – right on
+    /// the days the clocks change (R29). `minutes` is folded into 0..<1440.
+    public func date(minutes: Double, timeZone: TimeZone = .current) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let folded = (minutes.truncatingRemainder(dividingBy: 1440) + 1440).truncatingRemainder(dividingBy: 1440)
+        let whole = Int(folded)
+        let seconds = Int(((folded - Double(whole)) * 60).rounded())
+        let c = components
+        let parts = DateComponents(year: c.year, month: c.month, day: c.day, hour: whole / 60, minute: whole % 60, second: seconds)
+        return calendar.date(from: parts) ?? startDate(timeZone: timeZone).addingTimeInterval(folded * 60)
+    }
+
+    /// Minutes since midnight of `date` in `timeZone`, 0..<1440 (R29).
+    public static func minutes(of date: Date, timeZone: TimeZone = .current) -> Double {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let c = calendar.dateComponents([.hour, .minute, .second], from: date)
+        let total = Double((c.hour ?? 0) * 60 + (c.minute ?? 0)) + Double(c.second ?? 0) / 60
+        return min(max(total, 0), 1440 - 1.0 / 60)
+    }
+
+    /// The day "Tag abschließen" is about (R18): before `cutoffHour` o'clock the day before, as long
+    /// as it isn't closed – otherwise the calendar day of `now`.
+    public static func closingDay(now: Date = Date(), timeZone: TimeZone = .current, cutoffHour: Int = 4,
+                                  isClosed: (DayKey) -> Bool) -> DayKey {
+        let today = DayKey(date: now, timeZone: timeZone)
+        if minutes(of: now, timeZone: timeZone) < Double(cutoffHour * 60) {
+            let yesterday = today.adding(days: -1)
+            if !isClosed(yesterday) { return yesterday }
+        }
+        return today
+    }
+
+    /// "Heute", "Gestern", "Morgen", else `shortLabel` (R41).
+    public func relativeLabel(today: DayKey) -> String {
+        switch ordinal - today.ordinal {
+        case 0: return "Heute"
+        case -1: return "Gestern"
+        case 1: return "Morgen"
+        default: return shortLabel
+        }
     }
 
     /// "Mo, 2. Nov."

@@ -6,15 +6,25 @@ import BinisoftKit
 @main
 struct ThaliaWatchApp: App {
     let container: ModelContainer
+    /// Keeps the complication's snapshot fresh (R84, R86): after own changes, after each iCloud
+    /// import and whenever the app becomes active.
+    let publisher: WidgetPublisher
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         AppLog.bootstrap(appName: AppInfo.name)
-        container = Persistence.shared.container
+        let opened = Persistence.shared.container
+        container = opened
+        publisher = WidgetPublisher(container: opened)
+        publisher.start()
     }
 
     var body: some Scene {
         WindowGroup {
             WatchHomeView()
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { publisher.publishNow() }
+                }
         }
         .modelContainer(container)
     }

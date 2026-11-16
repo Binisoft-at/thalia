@@ -103,3 +103,80 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 - [ ] Watch: Power-Hours → Bereich → Menge → „Zuletzt“ antippen oder diktieren.
 - [ ] Siri/Kurzbefehl „Power-Hour in Thalia erfassen“ fragt nach „Wofür“.
 
+## v7 (ab Version 1.6.0)
+
+**Nach dem Update zuerst**
+- [ ] Alle Einträge da: Heute, Woche, Ziele, Rückblick zeigen dieselben Zahlen wie vor dem Update (Indizes, R84).
+- [ ] Sync läuft: Einstellungen → iCloud & Daten zeigt „An · zuletzt vor …“; ein Haken am iPhone erscheint am Mac. Steht dort ein Fehler, App-Protokoll kopieren.
+- [ ] Die Tour bietet „Neu in Thalia“ mit 8 Karten an (Tag, Punkte, Power-Hours, Werte, Heute im Blick, Sonntag, Ziele, Überall).
+
+**Mitternacht und Widget (R1, R4, R18)**
+- [ ] App über Mitternacht offen lassen (iPhone und Mac): danach zeigt „Heute“ den neuen Tag, ohne Neustart; ein Haken landet auf dem neuen Tag.
+- [ ] Widget nach Mitternacht, ohne die App zu öffnen: „Neuer Tag“ statt des Vortags (nie „Abgeschlossen“ vom Vortag).
+- [ ] Am Mac oder auf der Watch etwas eintragen → das iPhone-Widget zeigt es nach dem Öffnen der App bzw. nach dem iCloud-Abgleich.
+- [ ] Zwischen 0 und 4 Uhr: „Tag abschließen“ öffnet den Vortag, solange er offen ist; ab 4 Uhr den neuen Tag.
+
+**Watch (R2, R81, H1, R86)**
+- [ ] Ausgaben auf der Watch: keine − / +-Knöpfe, nur der Betrag und „am iPhone erfassen“; vorhandene Ausgaben mit „Wofür“ bleiben unverändert.
+- [ ] Werte mit der Krone: Gewicht in 0,1-Schritten, Wasser 0,25, Uhrzeit 5 min; Start beim heutigen oder letzten Wert.
+- [ ] Erste Seite: Offenes und Zähler; Health-Messwerte (Schlaf, Gewicht) zählen nicht als offen.
+- [ ] Komplikation hinzufügen (Zifferblatt bearbeiten → Thalia): Ring, Offenes, PH; um Mitternacht „Neuer Tag“. Reicht die Aktualität im Alltag? (Sie zeigt den Stand, den die Watch-App zuletzt geschrieben hat.)
+- [ ] VoiceOver auf der Watch: die Knöpfe sagen „Erledigt“, „Teilweise“, „Nicht erledigt“, „Entfällt“.
+
+**„offen“ und Heute (R5, R6, R38, R90, R94)**
+- [ ] Die Leiste unten, „Heute im Blick“, die Mac-Seitenleiste, Widget und Watch zeigen am selben Tag dieselbe Zahl „offen“.
+- [ ] Woche ohne Plan: unten „Kein Plan – Wochenplan importieren“ statt „100 %“.
+- [ ] Die Startseite springt beim Abhaken nicht mehr von allein weiter; nur Wischen, Chip oder „Weiter“.
+- [ ] Titelzeile auf dem iPhone: Datum, Tagestyp und Besonderheit; das Titelmenü wechselt den Tag. Mindestens fünf Punkte sind ohne Scrollen sichtbar.
+- [ ] Besonderheit aus dem Plan (z. B. „Arzttermin“) steht auf Heute, in der Woche, im Widget (mittel/groß) und im PDF.
+- [ ] Gestern nicht abgeschlossen: morgens Banner „So, 15. Nov. · 3 offen“ mit „Nachtragen“ und „Abschließen“; × blendet ihn für den Tag aus; nach dem Abschluss weg.
+
+**Eingabe (R31, R32, R33, R46)**
+- [ ] iPhone, Messwert mit Ziffernblock: über dem Ziffernblock steht „Fertig“ und speichert sofort. Ausgaben: „Weiter“ springt zu „Wofür“.
+- [ ] Vorschläge: bei „Wofür“ erscheinen frühere Einträge der letzten Monate (auch aus anderen Wochen); bei Ausgaben sichert ein Tipp auf einen Vorschlag sofort, wenn der Betrag gültig ist.
+- [ ] Power-Hours: oben „Zuletzt“ mit drei Kombinationen; ein Tipp füllt Bereich, Wofür und Menge, Return sichert.
+- [ ] Eine Ausgabe antippen → Betrag und Wofür vorbefüllt, „Sichern“ ändert sie, „Widerrufen“ im Hinweis stellt sie wieder her.
+- [ ] Jedes Erfassen-Fenster zeigt „Tag: Heute · Gestern · Datum“; ein anderer Tag erscheint orange.
+
+**Wochenplan (R56, R91, R92, R49)**
+- [ ] „1 · Prompt kopieren“: der Prompt enthält den Plan der Vorwoche als CSV und vier Zeilen Tendenz.
+- [ ] „Wie KW … wiederholen“: Vorschau zeigt die Punkte der Quellwoche für die neue Woche; Import legt sie an.
+- [ ] Eine Woche mit Einträgen ersetzen: Vorschau sagt „KW47 wird ersetzt – 23 Markierungen und 9 Werte gehen ins Archiv.“ und der Knopf heißt „KW47 ersetzen“; danach „Widerrufen“ im Hinweis stellt die alte Woche wieder her.
+
+**Papierkorb (R19)**
+- [ ] „Papierkorb leeren“ und ein Archiv löschen fragen vorher nach; die Zeilen sind lesbar (mit „Wofür“), das Neueste steht oben.
+
+**Widget abhaken (R87)**
+- [ ] Mittleres/großes Widget: einen offenen Punkt antippen → sofort ✓ im Widget, ohne dass die App aufgeht.
+- [ ] Danach die App öffnen: der Punkt ist ✓; am Mac und auf der Watch erscheint das ✓ nach dem iCloud-Abgleich.
+- [ ] App vorher ganz beenden (aus dem App-Umschalter wischen), dann im Widget abhaken, dann die App öffnen: das ✓ ist da (Warteschlange).
+
+**Siri und Ausgaben-Automation (R89, R97)**
+- [ ] „Hey Siri, Power-Hour in Thalia erfassen“: Siri fragt nach dem Bereich (Liste „3.2 Titel“), Menge und Wofür.
+- [ ] Kurzbefehl „Ausgabe in Thalia“ mit 12,50 und „Mittagessen“ bucht ohne App-Öffnen; fehlt der Ausgaben-Messwert der Woche, wird er angelegt.
+- [ ] Leeres Wofür oder Betrag 0 → Siri lehnt ab („Wofür war die Ausgabe? …“).
+- [ ] Kurzbefehle → Automation → Transaktion → „Ausgabe in Thalia“ (Betrag = Betrag, Wofür = Händler); danach eine echte Kartenzahlung: landet sie mit dem richtigen Betrag in Thalia? Wenn nicht: Protokoll kopieren (Plan B: Betrag als Währung).
+
+**Mac (R14, R15, R35, R59, R62, R96, H1)**
+- [ ] Menüleiste: „73 %“ oben rechts; das Fenster zeigt die Statuszeile, Power-Hours mit den letzten Kombinationen, eine Ausgaben-Zeile, „Thalia öffnen“ und „Tag abschließen…“. Abschaltbar in den Einstellungen.
+- [ ] Tastatur auf Heute: ↑/↓ wählt einen Punkt, 1–4 setzt Erledigt/Teilweise/Nicht erledigt/Entfällt, die Auswahl springt zum nächsten offenen Punkt; ⌥⌘↓/↑ wechselt die Kategorie. Gleiches am iPad mit Tastatur.
+- [ ] ⌘0, Klick auf den Ring und auf „HEUTE“ in der Seitenleiste blenden „Heute im Blick“ rechts ein und aus; die Spalte lässt sich ziehen (220–400 pt).
+- [ ] Abendnotiz tippen, dann ⌘N: der Befehl ist ausgegraut, nichts geht verloren. Ebenso im Punkt-Fenster: Notiz tippen, ⌘N / ⇧⌘N / ⌘↩ → nichts passiert.
+- [ ] Einstellungen → Archiv → „Wiederherstellen“ bzw. ein Import, der eine Woche ersetzt: der Hinweis mit „Widerrufen“ erscheint im Einstellungsfenster, nicht dahinter.
+- [ ] Woche: die Leiste zeigt „Vorige Woche“, „Diese Woche“ (⌘T), „Nächste Woche“ und „Wochenübersicht“ (⌥⌘0) mit Text.
+- [ ] Fenster („Tag abschließen“, PDF, Import) passen ins Hauptfenster und scrollen; das Hauptfenster lässt sich nicht kleiner als 900 × 620 ziehen.
+- [ ] Health-Hinweis: Schlaf/Gewicht stehen am Mac als „Wert aus Health auf dem iPhone“ und zählen im Tagesabschluss nicht als fehlend.
+
+**Erinnerungen (R80)**
+- [ ] Abend-Erinnerung kommt mit der Aktion „In 30 Min.“ – antippen → nach 30 Minuten nochmal.
+- [ ] Tag abschließen → die Abend-Erinnerung dieses Tages kommt nicht mehr.
+- [ ] Mac nach der Neuinstallation: alle Erinnerungen aus; die Erlaubnis wird erst nach der Tour oder beim Einschalten gefragt.
+
+**Lesbarkeit und Bedienung (R43, R44, R66, R67, R73, R75)**
+- [ ] Überall dieselben Wörter: Erledigt · Teilweise · Nicht erledigt · Entfällt (Fortschritt: Gearbeitet · Nicht heute); nirgends mehr „N/A“ oder „Nicht“ allein.
+- [ ] Hellmodus: „Erledigt“ und „Teilweise“ auf den Knöpfen gut lesbar; Dunkelmodus: weiße Schrift auf Türkis (+, „Tag abschließen“, ausgewählte Chips) gut lesbar.
+- [ ] Bei Standardschrift sehen Heute und Woche aus wie vorher; Einstellungen → Bedienungshilfen → größere Schrift (AX1 und größer): die Markier-Knöpfe stehen 2 × 2, kein Wort ist abgeschnitten.
+- [ ] VoiceOver in der Woche liest „Mittwoch, Fahrrad fahren, nicht erfasst“; im Tagesabschluss liest ein verfehltes Ziel „verfehlt, Ziel ≤ 23:00“.
+- [ ] Reine Ansicht-Fenster (Heute im Blick, Fokus, Ausgaben, Messwert, Punkt, Bericht, PDF, Papierkorb, Import, Erklärungen) haben oben das × (VoiceOver „Schließen“); kein Fenster zeigt „Schließen“ neben „Tag abschließen“.
+- [ ] Die Kürzel-Fußnote im „+“-Fenster erscheint am Mac und iPad, nicht auf dem iPhone.
+

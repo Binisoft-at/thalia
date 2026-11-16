@@ -36,6 +36,10 @@ struct WeekSheet: View {
     @Environment(AppModel.self) private var app
     @State private var showContext = false
     @State private var collapsed: Set<String> = []
+    /// R85: categories whose "Werte" rows are open (folded by default).
+    @State private var openValues: Set<String> = []
+    /// R55: the weekly targets fold away and stay so.
+    @AppStorage("week.goals.expanded") private var goalsExpanded = false
 
     var body: some View {
         List {
@@ -57,7 +61,7 @@ struct WeekSheet: View {
                     Button {
                         app.sheet = .newItem(context.week, categoryKey: nil)
                     } label: {
-                        Label("Punkt hinzufügen", systemImage: "plus")
+                        Label("Punkt anlegen", systemImage: "plus")
                     }
                 } footer: {
                     Text("So viele Punkte pro Kategorie wie nötig. Messwerte sind keine Punkte – sie schlagen nur einen Haken vor.")
@@ -67,194 +71,154 @@ struct WeekSheet: View {
             }
         }
         .compactListSections()
-        .navigationTitle("Woche")
-        .toolbar { MainToolbar() }
+        .navigationTitle(context.week.label)
+        .inlineNavigationTitle()
+        .toolbar { WeekSheetToolbar(context: context, app: app) }
+    }
+
+    /// R65: the day the title and "Details…" open.
+    private var detailDay: DayKey {
+        weekDetailDay(context.week, selected: app.selectedDay, today: app.today)
     }
 
     // MARK: Header
 
+    /// R55: compact – the week and its arrows sit in the title bar, closing and planning in the bar
+    /// and the …-menu, so the first cell shows without scrolling.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button {
-                    withAnimation(.snappy) { app.selectedWeek = context.week.adding(weeks: -1) }
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .accessibilityLabel("Vorige Woche")
-                .keyboardShortcut("[", modifiers: [.command, .shift])
-                VStack(spacing: 0) {
-                    Text(context.week.longLabel)
-                        .font(.title3.weight(.bold))
-                    Text(context.week.rangeLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                Button {
-                    withAnimation(.snappy) { app.selectedWeek = context.week.adding(weeks: 1) }
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .accessibilityLabel("Nächste Woche")
-                .keyboardShortcut("]", modifiers: [.command, .shift])
-            }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
-
-            if context.week != app.today.week {
-                Button("Zur aktuellen Woche") { app.selectedWeek = app.today.week }
-                    .font(.caption)
-                    .frame(maxWidth: .infinity)
-            }
-
-            HeroCard(title: "Woche \(context.week.label)",
-                     subtitle: context.score.goalsTotal == 0 ? "Noch keine Ziele" : context.score.coverageText,
+        VStack(alignment: .leading, spacing: 10) {
+            HeroCard(title: context.week.rangeLabel, subtitle: heroSubtitle,
                      value: Format.score(context.score.overall, outOf: false), caption: "Woche",
-                     progress: (context.score.overall ?? 0) / 10,
-                     facts: [("Fokus", context.workTotals().isEmpty ? "–" : context.workTotals().shortText),
-                             ("Tage abgeschlossen", "\(context.week.days.filter { context.isClosed($0) }.count)/7")])
-            VStack(alignment: .leading, spacing: 6) {
-                GoalBars(scores: context.goals.map { context.score.goalWeek[$0.key]?.score })
-                Button {
-                    app.sheet = .explainer(.scoring)
-                } label: {
-                    Label("Je Ziel 10 % – wie wird gerechnet?", systemImage: "questionmark.circle")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Brand.accent)
+                     progress: (context.score.overall ?? 0) / 10, facts: heroFacts, compact: true)
+            goalBars
+            dayStrip
+            contextLine
+        }
+    }
+
+    private var heroSubtitle: String {
+        context.score.goalsTotal == 0 ? "Noch keine Ziele" : context.score.coverageText
+    }
+
+    private var heroFacts: [(String, String)] {
+        let totals: WorkTotals = context.workTotals()
+        let closed: Int = context.week.days.filter { context.isClosed($0) }.count
+        let focus: String = totals.isEmpty ? "–" : totals.shortText
+        return [("Fokus", focus), ("Tage abgeschlossen", "\(closed)/7")]
+    }
+
+    /// The ten goals in their colours (R68), with the scoring explainer.
+    private var goalBars: some View {
+        HStack(alignment: .center, spacing: 10) {
+            GoalBars(scores: context.goals.map { context.score.goalWeek[$0.key]?.score }, height: 28,
+                     keys: context.goals.map(\.key))
+            Button {
+                app.sheet = .explainer(.scoring)
+            } label: {
+                Image(systemName: "questionmark.circle")
+                    .font(.body)
             }
-            .card(padding: 14)
+            .buttonStyle(.plain)
+            .foregroundStyle(Brand.accent)
+            .accessibilityLabel("Je Ziel 10 % – wie wird gerechnet?")
+        }
+        .card(padding: 10)
+    }
 
-            dayTypes
+    /// R8/R42/R90: Mo–So with status, a tap opens the day in Today.
+    private var dayStrip: some View {
+        HStack(spacing: 4) {
+            ForEach(context.week.days, id: \.self) { day in
+                WeekDayHeader(context: context, day: day)
+            }
+        }
+    }
 
-            if let plan = context.plan, !(plan.title.isEmpty && plan.details.isEmpty) {
-                VStack(alignment: .leading, spacing: 6) {
-                    if !plan.title.isEmpty {
-                        Text(plan.title).font(.headline)
+    /// R55: the week's context in one line; a tap shows all of it.
+    @ViewBuilder
+    private var contextLine: some View {
+        if let plan = context.plan, !(plan.title.isEmpty && plan.details.isEmpty) {
+            Button {
+                withAnimation(.snappy) { showContext.toggle() }
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "text.alignleft")
+                            .foregroundStyle(.secondary)
+                        Text(plan.title.isEmpty ? plan.details : plan.title)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(showContext ? nil : 1)
+                        Spacer(minLength: 4)
+                        Image(systemName: showContext ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    if !plan.details.isEmpty {
+                    if showContext && !plan.title.isEmpty && !plan.details.isEmpty {
                         Text(plan.details)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .lineLimit(showContext ? nil : 3)
-                        Button(showContext ? "Weniger" : "Wochenkontext ganz zeigen") {
-                            withAnimation(.snappy) { showContext.toggle() }
-                        }
-                        .font(.caption)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .card(padding: 14)
-                .contextMenu {
-                    Button("Bearbeiten…", systemImage: "pencil") { app.sheet = .weekInfo(context.week) }
-                }
+                .contentShape(.rect)
             }
-
-            actions
+            .buttonStyle(.plain)
+            .card(padding: 10)
+            .contextMenu {
+                Button("Bearbeiten…", systemImage: "pencil") { app.sheet = .weekInfo(context.week) }
+            }
+            .accessibilityHint(showContext ? "Klappt den Wochenkontext zu" : "Zeigt den ganzen Wochenkontext")
         }
-    }
-
-    private var dayTypes: some View {
-        HStack(spacing: 4) {
-            ForEach(context.week.days, id: \.self) { day in
-                Button {
-                    app.sheet = .dayInfo(day)
-                } label: {
-                    VStack(spacing: 3) {
-                        Text(day.weekday.short)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(day == context.today ? Brand.accent : .secondary)
-                        Image(systemName: DayTypes.symbol(for: context.dayType(day)))
-                            .font(.caption)
-                        Text(Format.score(context.score.days[day]?.score, outOf: false))
-                            .font(.system(.caption2, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .background(context.isClosed(day) ? Brand.accent.opacity(0.12) : Color.clear, in: .rect(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(day.weekday.name): \(context.dayType(day).isEmpty ? "kein Tagestyp" : context.dayType(day))")
-            }
-        }
-    }
-
-    private var actions: some View {
-        VStack(spacing: 8) {
-            if context.isClosed {
-                Button {
-                    app.sheet = .closeWeek(context.week)
-                } label: {
-                    Label("Abgeschlossen", systemImage: "checkmark.seal.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(Brand.accent)
-            } else {
-                Button {
-                    app.sheet = .closeWeek(context.week)
-                } label: {
-                    Label("Woche abschließen", systemImage: "flag.checkered")
-                        .frame(maxWidth: .infinity)
-                }
-                .primaryActionStyle()
-            }
-            HStack(spacing: 8) {
-                Button {
-                    app.sheet = .report(context.week)
-                } label: {
-                    Label("Bericht", systemImage: "doc.text")
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                Button {
-                    app.sheet = .importPlan(prompt: true)
-                } label: {
-                    Label("Planen", systemImage: "sparkles")
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .labelStyle(.titleAndIcon)
-        .font(.subheadline.weight(.semibold))
     }
 
     // MARK: Weekly targets
 
+    /// R16/R55: the one weekly-target list, folded away on request (remembered).
     @ViewBuilder
     private var targetsSection: some View {
-        let weekly = context.measures.filter { $0.record?.period == .week && $0.record?.target != nil }
-        let totals = context.workTotals()
-        if !weekly.isEmpty || !totals.isEmpty {
+        let targets: [WeeklyTarget] = context.weeklyTargets
+        let totals: WorkTotals = context.workTotals()
+        if !targets.isEmpty || !totals.isEmpty {
             Section {
-                ForEach(weekly) { measure in
-                    if let record = measure.record, let target = record.target {
-                        let pace = Pace(done: context.weekValue(measure) ?? 0, target: target.scaleMax, days: record.days,
-                                        week: context.week, today: context.today)
-                        PaceRow(title: measure.title, unit: Units.display(measure.unit), pace: pace, isLimit: target.isLimit)
+                if goalsExpanded {
+                    if !targets.isEmpty {
+                        WeeklyTargetsList(context: context, onOpen: weekTargetOpener(context: context, app: app))
                     }
-                }
-                if !totals.isEmpty {
-                    Button {
-                        app.sheet = .explainer(.powerHours)
-                    } label: {
-                        Label(totals.explanation, systemImage: "equal.circle")
-                            .font(.subheadline)
+                    if !totals.isEmpty {
+                        Button {
+                            app.sheet = .explainer(.powerHours)
+                        } label: {
+                            Label(totals.explanation, systemImage: "equal.circle")
+                                .font(.subheadline)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             } header: {
-                SectionHeading(title: "Wochenziele", symbol: "target")
+                Button {
+                    withAnimation(.snappy) { goalsExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Label("Wochenziele", systemImage: "target")
+                        Spacer()
+                        if !targets.isEmpty {
+                            Text("\(context.weeklyTargetsMet) von \(targets.count) erreicht")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Image(systemName: goalsExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(goalsExpanded ? "Klappt die Wochenziele zu" : "Zeigt die Wochenziele")
             } footer: {
-                Text("Die Linie zeigt ein gleichmäßiges Tempo über die geplanten Tage – keine Aufforderung, mehr zu machen.")
+                if goalsExpanded && !targets.isEmpty {
+                    Text("Der Strich zeigt ein gleichmäßiges Tempo über die geplanten Tage – keine Aufforderung, mehr zu machen.")
+                }
             }
         }
     }
@@ -262,17 +226,31 @@ struct WeekSheet: View {
     // MARK: The sheet
 
     private func categorySection(_ category: TrackCategory) -> some View {
-        let items = context.items(in: category)
-        let isCollapsed = collapsed.contains(category.key)
+        let items: [PlanItem] = context.items(in: category)
+        let values: [MeasureDefinition] = WeekValues.measures(in: category, context: context)
+        let isCollapsed: Bool = collapsed.contains(category.key)
+        let showsValues: Bool = openValues.contains(category.key)
+        let day: DayKey = detailDay
         return Section {
             if !isCollapsed && !items.isEmpty {
                 DayHeaderRow(context: context, categoryKey: category.key)
                 ForEach(items) { item in
-                    WeekItemRow(context: context, item: item)
+                    WeekItemRow(context: context, item: item, detailDay: day)
                 }
             } else if items.isEmpty {
                 Text("Keine Punkte in dieser Woche")
                     .foregroundStyle(.secondary)
+            }
+            if !isCollapsed && !values.isEmpty {
+                valuesToggle(category, count: values.count, isOpen: showsValues)
+                if showsValues {
+                    if items.isEmpty {
+                        DayHeaderRow(context: context, categoryKey: category.key)
+                    }
+                    ForEach(values) { measure in
+                        WeekValueRow(context: context, measure: measure)
+                    }
+                }
             }
         } header: {
             Button {
@@ -294,6 +272,385 @@ struct WeekSheet: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// R85: "Werte" – folded rows with the category's daily values Mo–So.
+    private func valuesToggle(_ category: TrackCategory, count: Int, isOpen: Bool) -> some View {
+        Button {
+            withAnimation(.snappy) {
+                if isOpen { openValues.remove(category.key) } else { openValues.insert(category.key) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundStyle(.secondary)
+                Text("Werte")
+                Text("\(count)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .font(.subheadline)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Werte, \(count)")
+        .accessibilityHint(isOpen ? "Klappt die Tageswerte zu" : "Zeigt die Tageswerte von Montag bis Sonntag")
+    }
+}
+
+/// R55: the iPhone week's bar – arrows, "KW47" with the last weeks, closing the week, the …-menu.
+struct WeekSheetToolbar: ToolbarContent {
+    let context: WeekContext
+    let app: AppModel
+
+    private var closeTitle: String { context.isClosed ? "Abgeschlossen" : "Woche abschließen" }
+    private var closeSymbol: String { context.isClosed ? "checkmark.seal.fill" : "flag.checkered" }
+
+    var body: some ToolbarContent {
+        #if os(iOS)
+        ToolbarItemGroup(placement: .topBarLeading) {
+            Button {
+                withAnimation(.snappy) { app.selectedWeek = context.week.adding(weeks: -1) }
+            } label: {
+                Label("Vorige Woche", systemImage: "chevron.left")
+            }
+            .keyboardShortcut("[", modifiers: [.command, .shift])
+            Button {
+                withAnimation(.snappy) { app.selectedWeek = context.week.adding(weeks: 1) }
+            } label: {
+                Label("Nächste Woche", systemImage: "chevron.right")
+            }
+            .keyboardShortcut("]", modifiers: [.command, .shift])
+        }
+        ToolbarItem(placement: .principal) {
+            WeekTitleMenu(context: context, app: app)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                app.sheet = .closeWeek(context.week)
+            } label: {
+                Label(closeTitle, systemImage: closeSymbol)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            WeekMoreMenu(context: context, app: app)
+        }
+        #else
+        MainToolbar()
+        #endif
+    }
+}
+
+/// R55: "KW47" in the title bar – a menu with the last 8 weeks and "Zur aktuellen Woche".
+private struct WeekTitleMenu: View {
+    let context: WeekContext
+    let app: AppModel
+
+    private var recentWeeks: [WeekKey] {
+        (0..<8).map { app.today.week.adding(weeks: -$0) }
+    }
+
+    private func title(_ week: WeekKey) -> String {
+        "\(week.label) · \(week.rangeLabel)"
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(recentWeeks, id: \.self) { week in
+                Button {
+                    withAnimation(.snappy) { app.selectedWeek = week }
+                } label: {
+                    if week == context.week {
+                        Label(title(week), systemImage: "checkmark")
+                    } else {
+                        Text(title(week))
+                    }
+                }
+            }
+            Divider()
+            Button("Zur aktuellen Woche", systemImage: "calendar") {
+                withAnimation(.snappy) { app.selectedWeek = app.today.week }
+            }
+            .disabled(context.week == app.today.week)
+        } label: {
+            VStack(spacing: 0) {
+                HStack(spacing: 3) {
+                    Text(context.week.label)
+                        .font(.headline)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                Text(context.week.rangeLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .foregroundStyle(.primary)
+        }
+        .accessibilityLabel("\(context.week.label), \(context.week.rangeLabel)")
+        .accessibilityHint("Andere Woche wählen")
+    }
+}
+
+/// R55/R56: the …-menu of the iPhone week – planning the next week, the report, then the usual entries.
+private struct WeekMoreMenu: View {
+    let context: WeekContext
+    let app: AppModel
+
+    var body: some View {
+        let next: WeekKey = context.week.adding(weeks: 1)
+        Menu {
+            Button("\(next.label) planen", systemImage: "sparkles") { app.sheet = .planWeek(next) }
+            Button("Bericht", systemImage: "doc.text") { app.sheet = .report(context.week) }
+            Button("Wochenkontext bearbeiten…", systemImage: "pencil") { app.sheet = .weekInfo(context.week) }
+            Divider()
+            Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
+            Divider()
+            if !app.isSandbox {
+                Button("Thalia-Tour", systemImage: "graduationcap") { app.startTour() }
+            }
+            Button("Einstellungen", systemImage: "gear") { app.sheet = .settings }
+        } label: {
+            Label("Mehr", systemImage: "ellipsis")
+        }
+    }
+}
+
+/// R65: the day an item's title and "Details…" open – the chosen day if it is in this week, else
+/// today if it is, else Monday.
+func weekDetailDay(_ week: WeekKey, selected: DayKey, today: DayKey) -> DayKey {
+    if week.contains(selected) { return selected }
+    if week.contains(today) { return today }
+    return week.monday
+}
+
+/// R16: a tap on a weekly target records for today – only in the current week.
+@MainActor
+func weekTargetOpener(context: WeekContext, app: AppModel) -> ((MeasureDefinition) -> Void)? {
+    guard context.week.contains(context.today) else { return nil }
+    let day: DayKey = context.today
+    return { measure in
+        app.sheet = MarkCell.valueSheet(for: measure, context: context, day: day)
+    }
+}
+
+/// R8/R42/R90: one weekday above the week – day type (or the seal once closed), status ("62 %",
+/// the score once closed, "–" to come), "5 offen" for past open days and a dot for the day's note.
+/// A tap opens the day in Today; the context menu closes it or edits type and note.
+struct WeekDayHeader: View {
+    let context: WeekContext
+    let day: DayKey
+    /// Fixed column width (Mac table); nil fills the strip (iPhone).
+    var width: CGFloat?
+    @Environment(AppModel.self) private var app
+
+    private var isToday: Bool { day == context.today }
+    private var isClosed: Bool { context.isClosed(day) }
+
+    private var note: String {
+        context.dayNote(day).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Past days with a plan that are still open and have blank required items.
+    private var openCount: Int? {
+        guard context.hasPlan, day < context.today, !isClosed else { return nil }
+        let count: Int = context.openCount(on: day)
+        return count > 0 ? count : nil
+    }
+
+    private var symbol: String {
+        isClosed ? "checkmark.seal.fill" : DayTypes.symbol(for: context.dayType(day))
+    }
+
+    private var title: String {
+        width == nil ? day.weekday.short : "\(day.weekday.short) \(day.day)."
+    }
+
+    private var titleFont: Font {
+        width == nil ? .caption2.weight(.semibold) : .caption.weight(.semibold)
+    }
+
+    private var titleColor: Color {
+        if isToday { return Brand.accent }
+        return width == nil ? .secondary : .primary
+    }
+
+    private var maxWidth: CGFloat? {
+        width == nil ? .infinity : nil
+    }
+
+    private var cellFill: Color {
+        if isClosed { return Brand.accent.opacity(0.12) }
+        return isToday ? Brand.accent.opacity(0.08) : Color.clear
+    }
+
+    private var spokenText: String {
+        var parts: [String] = [context.dayStatusAccessibility(day)]
+        let type: String = context.dayType(day)
+        if !type.isEmpty { parts.append(type) }
+        if let openCount { parts.append("\(openCount) offen") }
+        if !note.isEmpty { parts.append("Besonderheit: \(note)") }
+        return parts.joined(separator: ", ")
+    }
+
+    private var tooltip: String {
+        let base: String = "\(day.longLabel) in Heute öffnen"
+        return note.isEmpty ? base : "\(base)\nBesonderheit: \(note)"
+    }
+
+    private var closeTitle: String {
+        isClosed ? "Abschluss ansehen…" : "Tag abschließen…"
+    }
+
+    var body: some View {
+        Button(action: openInToday) {
+            label
+        }
+        .buttonStyle(.plain)
+        .help(tooltip)
+        .contextMenu {
+            if day <= context.today {
+                Button(closeTitle, systemImage: "moon.stars") { app.sheet = .closeDay(day) }
+            }
+            Button("Tagestyp und Besonderheit…", systemImage: "calendar") { app.sheet = .dayInfo(day) }
+        }
+        .accessibilityLabel(spokenText)
+        .accessibilityHint("Öffnet den Tag in Heute")
+    }
+
+    /// R42: the day in Today.
+    private func openInToday() {
+        app.selectedDay = day
+        app.tab = .today
+        app.sidebar = .today
+    }
+
+    private var label: some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(titleFont)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(titleColor)
+            Image(systemName: symbol)
+                .font(.caption)
+                .foregroundStyle(isClosed ? Brand.accent : Color.secondary)
+            Text(context.dayStatusText(day))
+                .font(.system(.caption2, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(.secondary)
+            if let openCount {
+                Text("\(openCount) offen")
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .frame(maxWidth: maxWidth)
+        .frame(width: width)
+        .padding(.vertical, 5)
+        .background(cellFill, in: .rect(cornerRadius: 9))
+        .overlay(alignment: .topTrailing) {
+            if !note.isEmpty {
+                Circle()
+                    .fill(Brand.accent)
+                    .frame(width: 5, height: 5)
+                    .padding(4)
+            }
+        }
+        .contentShape(.rect)
+    }
+}
+
+/// R85: the daily measurements of a category that have a number or a time (no texts).
+enum WeekValues {
+    static func measures(in category: TrackCategory, context: WeekContext) -> [MeasureDefinition] {
+        context.measures.filter { measure in
+            guard measure.categoryKey == category.key, let record = measure.record else { return false }
+            return record.period == .day && !record.isText
+        }
+    }
+
+    /// "70,5 kg", "23:10", "·" without a value.
+    static func text(_ value: Double?, measure: MeasureDefinition) -> String {
+        guard let value else { return "·" }
+        return Format.measure(value, unit: measure.unit)
+    }
+
+    /// Green met, red missed; without a target plain, without a value grey.
+    static func color(_ value: Double?, measure: MeasureDefinition) -> Color {
+        guard value != nil else { return .secondary }
+        guard let record = measure.record, let met = Measures.isMet(record, value: value) else { return .primary }
+        return met ? .green : .red
+    }
+
+    static func spoken(_ value: Double?, measure: MeasureDefinition) -> String {
+        guard let value else { return "kein Wert" }
+        let shown: String = Format.measure(value, unit: measure.unit)
+        guard let record = measure.record, let met = Measures.isMet(record, value: value) else { return shown }
+        return met ? "\(shown), erfüllt" : "\(shown), verfehlt"
+    }
+}
+
+/// R85: one day's value of a measurement; a tap records it for that day.
+struct WeekValueCell: View {
+    let context: WeekContext
+    let measure: MeasureDefinition
+    let day: DayKey
+    let width: CGFloat
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        let value: Double? = context.dayValue(measure, on: day)
+        let applies: Bool = context.applies(measure, on: day)
+        Button {
+            app.sheet = MarkCell.valueSheet(for: measure, context: context, day: day)
+        } label: {
+            Text(WeekValues.text(value, measure: measure))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .foregroundStyle(WeekValues.color(value, measure: measure))
+                .frame(width: width, height: 26)
+                .background(applies ? Color.cardBackground : Color.clear, in: .rect(cornerRadius: 6))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help("\(measure.title) · \(day.shortLabel)")
+        .accessibilityLabel("\(day.weekday.name), \(measure.title): \(WeekValues.spoken(value, measure: measure))")
+    }
+}
+
+/// R85: a measurement's values Mo–So under its category (iPhone).
+struct WeekValueRow: View {
+    let context: WeekContext
+    let measure: MeasureDefinition
+
+    var body: some View {
+        HStack(spacing: 3) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(measure.title)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                if let target = measure.record?.target {
+                    Text("Ziel \(target.label)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(context.week.days, id: \.self) { day in
+                WeekValueCell(context: context, measure: measure, day: day, width: 30)
+            }
         }
     }
 }
@@ -327,11 +684,14 @@ struct DayHeaderRow: View {
     }
 }
 
-/// One item: title and seven cells.
+/// One item: title, kind and seven cells (iPhone).
 struct WeekItemRow: View {
     let context: WeekContext
     let item: PlanItem
+    /// R65: the day the title and "Details…" open.
+    let detailDay: DayKey
     @Environment(AppModel.self) private var app
+    @State private var confirmsDelete = false
 
     var body: some View {
         HStack(spacing: 3) {
@@ -339,74 +699,118 @@ struct WeekItemRow: View {
                 Text(item.title)
                     .font(.subheadline)
                     .lineLimit(2)
-                HStack(spacing: 4) {
-                    if item.isKnockout {
-                        Image(systemName: "exclamationmark.octagon").foregroundStyle(.orange)
-                    }
-                    if let quota = context.quotaProgress(item) {
-                        Text("\(quota.done)/\(quota.target)×")
-                            .foregroundStyle(quota.done >= quota.target ? .green : .secondary)
-                    } else if item.schedule != .fixed {
-                        Text(item.schedule.label).foregroundStyle(.secondary)
-                    }
-                }
-                .font(.caption2)
+                meta
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
-            .onTapGesture { app.sheet = .item(item, app.today.week == context.week ? app.today : context.week.monday) }
+            .onTapGesture { app.sheet = .item(item, detailDay) }
             ForEach(context.week.days, id: \.self) { day in
-                MarkCell(
-                    mark: context.mark(item, on: day),
-                    applies: item.days.contains(day.weekday) && item.schedule != .optional,
-                    isToday: day == context.today,
-                    suggestion: context.suggestion(item, on: day),
-                    options: context.options(item, on: day),
-                    onSet: { app.setMark($0, item: item, day: day) }
-                )
-                .frame(width: 30, height: 30)
+                WeekMarkCell(context: context, item: item, day: day)
+                    .frame(width: 30, height: 30)
             }
         }
         .contextMenu {
-            Button("Details…", systemImage: "info.circle") { app.sheet = .item(item, context.today) }
-            Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([item]) }
+            WeekItemMenu(app: app, item: item, detailDay: detailDay, confirmsDelete: $confirmsDelete)
+        }
+        .weekItemDeleteDialog(item, isPresented: $confirmsDelete, app: app)
+    }
+
+    /// R64: the same short label as Today and the PDF; quota and progress of the week.
+    @ViewBuilder
+    private var meta: some View {
+        let kind: String? = context.kindLabel(item)
+        let quota: (done: Int, target: Int)? = context.quotaProgress(item)
+        let progress: Double? = context.progress(item)
+        if item.isKnockout || kind != nil || quota != nil || progress != nil {
+            HStack(spacing: 4) {
+                if item.isKnockout {
+                    Image(systemName: "exclamationmark.octagon").foregroundStyle(.orange)
+                }
+                KindBadge(text: kind)
+                if let quota {
+                    Text("\(quota.done)/\(quota.target)×")
+                        .monospacedDigit()
+                        .foregroundStyle(quota.done >= quota.target ? Color.green : Color.secondary)
+                } else if let progress {
+                    Text("\(percent(progress)) %")
+                        .monospacedDigit()
+                        .foregroundStyle(progress >= 1 ? Color.green : Color.secondary)
+                }
+            }
+            .font(.caption2)
         }
     }
 }
 
-/// Weekly target with an even-pace marker (no streaks, no pressure).
-struct PaceRow: View {
-    let title: String
-    let unit: String
-    let pace: Pace
-    var isLimit = false
+/// R9/R63/R65/R66: one item on one day – the same rules in the iPhone week and the Mac table.
+/// Free days and automatic items can't be marked; an automatic item opens its value instead.
+struct WeekMarkCell: View {
+    let context: WeekContext
+    let item: PlanItem
+    let day: DayKey
+    @Environment(AppModel.self) private var app
+
+    /// "Mi, 18. Nov. · Erledigt".
+    static func helpText(_ mark: Mark?, item: PlanItem, day: DayKey) -> String {
+        let word: String = mark?.label(progress: item.schedule == .progress) ?? "Nicht erfasst"
+        return "\(day.shortLabel) · \(word)"
+    }
+
+    private func opener(_ sheet: AppSheet?) -> (() -> Void)? {
+        guard let sheet else { return nil }
+        let model: AppModel = app
+        return { model.sheet = sheet }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title).font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(pace.label(unit: unit))
-                    .font(.caption)
-                    .foregroundStyle(pace.isReached ? .green : (pace.isBehind && !isLimit ? .orange : .secondary))
-            }
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.15))
-                    Capsule().fill(pace.isReached ? Color.green : Brand.accent)
-                        .frame(width: geometry.size.width * pace.fraction)
-                    if pace.target > 0, !pace.isReached {
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.5))
-                            .frame(width: 2, height: 12)
-                            .offset(x: geometry.size.width * min(1, pace.expected / pace.target) - 1)
-                    }
-                }
-            }
-            .frame(height: 8)
+        let mark: Mark? = context.mark(item, on: day)
+        let valueSheet: AppSheet? = MarkCell.valueSheet(for: item, context: context, day: day)
+        MarkCell(
+            mark: mark,
+            applies: item.days.contains(day.weekday) && item.schedule != .optional,
+            isToday: day == context.today,
+            suggestion: context.suggestion(item, on: day),
+            options: context.options(item, on: day),
+            hasNote: !context.markNote(item, on: day).isEmpty,
+            accessibilityPrefix: "\(day.weekday.name), \(item.title)",
+            help: WeekMarkCell.helpText(mark, item: item, day: day),
+            onOpenValue: opener(valueSheet),
+            onAddNote: { app.sheet = .item(item, day) },
+            onSet: { app.setMark($0, item: item, day: day) }
+        )
+    }
+}
+
+/// R63: the context menu of an item in the week (iPhone and Mac). `app` is passed in, so the menu
+/// doesn't depend on the environment reaching it.
+struct WeekItemMenu: View {
+    let app: AppModel
+    let item: PlanItem
+    let detailDay: DayKey
+    @Binding var confirmsDelete: Bool
+
+    var body: some View {
+        Button("Bearbeiten…", systemImage: "pencil") { app.sheet = .editItem(item) }
+        Button("Details…", systemImage: "info.circle") { app.sheet = .item(item, detailDay) }
+        if item.isSecondary {
+            Button("Doch wichtig", systemImage: "star") { app.store.setSecondary(item, false) }
+        } else {
+            Button("Als Nebensache", systemImage: "square.stack") { app.store.setSecondary(item, true) }
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title): \(pace.label(unit: unit))")
+        Divider()
+        Button("Löschen…", systemImage: "trash", role: .destructive) { confirmsDelete = true }
+    }
+}
+
+extension View {
+    /// R63: deleting an item asks whether it should stay away in later weeks, too.
+    @MainActor
+    func weekItemDeleteDialog(_ item: PlanItem, isPresented: Binding<Bool>, app: AppModel) -> some View {
+        confirmationDialog("„\(item.title)“ löschen?", isPresented: isPresented, titleVisibility: .visible) {
+            Button("Löschen – auch künftig weglassen", role: .destructive) { app.trash([item], carryOver: true) }
+            Button("Nur diese Woche löschen", role: .destructive) { app.trash([item], carryOver: false) }
+        } message: {
+            Text("Der nächste Planungs-Prompt sagt der KI, ob der Punkt dauerhaft wegfällt.")
+        }
     }
 }

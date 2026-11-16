@@ -1,6 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BinisoftKit
 import ThaliaCore
+#if os(macOS)
+import AppKit
+import PDFKit
+#endif
 
 // W1: the week (and now the day) as a PDF worth sharing. A4 pages drawn with SwiftUI: a cover with
 // the big number, the ten goals in their colours and the days; then designed tables with fixed row
@@ -50,14 +55,19 @@ enum PDFExport {
         switch kind {
         case .week:
             let tables = paginate(weekRows(context))
-            let total = 2 + tables.count
+            let reviews = paginateReview(reviewBlocks(context))
+            let total = 2 + reviews.count + tables.count
             var pages: [AnyView] = [
                 AnyView(WeekCoverPage(context: context, page: 1, total: total)),
                 AnyView(WeekDetailsPage(context: context, page: 2, total: total)),
             ]
+            for (index, blocks) in reviews.enumerated() {
+                pages.append(AnyView(ReviewPage(context: context, blocks: blocks, page: index + 3, total: total)))
+            }
+            let firstTable = 3 + reviews.count
             for (index, rows) in tables.enumerated() {
                 pages.append(AnyView(TablePage(context: context, title: "\(context.week.label) · Kategorien", rows: rows,
-                                               days: context.week.days, page: index + 3, total: total)))
+                                               days: context.week.days, page: index + firstTable, total: total)))
             }
             return pages
         case .day(let day):
@@ -145,6 +155,103 @@ enum PDFExport {
             used += row.height
         }
         if !current.isEmpty { pages.append(current) }
+        return pages
+    }
+
+    // MARK: Columns (R26)
+
+    /// A single day's column is wide enough for "Mo, 16. Nov.".
+    static func columnWidth(_ dayCount: Int) -> CGFloat {
+        dayCount == 1 ? 90 : 30
+    }
+
+    /// "Mo, 16. Nov." for the day report, "Mo" in the week table.
+    static func columnTitle(_ day: DayKey, single: Bool) -> String {
+        single ? day.shortLabel : day.weekday.short
+    }
+
+    // MARK: Review page (R26)
+
+    /// One answer (or day note) on the "Rückblick" page; `heading` starts a group.
+    struct ReviewBlock {
+        var heading: String?
+        var title: String
+        var text: String
+        /// Not answered: shown as "–".
+        var isEmpty: Bool { text.isEmpty }
+    }
+
+    /// Height for blocks on a review page (A4 minus band, margins and footer).
+    static let reviewBudget: CGFloat = 640
+    /// Characters per line of answer text across the page (10.5 pt, conservative).
+    static let charactersPerLine = 88
+
+    /// Every weekly question (unanswered ones too), then the day notes of the week.
+    static func reviewBlocks(_ context: WeekContext) -> [ReviewBlock] {
+        var blocks: [ReviewBlock] = []
+        for (index, question) in ReflectionQuestion.week.enumerated() {
+            let text: String = context.reflection(scope: context.week.string, field: question.id)
+            blocks.append(ReviewBlock(heading: index == 0 ? "Wochenreflexion" : nil, title: question.question, text: text))
+        }
+        var firstNote = true
+        for day in context.week.days {
+            let text: String = context.reflection(scope: day.string, field: ReflectionQuestion.dayNoteField)
+            guard !text.isEmpty else { continue }
+            blocks.append(ReviewBlock(heading: firstNote ? "Notizen zum Tag" : nil, title: day.shortLabel, text: text))
+            firstNote = false
+        }
+        return blocks
+    }
+
+    static func lineCount(_ text: String) -> Int {
+        guard !text.isEmpty else { return 1 }
+        return text.split(separator: "\n", omittingEmptySubsequences: false).reduce(0) { total, paragraph in
+            total + max(1, Int((Double(paragraph.count) / Double(charactersPerLine)).rounded(.up)))
+        }
+    }
+
+    static func height(_ block: ReviewBlock) -> CGFloat {
+        let heading: CGFloat = block.heading == nil ? 0 : 22
+        return heading + 15 + CGFloat(lineCount(block.text)) * 13.5 + 12
+    }
+
+    /// A block taller than a page is split by words, so nothing is cut off.
+    static func split(_ block: ReviewBlock) -> [ReviewBlock] {
+        guard height(block) > reviewBudget else { return [block] }
+        let maxLines: Int = Int((reviewBudget - 22 - 15 - 12) / 13.5)
+        var parts: [ReviewBlock] = []
+        var current = ""
+        for word in block.text.split(separator: " ", omittingEmptySubsequences: false) {
+            let candidate: String = current.isEmpty ? String(word) : current + " " + String(word)
+            if lineCount(candidate) > maxLines, !current.isEmpty {
+                parts.append(ReviewBlock(heading: parts.isEmpty ? block.heading : nil,
+                                         title: parts.isEmpty ? block.title : block.title + " (Fortsetzung)", text: current))
+                current = String(word)
+            } else {
+                current = candidate
+            }
+        }
+        parts.append(ReviewBlock(heading: parts.isEmpty ? block.heading : nil,
+                                 title: parts.isEmpty ? block.title : block.title + " (Fortsetzung)", text: current))
+        return parts
+    }
+
+    /// Fills review pages by estimated height; always at least one page.
+    static func paginateReview(_ blocks: [ReviewBlock]) -> [[ReviewBlock]] {
+        var pages: [[ReviewBlock]] = []
+        var current: [ReviewBlock] = []
+        var used: CGFloat = 0
+        for block in blocks.flatMap({ split($0) }) {
+            let needed: CGFloat = height(block)
+            if used + needed > reviewBudget, !current.isEmpty {
+                pages.append(current)
+                current = []
+                used = 0
+            }
+            current.append(block)
+            used += needed
+        }
+        if !current.isEmpty || pages.isEmpty { pages.append(current) }
         return pages
     }
 }
@@ -411,11 +518,9 @@ private struct WeekCoverPage: View {
     private var stats: [(String, String, Color)] {
         let totals = context.workTotals()
         let closed: Int = context.week.days.filter { context.isClosed($0) }.count
-        let weekly: [MeasureDefinition] = context.measures.filter { $0.record?.period == .week && $0.record?.target != nil }
-        let reached: Int = weekly.filter { measure in
-            guard let target = measure.record?.target else { return false }
-            return target.isMet(context.weekValue(measure) ?? 0)
-        }.count
+        // R16: the same list and count as the app.
+        let weekly: [WeeklyTarget] = context.weeklyTargets
+        let reached: Int = context.weeklyTargetsMet
         let best: AnnualGoal? = context.goals.max { ($0.weekScore(context) ?? -1) < ($1.weekScore(context) ?? -1) }
         var list: [(String, String, Color)] = [
             ("Fokus", totals.isEmpty ? "–" : totals.shortText, GoalPalette.color(goal: "3")),
@@ -477,21 +582,17 @@ private struct WeekDetailsPage: View {
     let total: Int
 
     var body: some View {
-        let weekly: [MeasureDefinition] = Array(context.measures.filter { $0.record?.period == .week && $0.record?.target != nil }.prefix(10))
+        let weekly: [WeeklyTarget] = Array(context.weeklyTargets.prefix(10))
         let byCategory: [String: WorkTotals] = WorkTotals.byCategory(context.workRecords)
         let workKeys: [String] = byCategory.keys.sorted()
-        let answers: [(String, String)] = ReflectionQuestion.week.compactMap { question in
-            let text = context.reflection(scope: context.week.string, field: question.id)
-            return text.isEmpty ? nil : (question.question, text)
-        }
         VStack(alignment: .leading, spacing: 0) {
             BandHeader(title: "Wochenziele & Fokus", subtitle: "\(context.week.label) · \(context.week.rangeLabel)")
             VStack(alignment: .leading, spacing: 14) {
                 if !weekly.isEmpty {
                     PDFSectionTitle(text: "Wochenziele")
                     VStack(spacing: 8) {
-                        ForEach(weekly) { measure in
-                            WeeklyTargetLine(context: context, measure: measure)
+                        ForEach(weekly) { target in
+                            WeeklyTargetLine(target: target)
                         }
                     }
                 }
@@ -513,22 +614,6 @@ private struct WeekDetailsPage: View {
                                     .monospacedDigit()
                                     .foregroundStyle(ink)
                                     .frame(width: 60, alignment: .trailing)
-                            }
-                        }
-                    }
-                }
-                if !answers.isEmpty {
-                    PDFSectionTitle(text: "Rückblick")
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(answers.prefix(4).enumerated()), id: \.offset) { _, answer in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(answer.0)
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(ink)
-                                Text(answer.1)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(muted)
-                                    .lineLimit(3)
                             }
                         }
                     }
@@ -563,32 +648,124 @@ private struct WeekDetailsPage: View {
     }
 }
 
+/// A weekly target with the app's pace (R16, R47): bar with the even-pace mark and its state.
 private struct WeeklyTargetLine: View {
-    let context: WeekContext
-    let measure: MeasureDefinition
+    let target: WeeklyTarget
+
+    private var unit: String {
+        target.unit == "PH" ? "PH" : target.measure.unit
+    }
+
+    private var title: String { target.item?.title ?? target.measure.title }
+
+    private var amounts: String {
+        "\(Format.measure(target.value, unit: unit)) / \(Format.measure(target.target.scaleMax, unit: unit))"
+    }
+
+    /// "im Plan" · "hinter dem Plan" · "erreicht"; limits "im Rahmen" · "überschritten".
+    private var state: String {
+        if target.target.isLimit { return target.isMet ? "im Rahmen" : "überschritten" }
+        if target.pace.isReached { return "erreicht" }
+        return target.pace.isBehind ? "hinter dem Plan" : "im Plan"
+    }
+
+    private var stateColor: Color {
+        if target.target.isLimit { return target.isMet ? Color(red: 0.20, green: 0.68, blue: 0.38) : Color(red: 0.88, green: 0.30, blue: 0.28) }
+        if target.pace.isReached { return Color(red: 0.20, green: 0.68, blue: 0.38) }
+        return target.pace.isBehind ? Color(red: 0.95, green: 0.62, blue: 0.15) : muted
+    }
+
+    private var fraction: Double {
+        let goal: Double = target.target.scaleMax
+        return goal > 0 ? target.value / goal : 0
+    }
+
+    /// Where an even pace stands today, 0…1 of the bar; nil once reached.
+    private var marker: Double? {
+        let pace: Pace = target.pace
+        guard pace.target > 0, pace.expected > 0, !pace.isReached else { return nil }
+        return min(1, pace.expected / pace.target)
+    }
 
     var body: some View {
-        let value: Double = context.weekValue(measure) ?? 0
-        let target: Double = measure.record?.target?.scaleMax ?? 0
-        let met: Bool = measure.record?.target?.isMet(value) ?? false
-        let unit: String = measure.record?.isWork == true ? "PH" : measure.unit
         HStack(spacing: 10) {
-            Image(systemName: met ? "checkmark.circle.fill" : "circle")
+            Image(systemName: target.isMet ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 11))
-                .foregroundStyle(met ? Color(red: 0.20, green: 0.68, blue: 0.38) : muted)
-            Text(measure.title)
+                .foregroundStyle(target.isMet ? Color(red: 0.20, green: 0.68, blue: 0.38) : muted)
+            Text(title)
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(ink)
                 .lineLimit(1)
-                .frame(width: 172, alignment: .leading)
-            ColourBar(fraction: target > 0 ? value / target : 0, tint: GoalPalette.color(category: measure.categoryKey))
-            Text("\(Format.measure(value, unit: unit)) / \(Format.measure(target, unit: unit))")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .monospacedDigit()
+                .frame(width: 150, alignment: .leading)
+            ColourBar(fraction: fraction, tint: GoalPalette.color(category: target.measure.categoryKey))
+                .overlay {
+                    GeometryReader { geometry in
+                        if let marker {
+                            Rectangle()
+                                .fill(ink.opacity(0.55))
+                                .frame(width: 1.5, height: 10)
+                                .offset(x: geometry.size.width * CGFloat(marker) - 0.75, y: -2)
+                        }
+                    }
+                }
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(amounts)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(state)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(stateColor)
+                    .lineLimit(1)
+            }
+            .frame(width: 110, alignment: .trailing)
+        }
+    }
+}
+
+// MARK: Review (R26)
+
+/// "Rückblick": every weekly answer in full and the week's day notes.
+private struct ReviewPage: View {
+    let context: WeekContext
+    let blocks: [PDFExport.ReviewBlock]
+    let page: Int
+    let total: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            BandHeader(title: "Rückblick", subtitle: "\(context.week.label) · \(context.week.rangeLabel)")
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                    blockView(block)
+                }
+                Spacer(minLength: 0)
+                PDFFooter(page: page, total: total)
+            }
+            .padding(.horizontal, 36)
+            .padding(.top, 20)
+            .padding(.bottom, 22)
+        }
+        .frame(width: PDFExport.pageSize.width, height: PDFExport.pageSize.height)
+        .background(paper)
+    }
+
+    private func blockView(_ block: PDFExport.ReviewBlock) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if let heading = block.heading {
+                PDFSectionTitle(text: heading)
+                    .padding(.bottom, 6)
+            }
+            Text(block.title)
+                .font(.system(size: 10.5, weight: .bold))
                 .foregroundStyle(ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(width: 96, alignment: .trailing)
+            Text(block.isEmpty ? "–" : block.text)
+                .font(.system(size: 10.5))
+                .foregroundStyle(block.isEmpty ? muted : ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -627,14 +804,14 @@ private struct TablePage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BandHeader(title: title, subtitle: "✓ erledigt · ½ teilweise · ✗ nicht erledigt · – nicht fällig · ○ offen")
+            BandHeader(title: title, subtitle: "✓ erledigt · ½ teilweise · ✗ nicht erledigt · – entfällt · ○ nicht erfasst")
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 0) {
                     Text("Punkt")
                         .frame(maxWidth: .infinity, alignment: .leading)
                     ForEach(days, id: \.self) { day in
-                        Text(days.count == 1 ? "Heute" : day.weekday.short)
-                            .frame(width: days.count == 1 ? 60 : 30)
+                        Text(PDFExport.columnTitle(day, single: days.count == 1))
+                            .frame(width: PDFExport.columnWidth(days.count))
                     }
                     Text(days.count == 1 ? "Woche" : "Ø")
                         .frame(width: 50, alignment: .trailing)
@@ -689,7 +866,7 @@ private struct CategoryLine: View {
                     .font(.system(size: 8.5, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(muted)
-                    .frame(width: days.count == 1 ? 60 : 30)
+                    .frame(width: PDFExport.columnWidth(days.count))
             }
             Text(Format.score(weekScore, outOf: false))
                 .font(.system(size: 9.5, weight: .heavy, design: .rounded))
@@ -732,7 +909,7 @@ private struct ItemLine: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             ForEach(days, id: \.self) { day in
                 MarkChip(mark: context.mark(item, on: day), applies: context.applies(item, on: day))
-                    .frame(width: days.count == 1 ? 60 : 30)
+                    .frame(width: PDFExport.columnWidth(days.count))
             }
             Text(trailing)
                 .font(.system(size: 8.5, weight: .semibold))
@@ -750,12 +927,10 @@ private struct ItemLine: View {
         return ""
     }
 
+    /// The same short label as in Today, Week and the table (R64).
     private var tag: String? {
-        if context.isDerived(item) { return "automatisch" }
-        if item.isSecondary { return "Nebensache" }
-        if case .weekly(let count) = item.schedule { return "\(count)×/Woche" }
-        if item.schedule == .optional { return "optional" }
-        return nil
+        guard let label = context.kindLabel(item), !label.isEmpty else { return nil }
+        return label
     }
 }
 
@@ -770,7 +945,11 @@ private struct DayCoverPage: View {
     var body: some View {
         let overall: DayOverall? = context.score.days[day]
         let closed: Bool = context.isClosed(day)
-        let measured: [MeasureDefinition] = Array(context.measures.filter { context.applies($0, on: day) && context.dayValue($0, on: day) != nil }.prefix(12))
+        // H1: Health values without a value on this device are listed with the hint, not left out.
+        let measured: [MeasureDefinition] = Array(context.measures.filter { measure in
+            guard context.applies(measure, on: day) else { return false }
+            return context.dayValue(measure, on: day) != nil || context.isHealthElsewhere(measure)
+        }.prefix(12))
         let blocks: [WorkBlock] = Array(context.work(on: day).prefix(6))
         let notes: [DayNote] = Array(context.notes(on: day).prefix(4))
         VStack(spacing: 0) {
@@ -802,8 +981,23 @@ private struct DayCoverPage: View {
                              tint: GoalPalette.color(goal: "3"))
                     StatTile(label: "Kategorien komplett", value: "\(completeCategories)/\(context.todayCategories(day).count)",
                              tint: GoalPalette.color(goal: "8"))
-                    StatTile(label: "Journal", value: context.reflection(scope: day.string, field: ReflectionQuestion.journalField) == "ja" ? "✓" : "–",
-                             tint: GoalPalette.color(goal: "2"))
+                    StatTile(label: "Journal", value: journalText, tint: GoalPalette.color(goal: "2"))
+                }
+                let special: String = context.dayNote(day)
+                if !special.isEmpty {
+                    PDFSectionTitle(text: "Besonderheit")
+                    Text(special)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(ink)
+                        .lineLimit(3)
+                }
+                let dayNote: String = context.reflection(scope: day.string, field: ReflectionQuestion.dayNoteField)
+                if !dayNote.isEmpty {
+                    PDFSectionTitle(text: "Notiz zum Tag")
+                    Text(dayNote)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(ink)
+                        .lineLimit(4)
                 }
                 if !measured.isEmpty {
                     PDFSectionTitle(text: "Werte")
@@ -860,6 +1054,15 @@ private struct DayCoverPage: View {
         .background(paper)
     }
 
+    /// R58: the plan's journal item if there is one, else the evening switch.
+    private var journalText: String {
+        switch context.journalDone(on: day) {
+        case .some(true): return "✓"
+        case .some(false): return "✗"
+        case .none: return "–"
+        }
+    }
+
     private var completeCategories: Int {
         context.todayCategories(day).filter { category in
             let entry = context.score.category(category.key, on: day)
@@ -873,10 +1076,23 @@ private struct ValueTile: View {
     let measure: MeasureDefinition
     let day: DayKey
 
+    /// The value, or H1's hint for a Health value that only the iPhone reads.
+    private func shown(_ value: Double?, unit: String) -> String {
+        if let value { return Format.measure(value, unit: unit) }
+        return context.isHealthElsewhere(measure) ? WeekContext.healthElsewhereHint : "–"
+    }
+
+    /// The hint small and light, a value big and heavy.
+    private func valueFont(isHint: Bool) -> Font {
+        if isHint { return .system(size: 9.5, weight: .medium, design: .rounded) }
+        return .system(size: 13, weight: .heavy, design: .rounded)
+    }
+
     var body: some View {
         let value: Double? = context.dayValue(measure, on: day)
         let unit: String = measure.record?.isWork == true ? "PH" : measure.unit
         let met: Bool? = measure.record.flatMap { Measures.isMet($0, value: value) }
+        let isHint: Bool = value == nil && context.isHealthElsewhere(measure)
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2).fill(GoalPalette.color(category: measure.categoryKey)).frame(width: 3, height: 22)
             VStack(alignment: .leading, spacing: 1) {
@@ -884,13 +1100,15 @@ private struct ValueTile: View {
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(muted)
                     .lineLimit(1)
-                Text(value.map { Format.measure($0, unit: unit) } ?? "–")
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                Text(shown(value, unit: unit))
+                    .font(valueFont(isHint: isHint))
                     .monospacedDigit()
-                    .foregroundStyle(ink)
+                    .foregroundStyle(isHint ? muted : ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             Spacer(minLength: 0)
-            if let met {
+            if !isHint, let met {
                 Image(systemName: met ? "checkmark.circle.fill" : "xmark.circle")
                     .font(.system(size: 12))
                     .foregroundStyle(met ? Color(red: 0.20, green: 0.68, blue: 0.38) : muted)
@@ -910,6 +1128,9 @@ struct PDFPreviewSheet: View {
     let context: WeekContext
     @Environment(\.dismiss) private var dismiss
     @State private var url: URL?
+    /// Mac: the PDF for the save panel (R71).
+    @State private var exportFile: ExportFile?
+    @State private var exporting = false
 
     var body: some View {
         NavigationStack {
@@ -936,7 +1157,25 @@ struct PDFPreviewSheet: View {
             .navigationTitle(kind.title)
             .inlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
+                }
+                #if os(macOS)
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: savePDF) {
+                        Label("Sichern…", systemImage: "square.and.arrow.down")
+                    }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(url == nil)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: printPDF) {
+                        Label("Drucken…", systemImage: "printer")
+                    }
+                    .keyboardShortcut("p", modifiers: .command)
+                    .disabled(url == nil)
+                }
+                #endif
                 ToolbarItem(placement: .primaryAction) {
                     if let url {
                         ShareLink(item: url) {
@@ -947,9 +1186,48 @@ struct PDFPreviewSheet: View {
                     }
                 }
             }
+            .fileExporter(isPresented: $exporting, document: exportFile, contentType: .pdf,
+                          defaultFilename: kind.fileName) { _ in
+                exportFile = nil
+            }
             .task { url = PDFExport.make(kind, context: context) }
         }
-        .sheetFrame(minWidth: 640, minHeight: 760)
+        .thaliaSheetFrame(width: 640, height: 760)
+    }
+
+    /// R71: the finished PDF into the save panel.
+    private func savePDF() {
+        guard let url, let data = try? Data(contentsOf: url) else { return }
+        exportFile = ExportFile(data: data)
+        exporting = true
+    }
+
+    #if os(macOS)
+    /// R71: the system print dialog for the finished PDF.
+    private func printPDF() {
+        guard let url, let document = PDFDocument(url: url),
+              let operation = document.printOperation(for: NSPrintInfo.shared, scalingMode: .pageScaleToFit, autoRotate: true) else { return }
+        _ = operation.run()
+    }
+    #endif
+}
+
+/// A finished file (PDF or PNG) for the save panel (R71).
+struct ExportFile: FileDocument {
+    static var readableContentTypes: [UTType] { [.pdf, .png] }
+
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
 
@@ -958,6 +1236,7 @@ struct PDFButton: View {
     let kind: PDFKind
     let context: WeekContext
     var title: String?
+    @Environment(AppModel.self) private var app
     @State private var shows = false
 
     var body: some View {
@@ -968,6 +1247,8 @@ struct PDFButton: View {
         }
         .sheet(isPresented: $shows) {
             PDFPreviewSheet(kind: kind, context: context)
+                .environment(app)
+                .toastHost(app)
         }
     }
 }

@@ -80,11 +80,17 @@ extension WeekContext {
         items.filter { !options($0, on: day).isEmpty && !isDerived($0) }
     }
 
-    /// The first category that still has something blank – where Today opens.
+    /// The first category that still has something blank – where Today opens; with nothing open
+    /// "Abschluss & Notizen" (R6).
     func firstOpenPage(_ day: DayKey) -> TodayPage {
         let pages = todayCategories(day)
         if let open = pages.first(where: { score.category($0.key, on: day).blank > 0 }) { return .category(open.key) }
-        return pages.first.map { .category($0.key) } ?? .day
+        return .day
+    }
+
+    /// Today's pages in order: the categories, then "Abschluss & Notizen" (R35).
+    func todayPageOrder(_ day: DayKey) -> [TodayPage] {
+        todayCategories(day).map { TodayPage.category($0.key) } + [TodayPage.day]
     }
 }
 
@@ -115,15 +121,35 @@ struct TodayContent: View {
         #endif
     }
 
+    /// R6: reads only the stored page – the start page is chosen once per day (`choosePage`), so
+    /// ticking an item never moves the page. Until then the first category stands in.
     private var page: Binding<TodayPage> {
-        Binding(get: { app.todayPage ?? context.firstOpenPage(day) },
-                set: { app.todayPage = $0 })
+        let model: AppModel = app
+        let fallback: TodayPage = pages.first.map { TodayPage.category($0.key) } ?? .day
+        return Binding(get: { model.todayPage ?? fallback },
+                       set: { model.todayPage = $0 })
+    }
+
+    /// iPhone/iPad: "Heute" or the weekday (the title menu shows the date); Mac: the date (R60).
+    private var title: String {
+        #if os(macOS)
+        day.longLabel
+        #else
+        day == app.today ? "Heute" : day.weekday.name
+        #endif
     }
 
     var body: some View {
         Group {
             if !context.hasPlan {
                 List {
+                    if day == app.today {
+                        Section {
+                            YesterdayBanner(today: app.today)
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Color.clear)
+                        }
+                    }
                     Section { NoPlanView(week: context.week) }
                     DayPageSections(context: context, day: day, showsMeasures: true)
                 }
@@ -134,32 +160,125 @@ struct TodayContent: View {
                 TodayPager(context: context, day: day, pages: pages, page: page)
             }
         }
-        .navigationTitle(day == app.today ? "Heute" : day.weekday.name)
+        .navigationTitle(title)
         .inlineNavigationTitle()
-        .toolbar { TodayToolbar(context: context, day: day) }
+        .todayTitleMenu(context: context, day: day)
+        .toolbar(id: "today") { TodayToolbar(context: context, day: day, usesSplit: usesSplit) }
         .onChange(of: day) { _, _ in app.todayPage = nil }
+        .onChange(of: pages.map(\.key)) { _, _ in choosePage() }
         .task(id: day) {
+            choosePage()
             await health.load(day: day, measures: context.measures.compactMap(\.record))
         }
     }
+
+    /// R6: the start page once per day – the first category with something open, else "Abschluss &
+    /// Notizen"; again only when the stored page is gone (e.g. the day type changed). Also tells the
+    /// app the page order for ⌥⌘↓ / ⌥⌘↑ (R35).
+    private func choosePage() {
+        // The week's data may still be the previous week's for a moment after a jump.
+        guard context.week == day.week else { return }
+        let order: [TodayPage] = context.todayPageOrder(day)
+        if app.todayPageOrder != order { app.todayPageOrder = order }
+        if let current = app.todayPage, order.contains(current) { return }
+        app.todayPage = context.firstOpenPage(day)
+    }
 }
+
+/// The days of the week, other weeks, back to today and the day's type and note – the title menu
+/// on iPhone (R38), the window title on the Mac (R60) and the iPad's list head.
+struct TodayDayMenu: View {
+    let context: WeekContext
+    let day: DayKey
+    @Environment(AppModel.self) private var app
+
+    private func dayTitle(_ other: DayKey) -> String {
+        other == app.today ? other.shortLabel + " · heute" : other.shortLabel
+    }
+
+    private func daySymbol(_ other: DayKey) -> String {
+        if other == day { return "checkmark" }
+        return context.isClosed(other) ? "checkmark.seal.fill" : "circle"
+    }
+
+    var body: some View {
+        ForEach(context.week.days, id: \.self) { other in
+            Button {
+                app.selectedDay = other
+            } label: {
+                Label(dayTitle(other), systemImage: daySymbol(other))
+            }
+        }
+        Divider()
+        Button("Vorige Woche", systemImage: "chevron.left") { app.selectedDay = day.adding(days: -7) }
+        Button("Nächste Woche", systemImage: "chevron.right") { app.selectedDay = day.adding(days: 7) }
+        Button("Zu heute", systemImage: "sun.max") { app.goToToday() }
+            .disabled(day == app.today)
+        Divider()
+        Button("Tagestyp und Besonderheit…", systemImage: "calendar.badge.clock") { app.sheet = .dayInfo(day) }
+    }
+}
+
+/// "16. Nov." – the short date without the weekday.
+func todayDateText(_ day: DayKey) -> String {
+    let label: String = day.shortLabel
+    guard let range = label.range(of: ", ") else { return label }
+    return String(label[range.upperBound...])
+}
+
+/// "16. Nov. · KW47 · Arbeitstag" (R38).
+func todayDateLine(_ context: WeekContext, day: DayKey) -> String {
+    var parts: [String] = [todayDateText(day), day.week.label]
+    let type: String = context.dayType(day)
+    if !type.isEmpty { parts.append(type) }
+    return parts.joined(separator: " · ")
+}
+
+extension View {
+    /// Mac: the day menu on the window title and "KW47 · Arbeitstag" below it (R60). iPhone/iPad
+    /// have their own title menu (R38).
+    @ViewBuilder
+    func todayTitleMenu(context: WeekContext, day: DayKey) -> some View {
+        #if os(macOS)
+        self
+            .navigationSubtitle(macSubtitle(context, day: day))
+            .toolbarTitleMenu { TodayDayMenu(context: context, day: day) }
+        #else
+        self
+        #endif
+    }
+}
+
+#if os(macOS)
+/// "KW47 · Arbeitstag".
+private func macSubtitle(_ context: WeekContext, day: DayKey) -> String {
+    let type: String = context.dayType(day)
+    return type.isEmpty ? day.week.label : "\(day.week.label) · \(type)"
+}
+#endif
 
 // MARK: Layouts
 
-/// iPhone: compact header, category chips, one page per category (swipe or tap a chip).
+/// iPhone: the date sits in the title bar (R38); yesterday's banner, category chips, the day's note,
+/// then one page per category (swipe or tap a chip).
 private struct TodayPager: View {
     let context: WeekContext
     let day: DayKey
     let pages: [TrackCategory]
     @Binding var page: TodayPage
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         VStack(spacing: 0) {
-            TodayHeader(context: context, day: day)
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
+            if day == app.today {
+                YesterdayBanner(today: app.today)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+            }
             CategoryChips(context: context, day: day, pages: pages, page: $page)
                 .padding(.vertical, 8)
+            TodayDayHints(context: context, day: day,
+                          insets: EdgeInsets(top: 0, leading: 16, bottom: 6, trailing: 16))
             #if os(iOS)
             TabView(selection: $page) {
                 ForEach(Array(pages.enumerated()), id: \.element.key) { index, category in
@@ -177,73 +296,190 @@ private struct TodayPager: View {
     }
 }
 
-/// iPad (wide) and Mac: categories on the left, the page on the right, the overview as inspector.
+/// iPad (wide) and Mac: categories on the left, the page on the right, "Heute im Blick" as the right
+/// column (R59). Mac: the list can be dragged between 220 and 400 pt (R60); iPad keeps 270 pt.
 private struct TodaySplit: View {
     let context: WeekContext
     let day: DayKey
     let pages: [TrackCategory]
     @Binding var page: TodayPage
     @Environment(AppModel.self) private var app
-    /// Off by default: the category list already shows each category's fill; the overview is extra.
-    @AppStorage("today.inspector") private var showsInspector = false
 
     var body: some View {
+        @Bindable var app = app
+        split
+            .inspector(isPresented: $app.showsGlanceInspector) {
+                GlanceList(context: context, day: day, onOpen: { page = $0 })
+                    .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
+            }
+    }
+
+    @ViewBuilder
+    private var split: some View {
+        #if os(macOS)
+        HSplitView {
+            list
+                .frame(minWidth: 220, idealWidth: 270, maxWidth: 400)
+            detail
+                .frame(minWidth: 420, maxWidth: .infinity)
+        }
+        #else
         HStack(spacing: 0) {
-            List(selection: Binding<TodayPage?>(get: { page }, set: { if let value = $0 { page = value } })) {
+            list
+                .frame(width: 270)
+            Divider()
+            detail
+                .frame(maxWidth: .infinity)
+        }
+        #endif
+    }
+
+    private var selection: Binding<TodayPage?> {
+        let current: Binding<TodayPage> = $page
+        return Binding<TodayPage?>(get: { current.wrappedValue }, set: { value in
+            if let value { current.wrappedValue = value }
+        })
+    }
+
+    private var list: some View {
+        List(selection: selection) {
+            if day == app.today {
                 Section {
-                    TodayHeader(context: context, day: day, showsOverviewButton: false)
+                    YesterdayBanner(today: app.today)
+                        .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
-                Section("Kategorien") {
-                    ForEach(pages) { category in
-                        CategoryListRow(context: context, category: category, day: day)
-                            .tag(TodayPage.category(category.key))
-                    }
-                }
-                Section {
-                    Label("Tag, Notizen, Abschluss", systemImage: "moon.stars")
-                        .tag(TodayPage.day)
+            }
+            Section {
+                listHead
+                    .listRowBackground(Color.clear)
+            }
+            Section("Kategorien") {
+                ForEach(pages) { category in
+                    CategoryListRow(context: context, category: category, day: day)
+                        .tag(TodayPage.category(category.key))
                 }
             }
-            .listStyle(.sidebar)
-            .frame(width: 270)
-            Divider()
-            Group {
-                switch page {
-                case .category(let key):
-                    if let index = pages.firstIndex(where: { $0.key == key }) {
-                        CategoryPage(context: context, category: pages[index], day: day,
-                                     next: index + 1 < pages.count ? pages[index + 1] : nil, page: $page)
-                    } else {
-                        DayPage(context: context, day: day)
-                    }
-                case .day:
-                    DayPage(context: context, day: day)
-                }
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .inspector(isPresented: $showsInspector) {
-            DayOverviewList(context: context, day: day, onOpen: { page = $0 })
-                .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showsInspector.toggle()
-                } label: {
-                    Label("Tagesübersicht", systemImage: "sidebar.trailing")
-                }
-                .help("Tagesübersicht ein- oder ausblenden")
+            Section {
+                Label("Abschluss & Notizen", systemImage: "moon.stars")
+                    .tag(TodayPage.day)
             }
         }
+        .listStyle(.sidebar)
+    }
+
+    /// Mac: only ring and "73 % erfasst" – date and week are in the window title (R60). iPad: date,
+    /// week, day type and ring as before. Both: the day's note and the work-free hint (R90, R78).
+    @ViewBuilder
+    private var listHead: some View {
+        #if os(macOS)
+        VStack(alignment: .leading, spacing: 6) {
+            TodayFillButton(context: context, day: day, opensColumn: true)
+            TodayDayHints(context: context, day: day)
+        }
+        #else
+        VStack(alignment: .leading, spacing: 6) {
+            TodayHeader(context: context, day: day, showsOverviewButton: false)
+            TodayDayHints(context: context, day: day)
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch page {
+        case .category(let key):
+            if let index = pages.firstIndex(where: { $0.key == key }) {
+                CategoryPage(context: context, category: pages[index], day: day,
+                             next: index + 1 < pages.count ? pages[index + 1] : nil, page: $page, selectable: true)
+                    .id(key)
+            } else {
+                DayPage(context: context, day: day)
+            }
+        case .day:
+            DayPage(context: context, day: day)
+        }
+    }
+}
+
+/// R90/R78: the plan's note for the day and, on a work-free day, that work items don't count –
+/// only what there is.
+struct TodayDayHints: View {
+    let context: WeekContext
+    let day: DayKey
+    /// Space around the lines – only taken when there is something to show.
+    var insets = EdgeInsets()
+
+    var body: some View {
+        let note: String = context.dayNote(day).trimmingCharacters(in: .whitespacesAndNewlines)
+        let isFree: Bool = context.isFreeDay(day)
+        if !note.isEmpty || isFree {
+            VStack(alignment: .leading, spacing: 3) {
+                DayNoteLabel(note: note)
+                if isFree {
+                    Label(DayTypes.workFreeHint, systemImage: DayTypes.symbol(for: context.dayType(day)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(insets)
+        }
+    }
+}
+
+/// Ring and "73 % erfasst" (the score once closed). Mac list head: a click shows or hides the "Heute
+/// im Blick" column (R59); elsewhere it opens "Heute im Blick" as a sheet.
+struct TodayFillButton: View {
+    let context: WeekContext
+    let day: DayKey
+    var opensColumn = false
+    @Environment(AppModel.self) private var app
+
+    private var caption: String {
+        let overall: DayOverall? = context.score.days[day]
+        if context.isClosed(day) { return "Abgeschlossen · \(Format.score(overall?.score, outOf: true))" }
+        return "\(overall?.coverageText ?? "0 %") erfasst"
+    }
+
+    private var spoken: String {
+        let overall: DayOverall? = context.score.days[day]
+        if context.isClosed(day) { return "Tag abgeschlossen, Wertung \(Format.score(overall?.score))" }
+        return "\(overall?.coverageText ?? "0 %") erfasst"
+    }
+
+    var body: some View {
+        let overall: DayOverall? = context.score.days[day]
+        let closed: Bool = context.isClosed(day)
+        let shownScore: Double? = closed ? overall?.score : nil
+        Button {
+            if opensColumn {
+                app.showsGlanceInspector.toggle()
+            } else {
+                app.sheet = .dayOverview(day)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 34, lineWidth: 4)
+                Text(caption)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help(opensColumn ? "Heute im Blick ein- oder ausblenden (⌘0)" : "Heute im Blick")
+        .accessibilityLabel(spoken)
+        .accessibilityHint(opensColumn ? "Blendet „Heute im Blick“ ein oder aus" : "Öffnet „Heute im Blick“")
     }
 }
 
 // MARK: Header
 
-/// Date, day type and how much is filled in (the score once the day is closed). Tapping the ring
-/// opens the day overview.
+/// Date, day type and how much is filled in (the score once the day is closed) – the iPad's list
+/// head. Tapping the ring opens "Heute im Blick".
 struct TodayHeader: View {
     let context: WeekContext
     let day: DayKey
@@ -256,20 +492,7 @@ struct TodayHeader: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Menu {
-                    ForEach(context.week.days, id: \.self) { other in
-                        Button {
-                            app.selectedDay = other
-                        } label: {
-                            Label(other.shortLabel + (other == app.today ? " · heute" : ""),
-                                  systemImage: context.isClosed(other) ? "checkmark.seal.fill" : "circle")
-                        }
-                    }
-                    Divider()
-                    Button("Vorige Woche", systemImage: "chevron.left") { app.selectedDay = day.adding(days: -7) }
-                    Button("Nächste Woche", systemImage: "chevron.right") { app.selectedDay = day.adding(days: 7) }
-                    if day != app.today {
-                        Button("Zu heute", systemImage: "sun.max") { app.selectedDay = app.today }
-                    }
+                    TodayDayMenu(context: context, day: day)
                 } label: {
                     HStack(spacing: 4) {
                         Text(day.shortLabel)
@@ -320,7 +543,7 @@ struct TodayHeader: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(closed ? "Tag abgeschlossen, Wertung \(Format.score(overall?.score))" : "\(overall?.coverageText ?? "0 %") erfasst")
-            .accessibilityHint("Öffnet die Tagesübersicht")
+            .accessibilityHint("Öffnet „Heute im Blick“")
         }
     }
 }
@@ -360,7 +583,13 @@ private struct CategoryChips: View {
     let day: DayKey
     let pages: [TrackCategory]
     @Binding var page: TodayPage
+    @Environment(AppModel.self) private var app
     @State private var showsPicker = false
+    /// R67: grows with the system text size; identical at the standard size.
+    @ScaledMetric(relativeTo: .caption) private var chipHeight: CGFloat = 44
+    @ScaledMetric(relativeTo: .caption) private var gridWidth: CGFloat = 42
+    @ScaledMetric(relativeTo: .caption) private var closingWidth: CGFloat = 70
+    @ScaledMetric(relativeTo: .caption) private var closingWord: CGFloat = 9.5
 
     var body: some View {
         HStack(spacing: 0) {
@@ -369,7 +598,7 @@ private struct CategoryChips: View {
             } label: {
                 Image(systemName: "square.grid.2x2.fill")
                     .font(.subheadline.weight(.semibold))
-                    .frame(width: 42, height: 44)
+                    .frame(width: gridWidth, height: chipHeight)
                     .foregroundStyle(Brand.accent)
                     .background(Brand.accent.opacity(0.12), in: .rect(cornerRadius: 12, style: .continuous))
             }
@@ -393,16 +622,16 @@ private struct CategoryChips: View {
                                 Image(systemName: "moon.stars.fill")
                                     .font(.subheadline.weight(.semibold))
                                 Text("Abschluss")
-                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .font(.system(size: closingWord, weight: .semibold))
                             }
-                            .frame(width: 70, height: 44)
+                            .frame(width: closingWidth, height: chipHeight)
                             .foregroundStyle(page == .day ? Color.white : Color.primary)
-                            .background(page == .day ? AnyShapeStyle(Brand.accent.gradient) : AnyShapeStyle(Color.secondary.opacity(0.12)),
+                            .background(page == .day ? AnyShapeStyle(Color.accentFill.gradient) : AnyShapeStyle(Color.secondary.opacity(0.12)),
                                         in: .rect(cornerRadius: 12, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .id(TodayPage.day)
-                        .accessibilityLabel("Tag abschließen und Notizen")
+                        .accessibilityLabel("Abschluss & Notizen")
                     }
                     .padding(.horizontal, 8)
                     .padding(.trailing, 8)
@@ -415,6 +644,7 @@ private struct CategoryChips: View {
         }
         .sheet(isPresented: $showsPicker) {
             CategoryPicker(context: context, day: day, pages: pages, page: $page)
+                .toastHost(app)
                 .presentationDetents([.medium, .large])
         }
     }
@@ -426,6 +656,12 @@ private struct CategoryChip: View {
     let entry: CategoryDay
     let selected: Bool
     let action: () -> Void
+    /// R67: grows with the system text size; identical at the standard size.
+    @ScaledMetric(relativeTo: .caption) private var keySize: CGFloat = 12
+    @ScaledMetric(relativeTo: .caption) private var titleSize: CGFloat = 10
+    @ScaledMetric(relativeTo: .caption) private var checkSize: CGFloat = 10
+    @ScaledMetric(relativeTo: .caption) private var fillSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .caption) private var height: CGFloat = 44
 
     var body: some View {
         Button(action: action) {
@@ -433,24 +669,24 @@ private struct CategoryChip: View {
                 ZStack {
                     if entry.due > 0, entry.isComplete {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .heavy))
+                            .font(.system(size: checkSize, weight: .heavy))
                     } else {
                         MiniFill(fill: entry.due > 0 ? entry.fill : 0, inverted: selected, tint: category.color)
                     }
                 }
-                .frame(width: 16, height: 16)
+                .frame(width: fillSize, height: fillSize)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(category.key)
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .font(.system(size: keySize, weight: .heavy, design: .rounded))
                         .monospacedDigit()
                     Text(category.shortTitle)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: titleSize, weight: .semibold))
                         .lineLimit(1)
                         .opacity(selected ? 0.9 : 0.75)
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 44)
+            .frame(minHeight: height)
             .foregroundStyle(selected ? Color.white : Color.primary)
             .background {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -522,14 +758,16 @@ private struct CategoryPicker: View {
                         page = .day
                         dismiss()
                     } label: {
-                        Label("Tag abschließen, Notizen", systemImage: "moon.stars.fill")
+                        Label("Abschluss & Notizen", systemImage: "moon.stars.fill")
                     }
                 }
             }
             .navigationTitle("Kategorien")
             .inlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
+                }
             }
         }
     }
@@ -578,6 +816,8 @@ private struct CategoryListRow: View {
                 }
             }
         }
+        // R60: long names are cut in the narrow column – the tooltip shows them whole.
+        .help("\(category.key) \(category.title)")
     }
 }
 
@@ -591,6 +831,8 @@ struct CategoryPage: View {
     let day: DayKey
     let next: TrackCategory?
     @Binding var page: TodayPage
+    /// Mac and iPad: items can be selected and marked with 1–4 (R35).
+    var selectable = false
 
     @Environment(AppModel.self) private var app
     @Environment(HealthService.self) private var health
@@ -598,6 +840,10 @@ struct CategoryPage: View {
     @State private var showsInfo = false
     @State private var showsSecondary = false
     @State private var showsDone = false
+    /// The selected item (R35).
+    @State private var selectedItemCode: String?
+    /// The spending being changed in the input row (R46).
+    @State private var editingExpense: MeasureEntry?
 
     /// Everything due today in this category except derived progress items (they live in the
     /// weekly card) and unanswered conditionals when they're asked first.
@@ -608,213 +854,319 @@ struct CategoryPage: View {
         }
     }
 
-    var body: some View {
-        let entry: CategoryDay = context.score.category(category.key, on: day)
+    /// The day's items split into the main list, "Weitere" and "Diese Woche schon erfüllt".
+    private struct ItemGroups {
+        let main: [PlanItem]
+        let secondary: [PlanItem]
+        let doneThisWeek: [PlanItem]
+    }
+
+    private func itemGroups() -> ItemGroups {
         let all: [PlanItem] = dayItems
-        let doneThisWeek: [PlanItem] = all.filter { context.isQuotaMetElsewhere($0, on: day) }
-        let secondary: [PlanItem] = all.filter { $0.isSecondary && !doneThisWeek.contains($0) }
-        let main: [PlanItem] = all.filter { !$0.isSecondary && !doneThisWeek.contains($0) }
-        let goals: [WeeklyGoal] = context.weeklyGoals(categoryKey: category.key, on: day)
-        let groups = context.measureGroups(categoryKey: category.key, on: day)
-        let secondaryGroups = context.measureGroups(categoryKey: category.key, on: day, secondary: true)
-        let secondaryCount: Int = secondary.count + secondaryGroups.reduce(0) { $0 + $1.measures.count }
-        let waiting: [PlanItem] = askConditionals ? context.unansweredConditionals(on: day).filter { $0.categoryKey == category.key } : []
-        let workCategory: Bool = context.measures.contains { $0.record?.source == .work(category: category.key) }
-        List {
-            Section {
-                header(entry, tickable: context.tickable(main, on: day))
-            }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+        let done: [PlanItem] = all.filter { context.isQuotaMetElsewhere($0, on: day) }
+        let doneCodes: Set<String> = Set(done.map(\.code))
+        let secondary: [PlanItem] = all.filter { $0.isSecondary && !doneCodes.contains($0.code) }
+        let main: [PlanItem] = all.filter { !$0.isSecondary && !doneCodes.contains($0.code) }
+        return ItemGroups(main: main, secondary: secondary, doneThisWeek: done)
+    }
 
-            if context.isFreeDay(day) {
-                Section {
-                    Label("\(context.dayType(day)): Arbeitspunkte zählen heute nicht.", systemImage: DayTypes.symbol(for: context.dayType(day)))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+    /// The items in the order they are shown (folded groups only when open) – for the keys (R35).
+    private func visibleItems() -> [PlanItem] {
+        let groups: ItemGroups = itemGroups()
+        var items: [PlanItem] = groups.main
+        if showsSecondary { items += groups.secondary }
+        if showsDone { items += groups.doneThisWeek }
+        return items
+    }
 
-            if !goals.isEmpty {
-                Section {
-                    ForEach(goals) { goal in
-                        WeeklyGoalRow(goal: goal, context: context, day: day)
-                    }
-                } header: {
-                    Text("Wochenziele")
-                }
-            }
+    /// The power-hours section shows for work categories and wherever work was logged today.
+    private var showsWorkSection: Bool {
+        let key: String = category.key
+        let isWorkCategory: Bool = context.measures.contains { $0.record?.source == .work(category: key) }
+        return isWorkCategory || context.work(on: day).contains { $0.categoryKey == key }
+    }
 
-            if !waiting.isEmpty {
-                Section {
-                    Button {
-                        app.sheet = .conditionals(day)
-                    } label: {
-                        Label("\(waiting.count) bedingte \(waiting.count == 1 ? "Punkt" : "Punkte"): Gab es die Situation heute?",
-                              systemImage: "questionmark.circle")
-                    }
-                }
-            }
-
-            if !main.isEmpty {
-                Section {
-                    ForEach(main) { item in
-                        ItemMarkRow(item: item, context: context, day: day)
-                    }
-                }
-            }
-
-            ForEach(groups, id: \.group) { group in
-                Section {
-                    ForEach(group.measures) { measure in
-                        if context.isExpense(measure) {
-                            // K2: every spending on its own line, with what it was for.
-                            ExpenseInputRow(measure: measure, context: context, day: day)
-                            ForEach(context.expenseEntries(measure, on: day)) { entry in
-                                ExpenseEntryRow(entry: entry)
-                            }
-                        } else {
-                            MeasureRow(measure: measure, context: context, day: day,
-                                       healthSuggestion: context.dayValue(measure, on: day) == nil ? health.suggestion(code: measure.code, day: day) : nil)
-                        }
-                    }
-                } header: {
-                    Text(group.group.label)
-                }
-            }
-
-            if workCategory || context.work(on: day).contains(where: { $0.categoryKey == category.key }) {
-                Section {
-                    ForEach(context.work(on: day).filter { $0.categoryKey == category.key }) { block in
-                        InlineWorkRow(block: block, categoryTitle: category.title)
-                    }
-                    NewWorkRow(categoryKey: category.key, day: day)
-                } header: {
-                    Text("Power-Hours heute")
-                } footer: {
-                    Text("Beschreibung direkt eintippen – Vorschläge kommen aus deinen bisherigen Einträgen.")
-                }
-            }
-
-            if secondaryCount > 0 {
-                Section {
-                    DisclosureGroup(isExpanded: $showsSecondary) {
-                        ForEach(secondary) { item in
-                            ItemMarkRow(item: item, context: context, day: day)
-                        }
-                        ForEach(secondaryGroups, id: \.group) { group in
-                            ForEach(group.measures) { measure in
-                                MeasureRow(measure: measure, context: context, day: day, healthSuggestion: nil)
-                            }
-                        }
-                    } label: {
-                        Label("Weitere (\(secondaryCount)) – zählen, wenn ausgefüllt", systemImage: "square.stack")
-                            .font(.subheadline)
-                    }
-                }
-            }
-
-            if !doneThisWeek.isEmpty {
-                Section {
-                    DisclosureGroup(isExpanded: $showsDone) {
-                        ForEach(doneThisWeek) { item in
-                            ItemMarkRow(item: item, context: context, day: day)
-                        }
-                    } label: {
-                        Label("Diese Woche schon erfüllt (\(doneThisWeek.count))", systemImage: "checkmark.circle")
-                            .font(.subheadline)
-                    }
-                }
-            }
-
-            Section {
-                Button {
-                    withAnimation(.snappy) { page = next.map { .category($0.key) } ?? .day }
-                } label: {
-                    HStack {
-                        Text(next.map { "Weiter: \($0.key) \($0.title)" } ?? "Weiter: Tag abschließen")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                }
-                Menu {
-                    Button("Punkt hinzufügen", systemImage: "checklist") {
-                        app.sheet = .newItem(day.week, categoryKey: category.key)
-                    }
-                    Button("Messwert hinzufügen", systemImage: "ruler") {
-                        app.sheet = .editMeasure(nil, day.week, categoryKey: category.key)
-                    }
-                    if category.goalKey == "3" {
-                        Button("Power-Hours mit Ergebnis und nächstem Schritt", systemImage: "bolt") {
-                            app.sheet = .work(WorkDraft(day: day, categoryKey: category.key))
-                        }
-                    }
-                } label: {
-                    Label("Zu \(category.key) hinzufügen", systemImage: "plus")
-                        .font(.subheadline)
-                }
+    var body: some View {
+        Group {
+            if selectable {
+                List(selection: $selectedItemCode) { sections }
+            } else {
+                List { sections }
             }
         }
         .compactListSections()
         .contentMargins(.top, 4, for: .scrollContent)
         .scrollDismissesKeyboard(.interactively)
+        .onKeyPress(characters: CharacterSet(charactersIn: "1234")) { press in
+            handleKey(press.characters)
+        }
+        .environment(\.markKeyHints, selectable)
     }
 
-    private func statusLine(_ entry: CategoryDay) -> String {
+    @ViewBuilder
+    private var sections: some View {
+        let entry: CategoryDay = context.score.category(category.key, on: day)
+        let split: ItemGroups = itemGroups()
+        let doneThisWeek: [PlanItem] = split.doneThisWeek
+        let secondary: [PlanItem] = split.secondary
+        let main: [PlanItem] = split.main
+        let goals: [WeeklyGoal] = context.weeklyGoals(categoryKey: category.key, on: day)
+        let groups = context.measureGroups(categoryKey: category.key, on: day)
+        let secondaryGroups = context.measureGroups(categoryKey: category.key, on: day, secondary: true)
+        let secondaryCount: Int = secondary.count + secondaryGroups.reduce(0) { $0 + $1.measures.count }
+        let waiting: [PlanItem] = askConditionals ? context.unansweredConditionals(on: day).filter { $0.categoryKey == category.key } : []
+        let workSection: Bool = showsWorkSection
+        Section {
+            header(entry, tickable: context.tickable(main, on: day))
+        }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+
+        if !goals.isEmpty {
+            Section {
+                ForEach(goals) { goal in
+                    WeeklyGoalRow(goal: goal, context: context, day: day)
+                }
+            } header: {
+                Text("Wochenziele")
+            }
+        }
+
+        // R37: one way in for power-hours – right below the weekly target that counts them.
+        if workSection {
+            Section {
+                ForEach(context.work(on: day).filter { $0.categoryKey == category.key }) { block in
+                    InlineWorkRow(block: block, categoryTitle: category.title)
+                }
+                NewWorkRow(categoryKey: category.key, day: day)
+            } header: {
+                Text("Power-Hours heute")
+            }
+        }
+
+        if !waiting.isEmpty {
+            Section {
+                Button {
+                    app.sheet = .conditionals(day)
+                } label: {
+                    Label("\(waiting.count) bedingte \(waiting.count == 1 ? "Punkt" : "Punkte"): Gab es die Situation heute?",
+                          systemImage: "questionmark.circle")
+                }
+            }
+        }
+
+        if !main.isEmpty {
+            Section {
+                ForEach(main) { item in
+                    ItemMarkRow(item: item, context: context, day: day)
+                        .tag(item.code)
+                }
+            }
+        }
+
+        ForEach(groups, id: \.group) { group in
+            Section {
+                ForEach(group.measures) { measure in
+                    if context.isExpense(measure) {
+                        // K2: every spending on its own line, with what it was for; a tap changes one (R46).
+                        ExpenseInputRow(measure: measure, context: context, day: day, editing: $editingExpense)
+                        ForEach(context.expenseEntries(measure, on: day)) { expense in
+                            ExpenseEntryRow(entry: expense, onEdit: { editingExpense = expense })
+                        }
+                    } else {
+                        MeasureRow(measure: measure, context: context, day: day,
+                                   healthSuggestion: healthSuggestion(for: measure),
+                                   offersWorkButton: !workSection)
+                    }
+                }
+            } header: {
+                Text(group.group.label)
+            }
+        }
+
+        if secondaryCount > 0 {
+            Section {
+                DisclosureGroup(isExpanded: $showsSecondary) {
+                    ForEach(secondary) { item in
+                        ItemMarkRow(item: item, context: context, day: day)
+                            .tag(item.code)
+                    }
+                    ForEach(secondaryGroups, id: \.group) { group in
+                        ForEach(group.measures) { measure in
+                            MeasureRow(measure: measure, context: context, day: day, healthSuggestion: nil,
+                                       offersWorkButton: !workSection)
+                        }
+                    }
+                } label: {
+                    Label("Weitere (\(secondaryCount)) – zählen, wenn ausgefüllt", systemImage: "square.stack")
+                        .font(.subheadline)
+                }
+            }
+        }
+
+        if !doneThisWeek.isEmpty {
+            Section {
+                DisclosureGroup(isExpanded: $showsDone) {
+                    ForEach(doneThisWeek) { item in
+                        ItemMarkRow(item: item, context: context, day: day)
+                            .tag(item.code)
+                    }
+                } label: {
+                    Label("Diese Woche schon erfüllt (\(doneThisWeek.count))", systemImage: "checkmark.circle")
+                        .font(.subheadline)
+                }
+            }
+        }
+
+        Section {
+            Button {
+                goToNextPage()
+            } label: {
+                HStack {
+                    Text(bottomNextTitle)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+            Menu {
+                Button("Punkt anlegen", systemImage: "checklist") {
+                    app.sheet = .newItem(day.week, categoryKey: category.key)
+                }
+                Button("Messwert anlegen", systemImage: "ruler") {
+                    app.sheet = .editMeasure(nil, day.week, categoryKey: category.key)
+                }
+                if category.goalKey == "3" {
+                    Button("Power-Hours mit Ergebnis und nächstem Schritt", systemImage: "bolt") {
+                        app.sheet = .work(WorkDraft(day: day, categoryKey: category.key))
+                    }
+                }
+            } label: {
+                Label("Neu in \(category.key)", systemImage: "plus")
+                    .font(.subheadline)
+            }
+        }
+    }
+
+    /// Apple Health's value for a measurement without one of its own.
+    private func healthSuggestion(for measure: MeasureDefinition) -> Double? {
+        guard context.dayValue(measure, on: day) == nil else { return nil }
+        return health.suggestion(code: measure.code, day: day)
+    }
+
+    // MARK: Paging (R74)
+
+    private var nextPage: TodayPage {
+        guard let next else { return .day }
+        return .category(next.key)
+    }
+
+    /// "Weiter: 1.2 Titel" – on the last category "Weiter: Abschluss & Notizen".
+    private var bottomNextTitle: String {
+        guard let next else { return "Weiter: Abschluss & Notizen" }
+        return "Weiter: \(next.key) \(next.title)"
+    }
+
+    /// The head's button once everything is recorded: "Weiter: 1.2" or "Zum Abschluss".
+    private var headNextTitle: String {
+        guard let next else { return "Zum Abschluss" }
+        return "Weiter: \(next.key)"
+    }
+
+    private func goToNextPage() {
+        let target: TodayPage = nextPage
+        withAnimation(.snappy) { page = target }
+    }
+
+    // MARK: Keys (R35)
+
+    /// 1 Erledigt/Gearbeitet · 2 Teilweise · 3 Nicht erledigt · 4 Entfällt/Nicht heute.
+    static func keyMark(_ characters: String) -> Mark? {
+        switch characters {
+        case "1": return .done
+        case "2": return .partial
+        case "3": return .missed
+        case "4": return .notApplicable
+        default: return nil
+        }
+    }
+
+    /// Marks the selected item with the key's mark (only one it allows), then selects the next open one.
+    private func handleKey(_ characters: String) -> KeyPress.Result {
+        guard selectable, let code = selectedItemCode, let mark = CategoryPage.keyMark(characters) else { return .ignored }
+        let items: [PlanItem] = visibleItems()
+        guard let index = items.firstIndex(where: { $0.code == code }) else { return .ignored }
+        let item: PlanItem = items[index]
+        guard context.options(item, on: day).contains(mark) else { return .ignored }
+        app.setMark(mark, item: item, day: day)
+        if let following = nextOpenItem(after: index, in: items) {
+            selectedItemCode = following.code
+        }
+        return .handled
+    }
+
+    /// The next item without a mark after `index` (then from the top), skipping the one just marked.
+    private func nextOpenItem(after index: Int, in items: [PlanItem]) -> PlanItem? {
+        guard items.count > 1 else { return nil }
+        for step in 1..<items.count {
+            let candidate: PlanItem = items[(index + step) % items.count]
+            let isOpen: Bool = context.mark(candidate, on: day) == nil && !context.options(candidate, on: day).isEmpty
+            if isOpen { return candidate }
+        }
+        return nil
+    }
+
+    // MARK: Head (R38, R74)
+
+    /// "3 von 5"; the interim score once everything is recorded.
+    private func statusText(_ entry: CategoryDay) -> String {
+        if entry.due == 0 { return "nichts fällig" }
+        if entry.isComplete { return "\(entry.due) von \(entry.due) · \(Format.score(entry.score, outOf: false))" }
+        return "\(entry.due - entry.blank) von \(entry.due)"
+    }
+
+    private func spokenStatus(_ entry: CategoryDay) -> String {
         if entry.due == 0 { return "Heute nichts zu bewerten" }
-        if entry.isComplete { return "Alles erfasst · Zwischenstand \(Format.score(entry.score, outOf: false))" }
+        if entry.isComplete { return "Alles erfasst, Zwischenstand \(Format.score(entry.score, outOf: false))" }
         return "\(entry.due - entry.blank) von \(entry.due) erfasst"
     }
 
-    /// The category head in its goal's colour (W2): name, goal, how much is filled in, the
-    /// result once complete, and "Alle …" for all open items at once.
+    /// The goal and the category's details behind ⓘ.
+    private var infoText: String {
+        var lines: [String] = []
+        if let goal = context.goal(of: category) { lines.append("Ziel \(goal.key) · \(goal.title)") }
+        let details: String = category.details.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !details.isEmpty { lines.append(details) }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The category head in its goal's colour, one line (R38): key and title, "3 von 5", a small
+    /// ring, ⓘ for details, and "Alle …" – or, once everything is recorded, "Weiter: 1.2" /
+    /// "Zum Abschluss" (R74). "Alle leeren" sits in the head's context menu.
     private func header(_ entry: CategoryDay, tickable: [PlanItem]) -> some View {
-        let goal: AnnualGoal? = context.goal(of: category)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(goal.map { "Ziel \($0.key) · \($0.title)" } ?? "Kategorie")
-                        .font(.caption.weight(.semibold))
-                        .opacity(0.85)
-                    Text("\(category.key)  \(category.title)")
-                        .font(.title3.weight(.bold))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                ZStack {
-                    Circle().stroke(Color.white.opacity(0.28), lineWidth: 5)
-                    Circle()
-                        .trim(from: 0, to: CGFloat(entry.due > 0 ? entry.fill : 0))
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    if entry.isComplete, let score = entry.score {
-                        Text(Format.score(score))
-                            .font(.system(size: 13, weight: .heavy, design: .rounded))
-                            .monospacedDigit()
-                            .minimumScaleFactor(0.6)
-                            .padding(4)
-                    } else {
-                        Text("\(percent(entry.due > 0 ? entry.fill : 0))%")
-                            .font(.system(size: 11, weight: .heavy, design: .rounded))
-                            .monospacedDigit()
-                    }
-                }
-                .frame(width: 50, height: 50)
-                .animation(.snappy, value: entry.fill)
-            }
+        let isComplete: Bool = entry.due > 0 && entry.isComplete
+        let marked: [PlanItem] = tickable.filter { context.recordedMark($0, on: day) != nil }
+        let info: String = infoText
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(statusLine(entry))
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
+                Text("\(category.key)  \(category.title)")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
                 if entry.knockedOut || entry.overridden {
                     Image(systemName: entry.overridden ? "hand.raised.fill" : "exclamationmark.octagon.fill")
                         .font(.caption)
                         .accessibilityLabel(entry.overridden ? "Eigene Wertung" : "Null-Regel")
                 }
-                Spacer(minLength: 4)
-                if !category.details.isEmpty {
+                Text(statusText(entry))
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityLabel(spokenStatus(entry))
+                CategoryHeadRing(entry: entry)
+                if !info.isEmpty {
                     Button {
                         withAnimation(.snappy) { showsInfo.toggle() }
                     } label: {
@@ -824,39 +1176,112 @@ struct CategoryPage: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Details zu \(category.title)")
                 }
-                if !tickable.isEmpty {
-                    QuickAllMenu(items: tickable, day: day, context: context, scope: category.title, title: "Alle …", onTint: true)
+                if isComplete {
+                    Button(action: goToNextPage) {
+                        Text(headNextTitle)
+                            .font(.caption.weight(.bold))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.22), in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                } else if !tickable.isEmpty {
+                    QuickAllMenu(items: tickable, day: day, context: context, scope: category.title, title: "Alle …",
+                                 onTint: true, offersClear: false)
+                        .fixedSize()
                 }
             }
-            if showsInfo, !category.details.isEmpty {
-                Text(category.details)
+            if showsInfo, !info.isEmpty {
+                Text(info)
                     .font(.caption)
                     .opacity(0.9)
+                    .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
         }
         .foregroundStyle(.white)
-        .padding(16)
-        .background(GoalPalette.gradient(goal: category.key), in: .rect(cornerRadius: 20, style: .continuous))
-        .shadow(color: category.color.opacity(0.3), radius: 10, y: 4)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minHeight: 48)
+        .background(GoalPalette.gradient(goal: category.key), in: .rect(cornerRadius: 16, style: .continuous))
+        .shadow(color: category.color.opacity(0.25), radius: 6, y: 3)
+        .padding(.vertical, 2)
+        .contextMenu {
+            if !marked.isEmpty {
+                Button("Alle leeren (\(marked.count))", systemImage: "circle.dashed", role: .destructive) {
+                    app.setAll(nil, items: marked, day: day, scope: category.title)
+                }
+            }
+        }
+    }
+}
+
+/// The small ring in a category head (28 pt, R38): white on the goal's colour, a check once
+/// everything is recorded.
+private struct CategoryHeadRing: View {
+    let entry: CategoryDay
+
+    private var fill: Double { entry.due > 0 ? entry.fill : 0 }
+    private var isComplete: Bool { entry.due > 0 && entry.isComplete }
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.3), lineWidth: 3.5)
+            Circle()
+                .trim(from: 0, to: CGFloat(fill))
+                .stroke(Color.white, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if isComplete {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .heavy))
+            }
+        }
+        .frame(width: 28, height: 28)
+        .animation(.snappy, value: entry.fill)
+        .accessibilityHidden(true)
     }
 }
 
 // MARK: Items
 
-/// One item with its marks as direct buttons – no cycling, no holding (U5.2, U18.2).
+/// One item with its marks as direct buttons – no cycling, no holding (U5.2, U18.2). At least
+/// 640 pt wide (Mac, iPad) the buttons stand to the right of the title (R61).
 struct ItemMarkRow: View {
     let item: PlanItem
     let context: WeekContext
     let day: DayKey
     @Environment(AppModel.self) private var app
-    @State private var showsDetails = false
+    @State private var confirmsDelete = false
+
+    private var isProgress: Bool { item.schedule == .progress }
 
     var body: some View {
-        let mark = context.mark(item, on: day)
-        let note = context.markNote(item, on: day)
-        VStack(alignment: .leading, spacing: 8) {
+        let mark: Mark? = context.mark(item, on: day)
+        let options: [Mark] = context.options(item, on: day)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 12) {
+                details
+                    .frame(minWidth: 0, idealWidth: 300, maxWidth: .infinity, alignment: .leading)
+                marks(mark: mark, options: options, compact: true)
+                    .frame(width: 300)
+            }
+            .frame(minWidth: 640)
+            VStack(alignment: .leading, spacing: 8) {
+                details
+                marks(mark: mark, options: options, compact: false)
+            }
+        }
+        .padding(.vertical, 2)
+        .contextMenu { menu(mark: mark, options: options) }
+        .weekItemDeleteDialog(item, isPresented: $confirmsDelete, app: app)
+    }
+
+    /// Title, kind, week progress and the mark's note.
+    private var details: some View {
+        let note: String = context.markNote(item, on: day)
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(item.title)
                     .font(.body.weight(.medium))
@@ -884,54 +1309,58 @@ struct ItemMarkRow: View {
                     .italic()
                     .foregroundStyle(.secondary)
             }
-            let options: [Mark] = context.options(item, on: day)
-            if options.isEmpty {
-                Label(context.isDerived(item) ? "Automatisch aus dem Wochenziel" : "Zählt heute nicht", systemImage: "wand.and.stars")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                MarkBar(mark: mark, options: options, suggestion: context.suggestion(item, on: day),
-                        isProgress: item.schedule == .progress) { app.setMark($0, item: item, day: day) }
-            }
-        }
-        .padding(.vertical, 2)
-        .contextMenu {
-            MarkMenu(current: mark, options: context.options(item, on: day)) { app.setMark($0, item: item, day: day) }
-            Divider()
-            if item.isSecondary {
-                Button("Doch wichtig", systemImage: "star") { app.store.setSecondary(item, false) }
-            } else {
-                Button("Als Nebensache", systemImage: "square.stack") { app.store.setSecondary(item, true) }
-            }
-            Button("Details und Notiz…", systemImage: "info.circle") { app.sheet = .item(item, day) }
-        }
-    }
-
-    /// V5: what this item is – subtle, but clear. Plain daily items need no label.
-    private var kindText: String? {
-        if item.isSecondary { return "Nebensache · zählt, wenn ausgefüllt" }
-        switch item.schedule {
-        case .fixed: return nil
-        case .optional: return "optional · zählt nicht"
-        case .conditional: return "bedingt · nur wenn die Situation vorkam"
-        case .weekly(let count): return "\(count)× pro Woche"
-        case .progress: return context.isDerived(item) ? "automatisch" : "Wochenfortschritt"
         }
     }
 
     @ViewBuilder
+    private func marks(mark: Mark?, options: [Mark], compact: Bool) -> some View {
+        if options.isEmpty {
+            Label(emptyText, systemImage: "wand.and.stars")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: compact ? .trailing : .leading)
+        } else {
+            MarkBar(mark: mark, options: options, suggestion: context.suggestion(item, on: day),
+                    isProgress: isProgress, compact: compact) { app.setMark($0, item: item, day: day) }
+        }
+    }
+
+    private var emptyText: String {
+        context.isDerived(item) ? "Automatisch aus dem Wochenziel" : "Zählt heute nicht"
+    }
+
+    /// R9: marks and "Leeren" only where marking is possible; automatic items open their value.
+    /// R63: edit and delete right here.
+    @ViewBuilder
+    private func menu(mark: Mark?, options: [Mark]) -> some View {
+        if !options.isEmpty {
+            MarkMenu(current: mark, options: options) { app.setMark($0, item: item, day: day) }
+            Divider()
+        }
+        if let valueSheet = MarkCell.valueSheet(for: item, context: context, day: day) {
+            Button("Wert eintragen…", systemImage: "square.and.pencil") { app.sheet = valueSheet }
+            Divider()
+        }
+        Button("Details und Notiz…", systemImage: "info.circle") { app.sheet = .item(item, day) }
+        Button("Bearbeiten…", systemImage: "pencil") { app.sheet = .editItem(item) }
+        if item.isSecondary {
+            Button("Doch wichtig", systemImage: "star") { app.store.setSecondary(item, false) }
+        } else {
+            Button("Als Nebensache", systemImage: "square.stack") { app.store.setSecondary(item, true) }
+        }
+        Divider()
+        Button("Löschen…", systemImage: "trash", role: .destructive) { confirmsDelete = true }
+    }
+
+    /// R64: the short kind label, the week's quota and progress.
+    @ViewBuilder
     private var meta: some View {
+        let kind: String? = context.kindLabel(item)
         let quota = context.quotaProgress(item)
         let progress = context.progress(item)
-        if kindText != nil || quota != nil || progress != nil {
+        if kind != nil || quota != nil || progress != nil {
             HStack(spacing: 8) {
-                if let kindText {
-                    Text(kindText)
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.12), in: .capsule)
-                }
+                KindBadge(text: kind)
                 if let quota {
                     Text("\(quota.done) von \(quota.target) diese Woche")
                         .font(.caption2)
@@ -951,89 +1380,207 @@ struct ItemMarkRow: View {
     }
 }
 
-/// ✓ ½ ✗ N/A as equal buttons. Tapping the selected one clears it. A measurement's suggestion is
-/// outlined. Progress items: "Gearbeitet" / "Nicht heute" – the week decides the result (U19).
+/// Erledigt · Teilweise · Nicht erledigt · Entfällt as equal buttons. Tapping the selected one clears
+/// it. A measurement's suggestion is outlined. Progress items: "Gearbeitet" / "Nicht heute" – the week
+/// decides the result (U19). Once the row has an answer the other buttons turn grey but stay tappable
+/// (R36). From accessibility text sizes on, the buttons stand 2 × 2 (R67).
 struct MarkBar: View {
     let mark: Mark?
     let options: [Mark]
     var suggestion: Mark?
     var isProgress = false
+    /// R61: flat buttons with symbol and word side by side, for the wide row.
+    var compact = false
     let onSet: (Mark?) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// R67: 2 × 2 from AX1 on, so no word is cut off.
+    private var usesGrid: Bool {
+        typeSize >= .accessibility1 && options.count > 2
+    }
+
+    private var spacing: CGFloat { compact ? 4 : 6 }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(options, id: \.self) { option in
-                MarkOptionButton(option: option, selected: mark == option, suggested: suggestion == option && mark == nil,
-                                 isProgress: isProgress) {
-                    onSet(mark == option ? nil : option)
+        Group {
+            if usesGrid {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: spacing), GridItem(.flexible(), spacing: spacing)],
+                          spacing: spacing) {
+                    buttons
+                }
+            } else {
+                HStack(spacing: spacing) {
+                    buttons
                 }
             }
         }
         .sensoryFeedback(.selection, trigger: mark)
     }
+
+    private var buttons: some View {
+        ForEach(options, id: \.self) { option in
+            MarkOptionButton(option: option, selected: mark == option, answered: mark != nil,
+                             suggested: suggestion == option && mark == nil,
+                             isProgress: isProgress, compact: compact) {
+                onSet(mark == option ? nil : option)
+            }
+        }
+    }
+}
+
+/// R35: where 1–4 mark the selected item (Mac, iPad), the buttons name their key in the tooltip.
+private struct MarkKeyHintsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var markKeyHints: Bool {
+        get { self[MarkKeyHintsKey.self] }
+        set { self[MarkKeyHintsKey.self] = newValue }
+    }
 }
 
 /// One choice: symbol and word (W2.2 – it says what tapping does). Selected = filled, a
-/// measurement's suggestion = dashed outline. Tapping the selected one clears it.
+/// measurement's suggestion = dashed outline, answered rows grey (R36). Tapping the selected one
+/// clears it.
 private struct MarkOptionButton: View {
     let option: Mark
     let selected: Bool
+    let answered: Bool
     let suggested: Bool
     let isProgress: Bool
+    let compact: Bool
     let action: () -> Void
+    @Environment(\.markKeyHints) private var showsKeyHints
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// R67: sizes grow with the system text size, identical at the standard size.
+    @ScaledMetric(relativeTo: .body) private var regularHeight: CGFloat = 46
+    @ScaledMetric(relativeTo: .body) private var regularSymbol: CGFloat = 15
+    @ScaledMetric(relativeTo: .body) private var regularWord: CGFloat = 10.5
+    #if os(macOS)
+    @ScaledMetric(relativeTo: .body) private var compactHeight: CGFloat = 30
+    #else
+    @ScaledMetric(relativeTo: .body) private var compactHeight: CGFloat = 34
+    #endif
+    @ScaledMetric(relativeTo: .body) private var compactSymbol: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var compactWord: CGFloat = 11
 
     private var tint: Color { Optional(option).color }
 
+    /// R44: the word and symbol in the darker text colour of the mark.
+    private var textTint: Color { Optional(option).textColor }
+
+    /// R36: another button of this row is chosen.
+    private var isMuted: Bool { answered && !selected }
+
+    private var cornerRadius: CGFloat { compact ? 9 : 12 }
+
+    /// R61: 34 pt in the wide row (a little flatter on the Mac), else 46 pt.
+    private var height: CGFloat {
+        compact ? compactHeight : regularHeight
+    }
+
+    /// R67: two lines for the word at accessibility sizes (2 × 2), else one.
+    private var wordLines: Int {
+        typeSize >= .accessibility1 ? 2 : 1
+    }
+
+    private var foreground: Color {
+        if selected { return Color.white }
+        return isMuted ? Color.secondary : textTint
+    }
+
+    private var fillStyle: AnyShapeStyle {
+        if selected { return AnyShapeStyle(tint.gradient) }
+        if isMuted { return AnyShapeStyle(Color.secondary.opacity(0.08)) }
+        return AnyShapeStyle(tint.opacity(0.1))
+    }
+
+    private var hint: String {
+        if selected { return "Nochmal tippen leert die Bewertung" }
+        return suggested ? "Vorschlag aus dem Messwert" : ""
+    }
+
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .bold))
-                Text(word)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-            .frame(maxWidth: .infinity, minHeight: 46)
-            .foregroundStyle(selected ? Color.white : tint)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.1)))
-            }
-            .overlay {
-                if suggested {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(tint, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            face
+                .frame(maxWidth: .infinity, minHeight: height)
+                .foregroundStyle(foreground)
+                .background {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(fillStyle)
                 }
-            }
-            .scaleEffect(selected ? 1.0 : 0.97)
-            .animation(.snappy(duration: 0.18), value: selected)
-            .contentShape(.rect)
+                .overlay {
+                    if suggested {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(tint, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    }
+                }
+                .scaleEffect(selected ? 1.0 : 0.97)
+                .animation(.snappy(duration: 0.18), value: selected)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .help(helpText)
         .accessibilityLabel(word)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityHint(selected ? "Nochmal tippen leert die Bewertung" : (suggested ? "Vorschlag aus dem Messwert" : ""))
+        .accessibilityHint(hint)
+    }
+
+    @ViewBuilder
+    private var face: some View {
+        if compact {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: compactSymbol, weight: .bold))
+                Text(word)
+                    .font(.system(size: compactWord, weight: .semibold))
+                    .lineLimit(wordLines)
+                    .minimumScaleFactor(0.6)
+            }
+            .padding(.horizontal, 4)
+        } else {
+            VStack(spacing: 2) {
+                Image(systemName: symbol)
+                    .font(.system(size: regularSymbol, weight: .bold))
+                Text(word)
+                    .font(.system(size: regularWord, weight: .semibold))
+                    .lineLimit(wordLines)
+                    .minimumScaleFactor(0.6)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 2)
+        }
     }
 
     private var symbol: String {
-        if isProgress { return option == .done ? "checkmark" : "moon.zzz" }
         switch option {
         case .done: return "checkmark"
         case .partial: return "circle.lefthalf.filled"
         case .missed: return "xmark"
-        case .notApplicable: return "minus"
+        case .notApplicable: return isProgress ? "moon.zzz" : "minus"
         }
     }
 
+    /// R43: "Erledigt" · "Teilweise" · "Nicht erledigt" · "Entfällt"; progress items "Gearbeitet" ·
+    /// "Nicht heute".
     private var word: String {
-        if isProgress { return option == .done ? "Gearbeitet" : "Nicht heute" }
+        option.label(progress: isProgress)
+    }
+
+    /// The key that sets this mark (R35).
+    private var keyNumber: Int {
         switch option {
-        case .done: return "Erledigt"
-        case .partial: return "Teilweise"
-        case .missed: return "Nicht"
-        case .notApplicable: return "Entfällt"
+        case .done: return 1
+        case .partial: return 2
+        case .missed: return 3
+        case .notApplicable: return 4
         }
+    }
+
+    /// "Erledigt (1)" where the keys work, else the word.
+    private var helpText: String {
+        showsKeyHints ? "\(word) (\(keyNumber))" : word
     }
 }
 
@@ -1046,12 +1593,17 @@ struct MeasureRow: View {
     let context: WeekContext
     let day: DayKey
     var healthSuggestion: Double?
+    /// R37: false where the power-hours line sits right on the page – no second "Erfassen".
+    var offersWorkButton = true
 
     @Environment(AppModel.self) private var app
 
     private var record: MeasureRecord? { measure.record }
     private var value: Double? { context.dayValue(measure, on: day) }
     private var isWeekly: Bool { record?.period == .week }
+
+    /// H1: the value comes from Apple Health on the iPhone – nothing to type in here.
+    private var isHealthElsewhere: Bool { value == nil && context.isHealthElsewhere(measure) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1095,7 +1647,9 @@ struct MeasureRow: View {
                     }
                 }
                 Spacer(minLength: 6)
-                MeasureInput(measure: measure, context: context, day: day)
+                if !isHealthElsewhere {
+                    MeasureInput(measure: measure, context: context, day: day, offersWorkButton: offersWorkButton)
+                }
             }
         }
         .padding(.vertical, 2)
@@ -1103,6 +1657,7 @@ struct MeasureRow: View {
     }
 
     private var subtitle: String {
+        if isHealthElsewhere { return WeekContext.healthElsewhereHint }
         var parts: [String] = []
         if let target = record?.target {
             parts.append("Ziel \(target.label)\(isWeekly ? " / Woche" : "")")
@@ -1134,7 +1689,8 @@ struct MeasureMenu: View {
         } else {
             Button("Als Nebensache", systemImage: "square.stack") { app.store.setSecondary(measure, true) }
         }
-        if context.dayValue(measure, on: day) != nil, measure.record?.isWork != true {
+        // R2: spendings are deleted one by one, work comes from power-hours – neither is cleared here.
+        if context.dayValue(measure, on: day) != nil, measure.record?.isWork != true, !context.isExpense(measure) {
             Button("Wert leeren", systemImage: "xmark.circle") { app.setValue(nil, for: measure, day: day) }
         }
     }
@@ -1147,6 +1703,9 @@ struct MeasureInput: View {
     let measure: MeasureDefinition
     let context: WeekContext
     let day: DayKey
+    /// R37: false where the power-hours line ("Menge · Wofür · +") sits right below – then work
+    /// shows only its value.
+    var offersWorkButton = true
 
     @Environment(AppModel.self) private var app
     @State private var text = ""
@@ -1168,24 +1727,26 @@ struct MeasureInput: View {
                 Text(value.map { Format.powerHours($0) } ?? "0 PH")
                     .font(.system(.callout, design: .rounded).weight(.bold))
                     .monospacedDigit()
-                Button {
-                    app.sheet = .work(WorkDraft(day: day, categoryKey: workCategory))
-                } label: {
-                    Label("Erfassen", systemImage: "plus")
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .foregroundStyle(.white)
-                        .background(Brand.accent.gradient, in: .capsule)
+                if offersWorkButton {
+                    Button {
+                        app.sheet = .work(WorkDraft(day: day, categoryKey: workCategory))
+                    } label: {
+                        Label("Erfassen", systemImage: "plus")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(.white)
+                            .background(Color.accentFill.gradient, in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Power-Hours für \(measure.title) mit Beschreibung erfassen")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Power-Hours für \(measure.title) mit Beschreibung erfassen")
             }
         } else if context.isExpense(measure) {
             Button {
                 app.sheet = .expenses(day)
             } label: {
-                Label(value.map { Format.measure($0, unit: "€") } ?? "Ausgabe", systemImage: "plus")
+                Label(value.map { Format.euro($0) } ?? "Ausgabe", systemImage: "plus")
                     .font(.caption.weight(.bold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
@@ -1211,9 +1772,9 @@ struct MeasureInput: View {
         let unit: String = unitLabel ?? Units.display(measure.unit)
         return HStack(spacing: 5) {
             StepButton(title: "− \(Format.number(step))", prominent: false) {
-                set(max(0, (value ?? 0) - step))
+                change(by: -step, set: set)
             }
-            .disabled((value ?? 0) <= 0)
+            .disabled(currentAmount() <= 0)
             .accessibilityLabel("\(measure.title) minus \(Format.number(step)) \(unit)")
             HStack(spacing: 3) {
                 TextField("–", text: $text)
@@ -1225,6 +1786,11 @@ struct MeasureInput: View {
                     .submitLabel(.done)
                     .onSubmit { commit(set) }
                     .onChange(of: focused) { _, isFocused in if !isFocused { commit(set) } }
+                    // R31: the number pad has no Return – "Fertig" above it saves right away.
+                    .keypadButton("Fertig", isActive: focused) {
+                        commit(set)
+                        focused = false
+                    }
                     .accessibilityLabel("\(measure.title) in \(unit), tippen zum Eintippen")
                 if !unit.isEmpty {
                     Text(unit)
@@ -1242,17 +1808,20 @@ struct MeasureInput: View {
                     .strokeBorder(focused ? Brand.accent : Color.clear, lineWidth: 1.5)
             }
             StepButton(title: "+ \(Format.number(step))", prominent: true) {
-                set((value ?? 0) + step)
+                change(by: step, set: set)
             }
             .accessibilityLabel("\(measure.title) plus \(Format.number(step)) \(unit)")
             Menu {
-                Section("Hinzufügen") {
+                Section("Dazuzählen") {
                     ForEach([1.0, 2.0, 5.0, 10.0].map { $0 * step }, id: \.self) { amount in
-                        Button("+ \(Format.number(amount)) \(unit)") { set((value ?? 0) + amount) }
+                        Button("+ \(Format.number(amount)) \(unit)") { change(by: amount, set: set) }
                     }
                 }
                 if value != nil {
-                    Button("Leeren", systemImage: "arrow.counterclockwise", role: .destructive) { set(nil) }
+                    Button("Leeren", systemImage: "arrow.counterclockwise", role: .destructive) {
+                        text = ""
+                        set(nil)
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -1270,9 +1839,32 @@ struct MeasureInput: View {
         }
     }
 
+    /// The typed text as a value (to the cent); nil when empty or unreadable.
+    private func typedValue() -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        return Format.parse(trimmed).map { ($0 * 100).rounded() / 100 }
+    }
+
+    /// What the steps start from: the typed value while typing, else the saved one (R31).
+    private func currentAmount() -> Double {
+        if focused, let typed = typedValue() { return typed }
+        return value ?? 0
+    }
+
+    /// "+ 0,5" / "− 0,5" / quick amounts: while typing, the typed value is saved first and the step
+    /// counts from it ("4,5" typed, "+ 0,5" → 5) (R31).
+    private func change(by delta: Double, set: (Double?) -> Void) {
+        let base: Double = currentAmount()
+        if focused { commit(set) }
+        let result: Double = max(0, ((base + delta) * 100).rounded() / 100)
+        text = Format.number(result)
+        set(result)
+    }
+
     private func commit(_ set: (Double?) -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        let parsed: Double? = trimmed.isEmpty ? nil : Format.parse(trimmed).map { ($0 * 100).rounded() / 100 }
+        let parsed: Double? = typedValue()
         guard trimmed.isEmpty || parsed != nil else {
             text = value.map { Format.number($0) } ?? ""
             return
@@ -1283,12 +1875,17 @@ struct MeasureInput: View {
 
     // MARK: Time (V8: no "now" – usually entered the next day)
 
+    /// Minutes since midnight of a picked time, whole minutes (R29).
+    private static func pickedMinutes(_ date: Date) -> Double {
+        DayKey.minutes(of: date).rounded(.down)
+    }
+
     @ViewBuilder
     private var timeControl: some View {
         if let value {
             DatePicker("", selection: Binding(
-                get: { MeasureInput.date(minutes: value, day: day) },
-                set: { app.setValue(MeasureInput.minutes(of: $0), for: measure, day: day, toast: false) }
+                get: { day.date(minutes: value) },
+                set: { app.setValue(MeasureInput.pickedMinutes($0), for: measure, day: day, toast: false) }
             ), displayedComponents: .hourAndMinute)
             .labelsHidden()
         } else {
@@ -1297,14 +1894,14 @@ struct MeasureInput: View {
                     get: { draftTime },
                     set: { newValue in
                         draftTime = newValue
-                        app.setValue(MeasureInput.minutes(of: newValue), for: measure, day: day, toast: false)
+                        app.setValue(MeasureInput.pickedMinutes(newValue), for: measure, day: day, toast: false)
                     }
                 ), displayedComponents: .hourAndMinute)
                 .labelsHidden()
                 .opacity(0.45)
                 .accessibilityLabel("\(measure.title): Uhrzeit wählen")
                 Button {
-                    app.setValue(MeasureInput.minutes(of: draftTime), for: measure, day: day)
+                    app.setValue(MeasureInput.pickedMinutes(draftTime), for: measure, day: day)
                 } label: {
                     Image(systemName: "checkmark")
                         .font(.callout.weight(.bold))
@@ -1315,14 +1912,13 @@ struct MeasureInput: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(measure.title): diese Uhrzeit übernehmen")
             }
-            .onAppear { draftTime = MeasureInput.date(minutes: defaultMinutes, day: day) }
+            .onAppear { draftTime = day.date(minutes: defaultMinutes) }
         }
     }
 
-    /// The target time if there is one ("<=23:00" → 23:00), else 23:00 – a sensible starting point.
+    /// The target time if there is one ("<=23:00" → 23:00), else 23:00 – a sensible starting point (R29).
     private var defaultMinutes: Double {
-        if let target = record?.target, target.isTime { return target.value }
-        return 23 * 60
+        record?.defaultClockMinutes ?? 23 * 60
     }
 
     // MARK: Text
@@ -1339,18 +1935,6 @@ struct MeasureInput: View {
             }
             .onAppear { text = context.entries.last { $0.code == measure.code && $0.dayKey == day.string }?.text ?? "" }
     }
-
-    static func date(minutes: Double, day: DayKey) -> Date {
-        let normalized = Int(minutes) % (24 * 60)
-        return day.startDate().addingTimeInterval(Double(normalized) * 60)
-    }
-
-    static func minutes(of date: Date) -> Double {
-        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-        let hour: Int = parts.hour ?? 0
-        let minute: Int = parts.minute ?? 0
-        return Double(hour * 60 + minute)
-    }
 }
 
 /// "− 0,5" / "+ 0,5": the step is written on the button.
@@ -1358,19 +1942,26 @@ struct StepButton: View {
     let title: String
     let prominent: Bool
     let action: () -> Void
+    /// R67: grows with the system text size; identical at the standard size.
+    @ScaledMetric(relativeTo: .footnote) private var fontSize: CGFloat = 12.5
+    @ScaledMetric(relativeTo: .footnote) private var minWidth: CGFloat = 42
+    @ScaledMetric(relativeTo: .footnote) private var minHeight: CGFloat = 34
+
+    private var fill: AnyShapeStyle {
+        prominent ? AnyShapeStyle(Color.accentFill.gradient) : AnyShapeStyle(Color.secondary.opacity(0.14))
+    }
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                .font(.system(size: fontSize, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(minWidth: 42, minHeight: 34)
+                .frame(minWidth: minWidth, minHeight: minHeight)
                 .padding(.horizontal, 4)
                 .foregroundStyle(prominent ? Color.white : Color.primary)
-                .background(prominent ? AnyShapeStyle(Brand.accent.gradient) : AnyShapeStyle(Color.secondary.opacity(0.14)),
-                            in: .rect(cornerRadius: 9, style: .continuous))
+                .background(fill, in: .rect(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -1378,14 +1969,17 @@ struct StepButton: View {
 
 // MARK: Weekly goals (V2)
 
-/// A weekly target: bar for the week with an even-pace marker, what today added, the value
-/// entered right here – and, for a progress item, that it counts by itself.
+/// A weekly target: bar for the week with an even-pace marker (R47: work doesn't plan on free
+/// days), what today added and, except for work, the value entered right here. Work is read-only –
+/// the power-hours line follows right below (R37). The %-label explains how it counts.
 struct WeeklyGoalRow: View {
     let goal: WeeklyGoal
     let context: WeekContext
     let day: DayKey
+    @State private var showsExplanation = false
 
     private var record: MeasureRecord? { goal.measure.record }
+    private var isWork: Bool { record?.isWork == true }
 
     var body: some View {
         let weekValue: Double = context.weekValue(goal.measure) ?? 0
@@ -1393,57 +1987,96 @@ struct WeeklyGoalRow: View {
         let targetValue: Double = record?.target?.scaleMax ?? 0
         let fraction: Double = targetValue > 0 ? min(1, weekValue / targetValue) : 0
         let reached: Bool = targetValue > 0 && weekValue >= targetValue - 1e-9
-        let pace: Pace? = record.flatMap { record in
-            record.target.map { Pace(done: weekValue, target: $0.scaleMax, days: record.days, week: context.week, today: context.today) }
-        }
+        let pace: Pace? = context.pace(for: goal.measure)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(goal.item?.title ?? goal.measure.title)
                     .font(.body.weight(.semibold))
                 Spacer(minLength: 6)
-                Text(reached ? "erreicht" : "\(percent(fraction)) %")
-                    .font(.caption.weight(.bold))
-                    .monospacedDigit()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .foregroundStyle(reached ? Color.white : Brand.accent)
-                    .background(reached ? Color.green : Brand.accent.opacity(0.14), in: .capsule)
+                percentButton(fraction: fraction, reached: reached, pace: pace)
             }
-            GoalBar(fraction: fraction, expected: pace.map { targetValue > 0 ? min(1, $0.expected / targetValue) : 0 }, reached: reached,
+            GoalBar(fraction: fraction, expected: expectedFraction(pace, target: targetValue), reached: reached,
                     tint: GoalPalette.color(category: goal.measure.categoryKey))
             HStack(spacing: 10) {
-                Text("\(Format.measure(weekValue, unit: unit)) von \(Format.measure(targetValue, unit: unit))")
+                Text("\(amount(weekValue)) von \(amount(targetValue))")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
-                Text(today > 0 ? "heute +\(Format.measure(today, unit: unit))" : "heute noch nichts")
+                Text(todayText(today))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                 Spacer(minLength: 0)
             }
-            if let pace, !reached, pace.expected > 0 {
-                // W3: the grey tick explained.
-                Label("Strich = Soll bis heute: \(Format.measure(pace.expected, unit: unit)) (gleichmäßig über die geplanten Tage)",
-                      systemImage: "line.diagonal")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            if !isWork {
+                HStack {
+                    Text("Heute eintragen")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 6)
+                    MeasureInput(measure: goal.measure, context: context, day: day)
+                }
             }
-            HStack {
-                Text("Heute eintragen")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 6)
-                MeasureInput(measure: goal.measure, context: context, day: day)
-            }
-            Label(explanation(reached: reached), systemImage: goal.item == nil ? "chart.bar" : "wand.and.stars")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
         .contextMenu { MeasureMenu(measure: goal.measure, context: context, day: day) }
     }
 
-    private var unit: String { record?.isWork == true ? "PH" : goal.measure.unit }
+    /// "62 %" / "erreicht" – a tap explains the bar and how the target counts.
+    private func percentButton(fraction: Double, reached: Bool, pace: Pace?) -> some View {
+        Button {
+            showsExplanation = true
+        } label: {
+            Text(reached ? "erreicht" : "\(percent(fraction)) %")
+                .font(.caption.weight(.bold))
+                .monospacedDigit()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(reached ? Color.white : Brand.accent)
+                .background(reached ? Color.green : Brand.accent.opacity(0.14), in: .capsule)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityHint("Erklärt, wie das Wochenziel zählt")
+        .popover(isPresented: $showsExplanation) {
+            explanationView(reached: reached, pace: pace)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func explanationView(reached: Bool, pace: Pace?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(explanation(reached: reached), systemImage: goal.item == nil ? "chart.bar" : "wand.and.stars")
+            if let legend = paceLegend(pace, reached: reached) {
+                // W3: the grey tick explained.
+                Label(legend, systemImage: "line.diagonal")
+            }
+        }
+        .font(.callout)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: 320, alignment: .leading)
+        .padding()
+    }
+
+    private var unit: String { isWork ? "PH" : goal.measure.unit }
+
+    private func amount(_ value: Double) -> String {
+        Format.measure(value, unit: unit)
+    }
+
+    /// "heute +2 PH" / "heute noch nichts".
+    private func todayText(_ today: Double) -> String {
+        today > 0 ? "heute +\(amount(today))" : "heute noch nichts"
+    }
+
+    /// Where an even pace stands today, 0…1 of the bar.
+    private func expectedFraction(_ pace: Pace?, target: Double) -> Double? {
+        guard let pace, target > 0 else { return nil }
+        return min(1, pace.expected / target)
+    }
+
+    private func paceLegend(_ pace: Pace?, reached: Bool) -> String? {
+        guard let pace, !reached, pace.expected > 0 else { return nil }
+        return "Strich = Soll bis heute: \(amount(pace.expected)) (gleichmäßig über die geplanten Tage)"
+    }
 
     /// V5: say plainly what counts and how.
     private func explanation(reached: Bool) -> String {
@@ -1508,6 +2141,14 @@ struct DayPageSections: View {
     @Environment(HealthService.self) private var health
     @AppStorage(TodaySettings.askConditionalsKey) private var askConditionals = false
 
+    /// "Alles erfasst – bereit zum Abschließen." · "3 Punkte sind noch offen."
+    private func openText(_ overall: DayOverall?) -> String {
+        guard let overall else { return "" }
+        if overall.blank == 0 { return "Alles erfasst – bereit zum Abschließen." }
+        let count: String = overall.blank == 1 ? "1 Punkt ist" : "\(overall.blank) Punkte sind"
+        return "\(count) noch offen."
+    }
+
     var body: some View {
         let closed = context.isClosed(day)
         let overall = context.score.days[day]
@@ -1522,7 +2163,7 @@ struct DayPageSections: View {
                             .font(.headline)
                             .foregroundStyle(Brand.accent)
                     } else {
-                        Text(overall.map { $0.blank == 0 ? "Alles erfasst – bereit zum Abschließen." : "\($0.blank) \($0.blank == 1 ? "Punkt ist" : "Punkte sind") noch offen." } ?? "")
+                        Text(openText(overall))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -1532,7 +2173,7 @@ struct DayPageSections: View {
                         Label(closed ? "Abschluss ansehen" : "Tag abschließen", systemImage: closed ? "checkmark.seal" : "moon.stars")
                             .frame(maxWidth: .infinity)
                     }
-                    .primaryActionStyle()
+                    .thaliaPrimaryAction()
                 }
                 .padding(.vertical, 4)
                 if !waiting.isEmpty {
@@ -1630,8 +2271,8 @@ struct InlineWorkRow: View {
                 TextField(block.task.isEmpty ? "Beschreibung fehlt – woran?" : "Wofür?", text: $task)
                     .focused($focused)
                     .submitLabel(.done)
-                    .onSubmit { app.store.setTask(block, task) }
-                    .onChange(of: focused) { _, isFocused in if !isFocused { app.store.setTask(block, task) } }
+                    .onSubmit(commitTask)
+                    .onChange(of: focused) { _, isFocused in if !isFocused { commitTask() } }
                 HStack(spacing: 6) {
                     KeyBadge(key: block.categoryKey)
                     Text(categoryTitle)
@@ -1647,6 +2288,10 @@ struct InlineWorkRow: View {
             }
         }
         .onAppear { task = block.task }
+        // Changes from elsewhere (sheet, other device) show up while the field isn't being edited.
+        .onChange(of: block.task) { _, newValue in
+            if !focused { task = newValue }
+        }
         .swipeActions(edge: .trailing) {
             Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([block]) }
         }
@@ -1657,21 +2302,27 @@ struct InlineWorkRow: View {
             Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([block]) }
         }
     }
+
+    /// R21/K1: an emptied field puts the old description back – power-hours always say what for.
+    private func commitTask() {
+        if !app.store.setTask(block, task) {
+            task = block.task
+        }
+    }
 }
 
-/// A new entry in one line: amount, description (with suggestions), add (V10).
+/// A new entry in one line: amount, description (with suggestions), add (V10). The suggestions are
+/// loaded once (on appearing and when typing starts); typing only filters them (R32).
 struct NewWorkRow: View {
     let categoryKey: String
     let day: DayKey
     @Environment(AppModel.self) private var app
     @State private var powerHours: Double = 1
     @State private var task = ""
+    @State private var suggestions: [String] = []
     @FocusState private var focused: Bool
 
     var body: some View {
-        let suggestions: [String] = focused || !task.isEmpty
-            ? Array(app.store.workSuggestions(categoryKey: categoryKey).filter { $0 != task && (task.isEmpty || $0.localizedCaseInsensitiveContains(task)) }.prefix(4))
-            : []
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Menu {
@@ -1701,20 +2352,24 @@ struct NewWorkRow: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canAdd)
-                .accessibilityLabel("Power-Hours hinzufügen")
-                .accessibilityHint(canAdd ? "" : "Erst eintragen, woran du gearbeitet hast")
+                .accessibilityLabel("Power-Hours erfassen")
+                .accessibilityHint(canAdd ? "" : "Erst angeben, woran du gearbeitet hast")
             }
-            if !suggestions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(suggestions, id: \.self) { suggestion in
-                            ChipButton(title: suggestion, isSelected: false, symbol: "clock.arrow.circlepath") { task = suggestion }
-                        }
-                    }
+            if focused || !task.isEmpty {
+                SuggestionChips(suggestions: suggestions, typed: task, selected: task, limit: 4) { suggestion in
+                    task = suggestion
                 }
             }
         }
         .padding(.vertical, 2)
+        .onAppear(perform: loadSuggestions)
+        .onChange(of: focused) { _, isFocused in
+            if isFocused { loadSuggestions() }
+        }
+    }
+
+    private func loadSuggestions() {
+        suggestions = app.store.workSuggestions(categoryKey: categoryKey)
     }
 
     private var canAdd: Bool { !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -1737,6 +2392,8 @@ struct QuickAllMenu: View {
     var title: String?
     /// White on a coloured head.
     var onTint = false
+    /// The category head keeps "Alle leeren" in its context menu instead (R74).
+    var offersClear = true
     @Environment(AppModel.self) private var app
 
     var body: some View {
@@ -1749,10 +2406,12 @@ struct QuickAllMenu: View {
                 Button("✗ Nicht erledigt", systemImage: "xmark.circle") { app.setAll(.missed, items: open, day: day, scope: scope) }
             }
             .disabled(open.isEmpty)
-            Button("Alle leeren (\(marked.count))", systemImage: "circle.dashed", role: .destructive) {
-                app.setAll(nil, items: marked, day: day, scope: scope)
+            if offersClear {
+                Button("Alle leeren (\(marked.count))", systemImage: "circle.dashed", role: .destructive) {
+                    app.setAll(nil, items: marked, day: day, scope: scope)
+                }
+                .disabled(marked.isEmpty)
             }
-            .disabled(marked.isEmpty)
         } label: {
             if let title, onTint {
                 Label(title, systemImage: "checklist")
@@ -1775,31 +2434,57 @@ struct QuickAllMenu: View {
     }
 }
 
-/// K2: a spending in one line – amount, what for (required), add. Suggestions from earlier ones.
+/// K2: a spending in one line – amount, what for (required), add. Suggestions from the last months,
+/// loaded once (R32); a valid amount plus a tap on one saves right away. With `editing` set (a tap
+/// on a spending, R46) the fields hold that spending and "Sichern" changes it.
 struct ExpenseInputRow: View {
     let measure: MeasureDefinition
     let context: WeekContext
     let day: DayKey
+    @Binding var editing: MeasureEntry?
     @Environment(AppModel.self) private var app
     @State private var amount = ""
     @State private var what = ""
+    @State private var suggestions: [String] = []
     @FocusState private var focus: Field?
 
-    private enum Field { case amount, what }
+    private enum Field: Hashable { case amount, what }
+
+    init(measure: MeasureDefinition, context: WeekContext, day: DayKey, editing: Binding<MeasureEntry?>) {
+        self.measure = measure
+        self.context = context
+        self.day = day
+        self._editing = editing
+    }
+
+    /// The spending being changed, if it belongs to this measurement.
+    private var editedEntry: MeasureEntry? {
+        guard let entry = editing, entry.code == measure.code else { return nil }
+        return entry
+    }
+
+    private var parsedAmount: Double? {
+        guard let value = Format.parse(amount), value > 0, value.isFinite else { return nil }
+        return value
+    }
 
     private var canAdd: Bool {
-        Format.parse(amount) != nil && !what.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        parsedAmount != nil && !what.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var plusColor: Color {
+        canAdd ? GoalPalette.color(goal: "8") : Color.secondary.opacity(0.5)
     }
 
     var body: some View {
         let total: Double = context.dayValue(measure, on: day) ?? 0
-        let suggestions: [String] = context.expenseSuggestions(measure).filter { what.isEmpty || $0.localizedCaseInsensitiveContains(what) }
+        let isEditing: Bool = editedEntry != nil
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(measure.title)
                     .font(.body.weight(.medium))
                 Spacer(minLength: 6)
-                Text("heute \(Format.measure(total, unit: "€"))")
+                Text("heute \(Format.euro(total))")
                     .font(.callout.weight(.semibold))
                     .monospacedDigit()
                 Button {
@@ -1821,6 +2506,8 @@ struct ExpenseInputRow: View {
                         .focused($focus, equals: .amount)
                         .submitLabel(.next)
                         .onSubmit { focus = .what }
+                        // R31: the number pad has no Return – "Weiter" goes on to "Wofür".
+                        .keypadButton("Weiter", isActive: focus == .amount) { focus = .what }
                     Text("€")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -1832,233 +2519,198 @@ struct ExpenseInputRow: View {
                 TextField("Wofür? (Pflicht)", text: $what)
                     .focused($focus, equals: .what)
                     .submitLabel(.done)
-                    .onSubmit(add)
+                    .onSubmit(submit)
+                    .keypadButton("Fertig", isActive: focus == .what) { submit() }
                     .padding(.vertical, 7)
                     .padding(.horizontal, 8)
                     .background(Color.secondary.opacity(0.09), in: .rect(cornerRadius: 9, style: .continuous))
-                Button(action: add) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(canAdd ? GoalPalette.color(goal: "8") : Color.secondary.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .disabled(!canAdd)
-                .accessibilityLabel("Ausgabe hinzufügen")
-                .accessibilityHint(canAdd ? "" : "Betrag und Zweck eintragen")
-            }
-            if focus != nil, !suggestions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(suggestions.prefix(6), id: \.self) { suggestion in
-                            ChipButton(title: suggestion, isSelected: what == suggestion) { what = suggestion }
-                        }
+                if !isEditing {
+                    Button(action: add) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(plusColor)
                     }
+                    .buttonStyle(.plain)
+                    .disabled(!canAdd)
+                    .accessibilityLabel("Ausgabe erfassen")
+                    .accessibilityHint(canAdd ? "" : "Erst Betrag und Wofür angeben")
                 }
+            }
+            if isEditing {
+                HStack(spacing: 10) {
+                    Label("Ausgabe ändern", systemImage: "pencil")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 6)
+                    Button("Abbrechen", action: cancelEdit)
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                    Button("Sichern", action: save)
+                        .font(.callout.weight(.semibold))
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.accentFill)
+                        .controlSize(.small)
+                        .disabled(!canAdd)
+                }
+            }
+            if focus != nil {
+                SuggestionChips(suggestions: suggestions, typed: what, selected: what, onPick: pick)
             }
         }
         .padding(.vertical, 2)
+        .onAppear {
+            loadSuggestions()
+            if editedEntry != nil { fillFromEditing() }
+        }
+        .onChange(of: focus) { previous, current in
+            if previous == nil && current != nil { loadSuggestions() }
+        }
+        .onChange(of: editedEntry?.uuid) { _, _ in
+            fillFromEditing()
+        }
+    }
+
+    /// R32: once per appearance and when typing starts – never per keystroke.
+    private func loadSuggestions() {
+        suggestions = app.store.expenseSuggestions(code: measure.code, through: day)
+    }
+
+    /// A tap on a suggestion: with a valid amount the spending is saved at once (R32).
+    private func pick(_ suggestion: String) {
+        what = suggestion
+        if editedEntry == nil, canAdd {
+            add()
+        } else if parsedAmount == nil {
+            focus = .amount
+        }
+    }
+
+    private func submit() {
+        if editedEntry != nil {
+            save()
+        } else {
+            add()
+        }
     }
 
     private func add() {
-        guard canAdd, let value = Format.parse(amount) else { return }
+        guard canAdd, let value = parsedAmount else { return }
         app.addExpense(value, what: what, measure: measure, day: day)
         amount = ""
         what = ""
         focus = .amount
     }
+
+    /// R46: the spending being edited gets amount and "Wofür"; Undo in the toast.
+    private func save() {
+        guard canAdd, let value = parsedAmount, let entry = editedEntry else { return }
+        let entryDay: DayKey = DayKey(entry.dayKey) ?? day
+        app.updateExpense(entry, amount: value, what: what, day: entryDay)
+        editing = nil
+        amount = ""
+        what = ""
+        focus = nil
+    }
+
+    private func cancelEdit() {
+        editing = nil
+        amount = ""
+        what = ""
+        focus = nil
+    }
+
+    /// The fields take the spending to change; without one they are emptied.
+    private func fillFromEditing() {
+        guard let entry = editedEntry else {
+            amount = ""
+            what = ""
+            return
+        }
+        amount = Format.number(entry.value ?? 0, decimals: 2)
+        what = entry.note
+        focus = .amount
+    }
 }
 
-/// One spending of the day: what for and how much; swipe or context menu deletes it.
+/// One spending of the day: what for and how much; a tap or "Bearbeiten" changes it (R46), swipe or
+/// the context menu deletes it.
 struct ExpenseEntryRow: View {
     let entry: MeasureEntry
+    var onEdit: (() -> Void)?
     @Environment(AppModel.self) private var app
+
+    init(entry: MeasureEntry, onEdit: (() -> Void)? = nil) {
+        self.entry = entry
+        self.onEdit = onEdit
+    }
+
+    private var purpose: String {
+        entry.note.isEmpty ? "ohne Angabe" : entry.note
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "eurosign.circle.fill")
                 .foregroundStyle(GoalPalette.color(goal: "8"))
             VStack(alignment: .leading, spacing: 1) {
-                Text(entry.note.isEmpty ? "ohne Angabe" : entry.note)
-                    .foregroundStyle(entry.note.isEmpty ? .orange : .primary)
+                Text(purpose)
+                    .foregroundStyle(entry.note.isEmpty ? Color.orange : Color.primary)
                 Text(entry.recordedAt, format: .dateTime.hour().minute())
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 6)
-            Text(Format.measure(entry.value ?? 0, unit: "€"))
+            Text(Format.euro(entry.value ?? 0))
                 .font(.callout.weight(.semibold))
                 .monospacedDigit()
         }
         .padding(.leading, 8)
+        .contentShape(.rect)
+        .onTapGesture {
+            onEdit?()
+        }
+        .accessibilityHint(onEdit == nil ? "" : "Tippen zum Bearbeiten")
         .swipeActions(edge: .trailing) {
             Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([entry]) }
         }
         .contextMenu {
+            if let onEdit {
+                Button("Bearbeiten", systemImage: "pencil", action: onEdit)
+            }
             Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([entry]) }
         }
-    }
-}
-
-// MARK: Day overview (U2.3)
-
-/// The whole day on one screen, opened on purpose: fill per category, power-hours, values, notes.
-struct DayOverviewSheet: View {
-    let day: DayKey
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            WeekReader(week: day.week, today: app.today) { context in
-                DayOverviewList(context: context, day: day) { page in
-                    app.todayPage = page
-                    app.tab = .today
-                    app.sidebar = .today
-                    dismiss()
-                }
-            }
-            .navigationTitle(day.shortLabel)
-            .inlineNavigationTitle()
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) {
-                    WeekReader(week: day.week, today: app.today) { context in
-                        PDFButton(kind: .day(day), context: context, title: "PDF")
-                    }
-                }
-            }
-        }
-        .sheetFrame(minWidth: 460, minHeight: 600)
-    }
-}
-
-struct DayOverviewList: View {
-    let context: WeekContext
-    let day: DayKey
-    let onOpen: (TodayPage) -> Void
-
-    var body: some View {
-        let overall = context.score.days[day]
-        let closed = context.isClosed(day)
-        let totals = context.workTotals(on: day)
-        List {
-            Section {
-                HeroCard(title: day.longLabel,
-                         subtitle: closed ? "Tag abgeschlossen" : "Die Wertung kommt mit dem Abschluss.",
-                         value: closed ? Format.score(overall?.score, outOf: false) : (overall?.coverageText ?? "0 %"),
-                         caption: closed ? "Tag" : "erfasst",
-                         progress: closed ? (overall?.score ?? 0) / 10 : (overall?.coverage ?? 0),
-                         facts: [("Woche", Format.score(context.score.overall, outOf: true)),
-                                 ("Fokus", totals.isEmpty ? "–" : totals.shortText)])
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
-
-            Section {
-                GlanceTiles(context: context, day: day)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
-
-            OpenToDoSection(context: context, day: day, onOpen: onOpen)
-
-            Section("Kategorien") {
-                ForEach(context.todayCategories(day)) { category in
-                    let entry = context.score.category(category.key, on: day)
-                    Button {
-                        onOpen(.category(category.key))
-                    } label: {
-                        HStack(spacing: 10) {
-                            KeyBadge(key: category.key)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(category.title)
-                                    .lineLimit(1)
-                                if entry.due > 0 {
-                                    ProgressView(value: entry.fill)
-                                        .tint(entry.isComplete ? .green : Brand.accent)
-                                }
-                            }
-                            Spacer(minLength: 8)
-                            if entry.due > 0 {
-                                Text(entry.isComplete ? Format.score(entry.score, outOf: false) : "\(entry.due - entry.blank)/\(entry.due)")
-                                    .font(.callout.weight(entry.isComplete ? .semibold : .regular))
-                                    .monospacedDigit()
-                                    .foregroundStyle(entry.isComplete ? .primary : .secondary)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            if !totals.isEmpty {
-                Section {
-                    ForEach(WorkTotals.byCategory(context.workRecords.filter { $0.day == day }).sorted { $0.key < $1.key }, id: \.key) { pair in
-                        LabeledContent("\(pair.key) \(context.category(pair.key)?.title ?? "")", value: pair.value.shortText)
-                    }
-                } header: {
-                    Text("Power-Hours · \(totals.shortText)")
-                } footer: {
-                    Text(totals.explanation)
-                }
-            }
-
-            let measured = context.measures.filter { $0.days.contains(day.weekday) && context.dayValue($0, on: day) != nil }
-            if !measured.isEmpty {
-                Section("Messwerte") {
-                    ForEach(measured) { measure in
-                        LabeledContent(measure.title, value: context.dayValue(measure, on: day).map { Format.measure($0, unit: measure.unit) } ?? "–")
-                    }
-                }
-            }
-
-            let notes = context.notes(on: day)
-            if !notes.isEmpty {
-                Section("Notizen") {
-                    ForEach(notes) { note in
-                        Label(note.text, systemImage: note.kind.symbol)
-                    }
-                }
-            }
-        }
-        .compactListSections()
     }
 }
 
 // MARK: Conditional items (U12.9)
 
-/// "Gab es heute …?" – the situations that happened get marked, the rest becomes N/A.
+/// "Gab es heute …?" – the situations that happened get marked, the rest becomes "Entfällt". Switching a
+/// situation off changes nothing until "Fertig" (R25); "Später" closes without changes.
 struct ConditionalsSheet: View {
     let day: DayKey
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var occurred: Set<String> = []
+    /// Situations switched off here; their marks are cleared only with "Fertig" (R25).
+    @State private var turnedOff: Set<String> = []
 
     var body: some View {
         NavigationStack {
             WeekReader(week: day.week, today: app.today) { context in
-                let items = context.items(on: day).filter { $0.schedule == .conditional }
+                let items: [PlanItem] = context.items(on: day).filter { $0.schedule == .conditional }
                 Form {
                     Section {
                         ForEach(items) { item in
                             VStack(alignment: .leading, spacing: 8) {
-                                Toggle(isOn: Binding(
-                                    get: { occurred.contains(item.code) || (context.mark(item, on: day).map { $0 != .notApplicable } ?? false) },
-                                    set: { isOn in
-                                        if isOn { occurred.insert(item.code) } else {
-                                            occurred.remove(item.code)
-                                            if context.mark(item, on: day) != nil { app.setMark(nil, item: item, day: day) }
-                                        }
-                                    }
-                                )) {
+                                Toggle(isOn: toggleBinding(item, context: context)) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.title)
-                                        Text("\(item.categoryKey) · \(context.category(item.categoryKey)?.title ?? "")")
+                                        Text(categoryLine(item, context: context))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
                                 }
-                                if occurred.contains(item.code) || (context.mark(item, on: day).map { $0 != .notApplicable } ?? false) {
+                                if isOn(item, context: context) {
                                     MarkBar(mark: context.mark(item, on: day), options: [.done, .partial, .missed]) {
                                         app.setMark($0, item: item, day: day)
                                     }
@@ -2068,35 +2720,78 @@ struct ConditionalsSheet: View {
                     } header: {
                         Text("Gab es diese Situationen heute?")
                     } footer: {
-                        Text("Was nicht vorkam, zählt als N/A und verändert die Wertung nicht.")
+                        Text("Was nicht vorkam, zählt als „Entfällt“ und verändert die Wertung nicht.")
                     }
                 }
                 .formStyle(.grouped)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Später") { dismiss() }
+                    }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Fertig") {
-                            let answered = Set(items.filter { context.mark($0, on: day).map { $0 != .notApplicable } ?? false }.map(\.code))
-                            let open = items.filter { context.mark($0, on: day) == nil }
-                            app.store.settleConditionals(open, occurred: occurred.union(answered), day: day)
-                            dismiss()
-                        }
+                        Button("Fertig") { finish(items, context: context) }
                     }
                 }
             }
             .navigationTitle("Bedingte Punkte")
             .inlineNavigationTitle()
         }
-        .sheetFrame(minWidth: 460, minHeight: 520)
+        .toastHost(app)
+        .thaliaSheetFrame(width: 460, height: 520)
+    }
+
+    /// Recorded as having happened (a mark other than "Entfällt").
+    private func hasOccurredMark(_ item: PlanItem, context: WeekContext) -> Bool {
+        guard let mark = context.mark(item, on: day) else { return false }
+        return mark != .notApplicable
+    }
+
+    private func isOn(_ item: PlanItem, context: WeekContext) -> Bool {
+        guard !turnedOff.contains(item.code) else { return false }
+        return occurred.contains(item.code) || hasOccurredMark(item, context: context)
+    }
+
+    private func toggleBinding(_ item: PlanItem, context: WeekContext) -> Binding<Bool> {
+        let code: String = item.code
+        let marked: Bool = hasOccurredMark(item, context: context)
+        return Binding(
+            get: { isOn(item, context: context) },
+            set: { value in
+                if value {
+                    occurred.insert(code)
+                    turnedOff.remove(code)
+                } else {
+                    occurred.remove(code)
+                    if marked { turnedOff.insert(code) }
+                }
+            }
+        )
+    }
+
+    private func categoryLine(_ item: PlanItem, context: WeekContext) -> String {
+        let title: String = context.category(item.categoryKey)?.title ?? ""
+        return "\(item.categoryKey) · \(title)"
+    }
+
+    /// "Fertig": switched-off situations lose their mark; open ones that didn't happen become "Entfällt".
+    private func finish(_ items: [PlanItem], context: WeekContext) {
+        let answered: Set<String> = Set(items.filter { hasOccurredMark($0, context: context) }.map(\.code))
+        let open: [PlanItem] = items.filter { context.mark($0, on: day) == nil }
+        app.store.settleConditionals(open, occurred: occurred.union(answered), day: day)
+        let cleared: [PlanItem] = items.filter { turnedOff.contains($0.code) }
+        if !cleared.isEmpty { app.store.setMarks(nil, items: cleared, day: day) }
+        dismiss()
     }
 }
 
 // MARK: No plan, toolbar
 
-/// The week has no plan yet.
+/// The week has no plan yet: plan exactly this week (R56) or repeat the last planned one (R92).
 struct NoPlanView: View {
     let week: WeekKey
     @Environment(AppModel.self) private var app
+    /// The last week with a plan before this one, looked up once per week.
+    @State private var sourceWeek: WeekKey?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2106,54 +2801,105 @@ struct NoPlanView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button {
-                app.sheet = .importPlan(prompt: true)
+                app.sheet = .planWeek(week)
             } label: {
                 Label("Wochenplan importieren", systemImage: "square.and.arrow.down")
             }
-            .primaryActionStyle()
+            .thaliaPrimaryAction()
+            if let sourceWeek {
+                Button {
+                    app.sheet = .repeatPlan(from: sourceWeek, to: week)
+                } label: {
+                    Label("Wie \(sourceWeek.label) wiederholen", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding(.vertical, 6)
+        .task(id: week) {
+            sourceWeek = app.store.planningSourceWeek(for: week)
+        }
     }
 }
 
-/// Toolbar of Today. iPhone: "+" sits at the bottom (accessory), here only the menu. Mac and
-/// iPad: day navigation, "+" and closing the day in the toolbar.
-struct TodayToolbar: ToolbarContent {
+/// Toolbar of Today, customizable on the Mac (R62) – every item has an id, so one type serves both
+/// platforms. iPhone: the date as a title menu and the ring (R38); "+" sits at the bottom
+/// (accessory). iPad: the title, "Heute im Blick" and the menu. Mac: day navigation, closing the
+/// day (with its name), "Erfassen" and the "Heute im Blick" column.
+struct TodayToolbar: CustomizableToolbarContent {
     let context: WeekContext
     let day: DayKey
+    /// iPad (wide) and Mac: list and page side by side.
+    var usesSplit = false
     @Environment(AppModel.self) private var app
 
-    var body: some ToolbarContent {
+    private var closeTitle: String { context.isClosed(day) ? "Abgeschlossen" : "Tag abschließen" }
+    private var closeSymbol: String { context.isClosed(day) ? "checkmark.seal.fill" : "moon.stars" }
+
+    var body: some CustomizableToolbarContent {
         #if os(macOS)
-        ToolbarItemGroup(placement: .navigation) {
-            Button { app.selectedDay = day.adding(days: -1) } label: { Label("Voriger Tag", systemImage: "chevron.left") }
-                .help("Voriger Tag (⌘[)")
-            Button("Heute") { app.selectedDay = app.today }
+        ToolbarItem(id: "previous-day", placement: .navigation) {
+            Button { app.selectedDay = day.adding(days: -1) } label: { Label("Vorheriger Tag", systemImage: "chevron.left") }
+                .help("Vorheriger Tag (⌘[)")
+        }
+        ToolbarItem(id: "today", placement: .navigation) {
+            Button("Zu heute") { app.goToToday() }
                 .disabled(day == app.today)
                 .help("Zu heute (⇧⌘T)")
+        }
+        ToolbarItem(id: "next-day", placement: .navigation) {
             Button { app.selectedDay = day.adding(days: 1) } label: { Label("Nächster Tag", systemImage: "chevron.right") }
                 .help("Nächster Tag (⌘])")
         }
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItem(id: "close-day", placement: .primaryAction) {
             Button {
-                app.sheet = .closeDay(day)
+                app.sheet = .closeDay(app.dayToClose(showing: day))
             } label: {
-                Label(context.isClosed(day) ? "Abgeschlossen" : "Tag abschließen",
-                      systemImage: context.isClosed(day) ? "checkmark.seal.fill" : "moon.stars")
+                Label(closeTitle, systemImage: closeSymbol)
             }
-            .help("Tag abschließen")
+            .labelStyle(.titleAndIcon)
+            .help("Tag abschließen (⌘↩)")
+        }
+        ToolbarItem(id: "create", placement: .primaryAction) {
             Button {
                 app.sheet = .create
             } label: {
                 Label("Erfassen", systemImage: "plus")
             }
-            .help("Erfassen (⌘N)")
+            .help("Erfassen (⇧⌘N)")
+        }
+        ToolbarItem(id: "glance", placement: .primaryAction) {
+            Button {
+                app.showsGlanceInspector.toggle()
+            } label: {
+                Label("Heute im Blick", systemImage: "sidebar.trailing")
+            }
+            .help("Heute im Blick ein- oder ausblenden (⌘0)")
         }
         #else
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(id: "title", placement: .principal) {
+            if usesSplit {
+                Text(day == app.today ? "Heute" : day.weekday.name)
+                    .font(.headline)
+            } else {
+                TodayTitleMenu(context: context, day: day)
+            }
+        }
+        ToolbarItem(id: "glance", placement: .topBarTrailing) {
+            if usesSplit {
+                Button {
+                    app.showsGlanceInspector.toggle()
+                } label: {
+                    Label("Heute im Blick", systemImage: "sidebar.trailing")
+                }
+            } else {
+                TodayRingButton(context: context, day: day)
+            }
+        }
+        ToolbarItem(id: "more", placement: .topBarTrailing) {
             Menu {
                 Button("Heute im Blick", systemImage: "info.circle") { app.sheet = .dayOverview(day) }
-                Button("Fokus (Power-Hours)", systemImage: "bolt") { app.sheet = .focus(day.week) }
+                Button("Fokus (Power-Hours)", systemImage: "bolt") { app.sheet = .focus(day) }
                 Button("Ausgaben", systemImage: "eurosign.circle") { app.sheet = .expenses(day) }
                 Button("Wochenplan importieren", systemImage: "square.and.arrow.down") { app.sheet = .importPlan(prompt: true) }
                 Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
@@ -2170,6 +2916,79 @@ struct TodayToolbar: ToolbarContent {
     }
 }
 
+#if os(iOS)
+/// R38: the date in the title bar – "Heute" (or the weekday) over "16. Nov. · KW47 · Arbeitstag";
+/// a menu with the days of the week, other weeks, "Zu heute" and the day's type and note.
+private struct TodayTitleMenu: View {
+    let context: WeekContext
+    let day: DayKey
+    @Environment(AppModel.self) private var app
+
+    private var headline: String { day == app.today ? "Heute" : day.weekday.name }
+
+    var body: some View {
+        let line: String = todayDateLine(context, day: day)
+        Menu {
+            TodayDayMenu(context: context, day: day)
+        } label: {
+            VStack(spacing: 0) {
+                HStack(spacing: 3) {
+                    Text(headline)
+                        .font(.headline)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                Text(line)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.primary)
+        }
+        .accessibilityLabel("\(headline), \(day.longLabel), \(context.dayType(day))")
+        .accessibilityHint("Anderen Tag wählen, Tagestyp und Besonderheit ändern")
+    }
+}
+
+/// R38: the day's ring with "73 %" (the score once closed) – a tap opens "Heute im Blick".
+private struct TodayRingButton: View {
+    let context: WeekContext
+    let day: DayKey
+    @Environment(AppModel.self) private var app
+
+    private var valueText: String {
+        let overall: DayOverall? = context.score.days[day]
+        if context.isClosed(day) { return Format.score(overall?.score) }
+        return overall?.coverageText ?? "0 %"
+    }
+
+    private var spoken: String {
+        let overall: DayOverall? = context.score.days[day]
+        if context.isClosed(day) { return "Tag abgeschlossen, Wertung \(Format.score(overall?.score))" }
+        return "\(overall?.coverageText ?? "0 %") erfasst"
+    }
+
+    var body: some View {
+        let overall: DayOverall? = context.score.days[day]
+        let shownScore: Double? = context.isClosed(day) ? overall?.score : nil
+        Button {
+            app.sheet = .dayOverview(day)
+        } label: {
+            HStack(spacing: 6) {
+                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 22, lineWidth: 3)
+                Text(valueText)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+            }
+        }
+        .accessibilityLabel(spoken)
+        .accessibilityHint("Öffnet „Heute im Blick“")
+    }
+}
+#endif
+
 /// Toolbar of Woche, Ziele and Rückblick: on the Mac "+" (iPhone has it at the bottom), on
 /// iPhone/iPad the menu with import, trash, tour and settings.
 struct MainToolbar: ToolbarContent {
@@ -2183,6 +3002,7 @@ struct MainToolbar: ToolbarContent {
             } label: {
                 Label("Erfassen", systemImage: "plus")
             }
+            .labelStyle(.titleAndIcon)
             .help("Erfassen (⇧⌘N)")
         }
         #else

@@ -111,10 +111,13 @@ public struct WorkTotals: Equatable, Sendable {
     public var netHours: Double { netMinutes / 60 }
     public var isEmpty: Bool { powerHours <= 0 }
 
-    /// "12 PH × 50 min = 10 h netto"
+    /// "3 h 20 min": the net time in hours and minutes (R52).
+    public var netText: String { Format.duration(minutes: Int(netMinutes.rounded())) }
+
+    /// "28 PH × 50 min = 23 h 20 min netto"
     public var explanation: String {
         guard !isEmpty else { return "Keine Arbeit erfasst." }
-        return "\(Format.number(powerHours, decimals: 2)) PH × 50 min = \(Format.number(netHours, decimals: 2)) h netto"
+        return "\(Format.number(powerHours, decimals: 2)) PH × 50 min = \(netText) netto"
     }
 
     /// "3,5 PH"

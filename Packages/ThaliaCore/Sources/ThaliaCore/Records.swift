@@ -177,6 +177,23 @@ public struct MeasureRecord: Equatable, Sendable {
         if case .work = source { return true }
         return false
     }
+
+    /// A spending measurement: every entry is one spending with what it was for (K2).
+    public var isExpense: Bool {
+        Units.normalized(unit) == "€" || code.lowercased().contains("ausgabe")
+    }
+
+    /// The value comes from Apple Health (`health:<kind>`).
+    public var isHealth: Bool {
+        if case .health = source { return true }
+        return false
+    }
+
+    /// Where a new time entry starts: the time target, else 23:00.
+    public var defaultClockMinutes: Double {
+        guard let target, target.isTime else { return 23 * 60 }
+        return target.value
+    }
 }
 
 /// When an item or measurement is due on free days (Familientag, Erholungstag, Urlaub …).
@@ -249,8 +266,11 @@ public struct EntryRecord: Equatable, Sendable {
     public var estimate: Bool
     /// Order within the day (time recorded); "last" aggregation takes the latest.
     public var order: Double
+    /// The single entries behind the value (backup, R27); empty = only the aggregated value.
+    public var parts: [EntryPart]
 
-    public init(code: String, day: DayKey, value: Double?, text: String = "", note: String = "", estimate: Bool = false, order: Double = 0) {
+    public init(code: String, day: DayKey, value: Double?, text: String = "", note: String = "", estimate: Bool = false, order: Double = 0,
+                parts: [EntryPart] = []) {
         self.code = code
         self.day = day
         self.value = value
@@ -258,9 +278,26 @@ public struct EntryRecord: Equatable, Sendable {
         self.note = note
         self.estimate = estimate
         self.order = order
+        self.parts = parts
     }
 
     public var key: String { "\(code)|\(day.string)" }
+}
+
+/// One single entry of a day (R27): three spendings stay three rows, each with its time.
+public struct EntryPart: Equatable, Sendable {
+    public var value: Double?
+    public var note: String
+    /// Time of day, minutes since midnight.
+    public var minutes: Int
+    public var estimate: Bool
+
+    public init(value: Double?, note: String = "", minutes: Int, estimate: Bool = false) {
+        self.value = value
+        self.note = note
+        self.minutes = minutes
+        self.estimate = estimate
+    }
 }
 
 /// A block of work in power-hours: category, how many PH, what for (student, task), result, next step.

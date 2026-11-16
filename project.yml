@@ -39,7 +39,7 @@ packages:
     path: Packages/ThaliaCore
 
 # One source tree (App/Sources + Shared) for iPhone/iPad and Mac. The watch app shares Shared/,
-# the widgets only the small snapshot bridge.
+# the widgets (iPhone and watch) only the small snapshot bridge and the goal colours.
 targets:
   Thalia:
     type: application
@@ -107,6 +107,7 @@ targets:
       - package: ThaliaCore
       - package: BinisoftKit
         product: BinisoftKit
+      - target: ThaliaWatchWidgets
     settings:
       base:
         PRODUCT_NAME: ThaliaWatch
@@ -120,7 +121,8 @@ targets:
     scheme:
       testTargets: []
 
-  # Home and Lock Screen widgets. They read a small snapshot from the shared App Group.
+  # Home and Lock Screen widgets. They read a small snapshot from the shared App Group; ✓ in the
+  # widget runs MarkDoneFromWidgetIntent in the app (WidgetActions.swift).
   ThaliaWidgets:
     type: app-extension
     platform: iOS
@@ -130,6 +132,8 @@ targets:
       - path: Shared/WidgetBridge.swift
       - path: Shared/AppInfo.swift
       - path: Shared/RouteIntents.swift
+      - path: Shared/GoalPalette.swift
+      - path: Shared/WidgetActions.swift
     dependencies:
       - package: ThaliaCore
       - package: BinisoftKit
@@ -142,4 +146,29 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Config/Widgets/ThaliaWidgets.entitlements
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+
+  # Watch complication and Smart Stack (R86), embedded in the watch app. Reads the snapshot the watch
+  # app writes to the watch's App Group (WidgetPublisher).
+  ThaliaWatchWidgets:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: WatchWidgets/Sources
+      - path: WatchWidgets/Resources
+      - path: Shared/WidgetBridge.swift
+      - path: Shared/AppInfo.swift
+      - path: Shared/GoalPalette.swift
+    dependencies:
+      - package: ThaliaCore
+      - package: BinisoftKit
+        product: BinisoftKitCore
+    settings:
+      base:
+        PRODUCT_NAME: ThaliaWatchWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(WATCH_WIDGETS_BUNDLE_ID)
+        INFOPLIST_FILE: Config/WatchWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/WatchWidgets/ThaliaWatchWidgets.entitlements
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "4"
         SKIP_INSTALL: YES

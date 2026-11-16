@@ -16,7 +16,7 @@ struct CloseDayView: View {
                 CloseDayForm(day: day, context: context)
             }
         }
-        .sheetFrame(minWidth: 620, minHeight: 720)
+        .thaliaSheetFrame(width: 620, height: 720)
     }
 }
 
@@ -27,50 +27,69 @@ struct CloseDayForm: View {
     @Environment(HealthService.self) private var health
     @Environment(\.dismiss) private var dismiss
     @State private var answers: [String: String] = [:]
+    /// The answers as last loaded or saved – typed text differs until it is saved (R14).
+    @State private var loadedAnswers: [String: String] = [:]
     @State private var loaded = false
     @State private var overrideCategory: TrackCategory?
     /// Sheets on top of this sheet (the app-wide sheet slot is taken by this one).
     @State private var measureCode: MeasureRequest?
     @State private var sharing: ShareRequest?
     @State private var itemSheet: PlanItem?
+    /// True only in the moment of closing: the celebration runs then, not when a closed day is
+    /// opened again later (R72).
+    @State private var justClosed = false
 
     private var closed: Bool { context.isClosed(day) }
 
     var body: some View {
-        let overall = context.score.days[day]
-        let conditionals = context.openConditionals(on: day)
-        let suggestions = context.items(on: day).compactMap { item in context.suggestion(item, on: day).map { (item, $0) } }
-        Form {
-            Section {
-                HeroCard(title: day.longLabel, subtitle: closed ? "Tag abgeschlossen" : "Noch offen – die Wertung kommt mit dem Abschluss",
-                         value: closed ? Format.score(overall?.score, outOf: false) : (overall?.coverageText ?? "0 %"),
-                         caption: closed ? "Tag" : "erfasst",
-                         progress: closed ? (overall?.score ?? 0) / 10 : (overall?.coverage ?? 0),
-                         facts: dayFacts(overall),
-                         celebrate: closed && (overall?.score ?? 0) >= 8)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                if closed {
-                    Button {
-                        sharing = ShareRequest(content: .day(day, context: context))
-                    } label: {
-                        Label("Tag als Bild teilen", systemImage: "square.and.arrow.up")
+        ScrollViewReader { proxy in
+            form(proxy)
+                .toolbar {
+                    if closed {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Fertig", action: finish)
+                        }
+                    } else {
+                        ToolbarItem(placement: .cancellationAction) {
+                            SheetCloseButton(action: finish)
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Abschließen") { close(proxy) }
+                        }
                     }
                 }
-                PDFButton(kind: .day(day), context: context, title: "Tag als PDF")
-            } footer: {
-                Text("Tagsüber erfassen, was passiert. Abends bewerten, was es bedeutet.")
-            }
+                // A second ⌘↩ on the Mac closes the day; once closed it finishes (R39).
+                .onChange(of: app.closeRequest) { _, _ in
+                    if closed || justClosed {
+                        finish()
+                    } else {
+                        close(proxy)
+                    }
+                }
+        }
+    }
+
+    private func form(_ proxy: ScrollViewProxy) -> some View {
+        let overall = context.score.days[day]
+        let conditionals = context.openConditionals(on: day)
+        let toFill: [MarkSuggestion] = context.suggestionsToFill(on: day)
+        let differing: [MarkSuggestion] = context.suggestionsDiffering(on: day)
+        return Form {
+            heroSection(overall)
 
             Section {
-                let totals = context.workTotals(on: day)
-                LabeledContent("Power-Hours", value: totals.isEmpty ? (DayTypes.isWorkFree(context.dayType(day)) ? "Frei – null PH ist richtig" : "keine") : totals.explanation)
+                LabeledContent("Power-Hours", value: workText)
                 ForEach(context.work(on: day).filter { !$0.result.isEmpty }) { block in
                     Label("\(block.task.isEmpty ? block.categoryKey : block.task): \(block.result)", systemImage: "checkmark.circle")
                         .font(.caption)
                 }
                 ForEach(filledMeasures) { measure in
                     evidenceRow(measure)
+                }
+                // H1: on the Mac a Health value isn't missing – it comes from the iPhone.
+                ForEach(healthElsewhereMeasures) { measure in
+                    LabeledContent(measure.title, value: WeekContext.healthElsewhereHint)
+                        .foregroundStyle(.secondary)
                 }
                 if !missingMeasures.isEmpty {
                     DisclosureGroup("Fehlt noch (\(missingMeasures.count)) – direkt ergänzen") {
@@ -88,11 +107,19 @@ struct CloseDayForm: View {
             }
 
             Section {
-                if !suggestions.isEmpty {
+                if !toFill.isEmpty {
+                    // R12: fills only blank items; a mark set on purpose stays.
                     Button {
-                        app.store.apply(suggestions: suggestions, day: day)
+                        app.applySuggestions(toFill, day: day)
                     } label: {
-                        Label("\(suggestions.count) Vorschläge aus Messwerten übernehmen", systemImage: "wand.and.stars")
+                        Label("\(Format.count(toFill.count, "Vorschlag", "Vorschläge")) aus Messwerten übernehmen", systemImage: "wand.and.stars")
+                    }
+                }
+                if !differing.isEmpty {
+                    DisclosureGroup("Messwert weicht ab (\(differing.count))") {
+                        ForEach(differing) { suggestion in
+                            differingRow(suggestion)
+                        }
                     }
                 }
                 if requiredBlanks.isEmpty {
@@ -118,7 +145,7 @@ struct CloseDayForm: View {
                     Button {
                         app.store.settleConditionals(conditionals, occurred: [], day: day)
                     } label: {
-                        Label("Situation trat nicht auf → alle N/A", systemImage: "minus.circle")
+                        Label("Situation trat nicht auf → alle „Entfällt“", systemImage: "minus.circle")
                     }
                 }
                 if !weeklyOpen.isEmpty {
@@ -126,7 +153,7 @@ struct CloseDayForm: View {
                         ForEach(weeklyOpen) { item in
                             VStack(alignment: .leading, spacing: 4) {
                                 if let quota = context.quotaProgress(item) {
-                                    Text("\(quota.done) von \(quota.target) diese Woche – heute nur eintragen, wenn erledigt; Fehlendes zählt erst am Wochenende.")
+                                    Text("\(quota.done) von \(quota.target) diese Woche – heute nur markieren, wenn erledigt; Fehlendes zählt erst am Wochenende.")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -138,7 +165,7 @@ struct CloseDayForm: View {
             } header: {
                 Text("2 · Fehlendes ergänzen")
             } footer: {
-                Text("Leer heißt „nicht erfasst“ – kein automatisches Versäumnis. Was fällig war und nicht passiert ist, ist ✗, nicht N/A. Automatische Wochenziele (z. B. stammloop) rechnet Thalia selbst.")
+                Text("Leer heißt „nicht erfasst“ – kein automatisches Versäumnis. Was dran war und nicht passiert ist, ist „Nicht erledigt“, nicht „Entfällt“. Automatische Wochenziele (z. B. stammloop) rechnet Thalia selbst.")
             }
 
             Section {
@@ -177,9 +204,14 @@ struct CloseDayForm: View {
             }
 
             Section {
-                Toggle(isOn: Binding(get: { answers[ReflectionQuestion.journalField] == "ja" },
-                                     set: { answers[ReflectionQuestion.journalField] = $0 ? "ja" : "nein" })) {
-                    Label("Ins Journal eingetragen", systemImage: "book.closed")
+                // R58: the plan's journal item is the one source; the switch only without it.
+                if let journal = context.journalItem {
+                    journalRow(journal)
+                } else {
+                    Toggle(isOn: Binding(get: { answers[ReflectionQuestion.journalField] == "ja" },
+                                         set: { answers[ReflectionQuestion.journalField] = $0 ? "ja" : "nein" })) {
+                        Label("Ins Journal eingetragen", systemImage: "book.closed")
+                    }
                 }
                 ForEach(ReflectionQuestion.day) { question in
                     VStack(alignment: .leading, spacing: 4) {
@@ -195,70 +227,146 @@ struct CloseDayForm: View {
 
             Section {
                 if closed {
-                    Button {
-                        saveAnswers()
-                        app.store.reopenDay(day)
-                    } label: {
-                        Label("Tag wieder öffnen", systemImage: "lock.open")
+                    Button(action: finish) {
+                        Label("Fertig", systemImage: "checkmark")
+                            .frame(maxWidth: .infinity)
                     }
-                    Button("Fertig") {
-                        saveAnswers()
-                        dismiss()
+                    .thaliaPrimaryAction()
+                    Button(action: reopen) {
+                        Label("Tag wieder öffnen", systemImage: "lock.open")
                     }
                 } else {
                     Button {
-                        saveAnswers()
-                        // Stays open: the closed day shows its score, a small celebration and "teilen".
-                        withAnimation(.snappy) { app.store.closeDay(day) }
+                        close(proxy)
                     } label: {
                         Label("Tag abschließen", systemImage: "moon.stars.fill")
                             .frame(maxWidth: .infinity)
                     }
-                    .primaryActionStyle()
+                    .thaliaPrimaryAction()
                 }
             }
         }
         .formStyle(.grouped)
         .navigationTitle(closed ? "Tag abgeschlossen" : "Tag abschließen")
         .inlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Schließen") {
-                    saveAnswers()
-                    dismiss()
-                }
-            }
-        }
         .onAppear {
             guard !loaded else { return }
             for question in ReflectionQuestion.day {
                 answers[question.id] = context.reflection(scope: day.string, field: question.id)
             }
             answers[ReflectionQuestion.journalField] = context.reflection(scope: day.string, field: ReflectionQuestion.journalField)
+            loadedAnswers = answers
             loaded = true
         }
         .onDisappear(perform: saveAnswers)
+        .unsavedInput(answers != loadedAnswers, in: app)
         .sheet(item: $sharing) { request in
             ShareSheet(content: request.content)
+                .environment(app)
+                .toastHost(app)
         }
         .sheet(item: $measureCode) { request in
             MeasureSheet(code: request.code, day: request.day)
                 .environment(app)
                 .environment(health)
+                .modelContainer(app.container)
+                .toastHost(app)
         }
         .sheet(item: $itemSheet) { item in
             ItemDetailView(item: item, day: day)
                 .environment(app)
                 .environment(health)
+                .modelContainer(app.container)
+                .toastHost(app)
         }
         .sheet(item: $overrideCategory) { category in
             OverrideSheet(category: category, day: day, entry: context.score.category(category.key, on: day),
-                          reason: context.overrides["\(category.key)|\(day.string)"]?.reason ?? "")
+                          reason: overrideReason(category))
+                .environment(app)
+                .toastHost(app)
         }
     }
 
     private func binding(_ field: String) -> Binding<String> {
         Binding(get: { answers[field] ?? "" }, set: { answers[field] = $0 })
+    }
+
+    private func overrideReason(_ category: TrackCategory) -> String {
+        context.overrides["\(category.key)|\(day.string)"]?.reason ?? ""
+    }
+
+    // MARK: Hero and closing (R39, R40, R72, R80)
+
+    private func heroSection(_ overall: DayOverall?) -> some View {
+        Section {
+            HeroCard(title: day.longLabel, subtitle: heroSubtitle, value: heroValue(overall), caption: closed ? "Tag" : "erfasst",
+                     progress: heroProgress(overall), facts: dayFacts(overall),
+                     celebrate: justClosed && closed && (overall?.score ?? 0) >= 8)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .id("hero")
+            if showsWeekNext {
+                Button(action: continueToWeek) {
+                    Label("Weiter: Woche \(day.week.label) abschließen", systemImage: "arrow.right.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .thaliaPrimaryAction()
+            }
+            if closed {
+                Button {
+                    sharing = ShareRequest(content: .day(day, context: context))
+                } label: {
+                    Label("Tag als Bild teilen", systemImage: "square.and.arrow.up")
+                }
+            }
+            PDFButton(kind: .day(day), context: context, title: "Tag als PDF")
+        } footer: {
+            Text("Tagsüber erfassen, was passiert. Abends bewerten, was es bedeutet.")
+        }
+    }
+
+    private var heroSubtitle: String {
+        closed ? "Tag abgeschlossen" : "Noch offen – die Wertung kommt mit dem Abschluss"
+    }
+
+    private func heroValue(_ overall: DayOverall?) -> String {
+        if closed { return Format.score(overall?.score, outOf: false) }
+        return overall?.coverageText ?? "0 %"
+    }
+
+    private func heroProgress(_ overall: DayOverall?) -> Double {
+        if closed { return (overall?.score ?? 0) / 10 }
+        return overall?.coverage ?? 0
+    }
+
+    /// R40: a closed Sunday of a week that is still open leads on to the week.
+    private var showsWeekNext: Bool {
+        closed && day.weekday == .sunday && !context.isClosed
+    }
+
+    /// Closes the day and stays open: it scrolls up to the score and the celebration (R39).
+    private func close(_ proxy: ScrollViewProxy) {
+        guard !closed, !justClosed else { return }
+        saveAnswers()
+        withAnimation(.snappy) { app.closeDay(day) }
+        justClosed = true
+        withAnimation(.snappy) { proxy.scrollTo("hero", anchor: .top) }
+    }
+
+    private func finish() {
+        saveAnswers()
+        dismiss()
+    }
+
+    private func reopen() {
+        saveAnswers()
+        justClosed = false
+        app.reopenDay(day)
+    }
+
+    private func continueToWeek() {
+        saveAnswers()
+        app.sheet = .closeWeek(day.week)
     }
 
     private func dayFacts(_ overall: DayOverall?) -> [(String, String)] {
@@ -269,13 +377,24 @@ struct CloseDayForm: View {
         return facts
     }
 
+    /// "28 PH × 50 min = 23 h 20 min netto" · "Frei – null PH ist richtig" · "keine".
+    private var workText: String {
+        let totals = context.workTotals(on: day)
+        if !totals.isEmpty { return totals.explanation }
+        return DayTypes.isWorkFree(context.dayType(day)) ? "Frei – null PH ist richtig" : "keine"
+    }
+
     private var dayMeasures: [MeasureDefinition] {
         context.measures.filter { context.applies($0, on: day) && $0.record?.period == .day }
     }
 
     /// V9.1: what's there is shown, what's missing waits folded away.
     private var filledMeasures: [MeasureDefinition] { dayMeasures.filter { context.dayValue($0, on: day) != nil } }
-    private var missingMeasures: [MeasureDefinition] { dayMeasures.filter { context.dayValue($0, on: day) == nil } }
+    /// H1: only what this device can fill in counts as missing.
+    private var missingMeasures: [MeasureDefinition] { dayMeasures.filter { context.countsAsMissing($0, on: day) } }
+    private var healthElsewhereMeasures: [MeasureDefinition] {
+        dayMeasures.filter { context.dayValue($0, on: day) == nil && context.isHealthElsewhere($0) }
+    }
 
     private var requiredBlanks: [PlanItem] { context.blanks(on: day).filter { !$0.isSecondary } }
     private var secondaryBlanks: [PlanItem] { context.blanks(on: day).filter(\.isSecondary) }
@@ -290,10 +409,7 @@ struct CloseDayForm: View {
             LabeledContent(measure.title) {
                 HStack(spacing: 6) {
                     Text(value.map { Format.measure($0, unit: measure.record?.isWork == true ? "PH" : measure.unit) } ?? "–")
-                    if let met = measure.record.flatMap({ Measures.isMet($0, value: value) }) {
-                        Image(systemName: met ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(met ? .green : .secondary)
-                    }
+                    targetState(measure, value: value)
                 }
                 .monospacedDigit()
             }
@@ -301,22 +417,50 @@ struct CloseDayForm: View {
         .buttonStyle(.plain)
     }
 
-    /// An open item with its marks as direct buttons; the title opens the details.
-    private func quickRow(_ item: PlanItem) -> some View {
+    /// R66: a met target shows its check; a missed one its own symbol and "verfehlt · Ziel ≤ 23:00".
+    @ViewBuilder
+    private func targetState(_ measure: MeasureDefinition, value: Double?) -> some View {
+        switch targetMet(measure, value: value) {
+        case true?:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .accessibilityLabel("erreicht")
+        case false?:
+            Label(missedText(measure), systemImage: "xmark.circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Optional(Mark.missed).textColor)
+                .accessibilityLabel(missedSpoken(measure))
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private func targetMet(_ measure: MeasureDefinition, value: Double?) -> Bool? {
+        guard let record = measure.record else { return nil }
+        return Measures.isMet(record, value: value)
+    }
+
+    /// "≤ 23:00", empty without a target.
+    private func targetLabel(_ measure: MeasureDefinition) -> String {
+        measure.record?.target?.label ?? ""
+    }
+
+    /// "verfehlt · Ziel ≤ 23:00".
+    private func missedText(_ measure: MeasureDefinition) -> String {
+        let goal: String = targetLabel(measure)
+        return goal.isEmpty ? "verfehlt" : "verfehlt · Ziel \(goal)"
+    }
+
+    /// VoiceOver: "verfehlt, Ziel ≤ 23:00".
+    private func missedSpoken(_ measure: MeasureDefinition) -> String {
+        let goal: String = targetLabel(measure)
+        return goal.isEmpty ? "verfehlt" : "verfehlt, Ziel \(goal)"
+    }
+
+    /// R58: the journal item with its marks, like on Today.
+    private func journalRow(_ item: PlanItem) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Button {
-                itemSheet = item
-            } label: {
-                HStack(spacing: 6) {
-                    KeyBadge(key: item.categoryKey)
-                    Text(item.title)
-                        .foregroundStyle(.primary)
-                    Spacer(minLength: 0)
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
+            Label(item.title, systemImage: "book.closed")
             MarkBar(mark: context.mark(item, on: day), options: context.options(item, on: day),
                     suggestion: context.suggestion(item, on: day), isProgress: item.schedule == .progress) {
                 app.setMark($0, item: item, day: day)
@@ -325,11 +469,71 @@ struct CloseDayForm: View {
         .padding(.vertical, 2)
     }
 
+    /// R12: "Fahrrad fahren: Teilweise → Erledigt" with "Übernehmen".
+    private func differingRow(_ suggestion: MarkSuggestion) -> some View {
+        let isProgress: Bool = suggestion.item.schedule == .progress
+        let current: String = suggestion.current.map { $0.label(progress: isProgress) } ?? "nicht erfasst"
+        let proposed: String = suggestion.mark.label(progress: isProgress)
+        return HStack(spacing: 8) {
+            Text("\(suggestion.item.title): \(current) → \(proposed)")
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            Button("Übernehmen") {
+                app.setMark(suggestion.mark, item: suggestion.item, day: day)
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    /// An open item with its marks as direct buttons; the title opens the details. Wide rows
+    /// (≥ 640 pt) keep the buttons on the right like Today (R61).
+    private func quickRow(_ item: PlanItem) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 12) {
+                quickTitle(item)
+                    .frame(minWidth: 0, idealWidth: 300, maxWidth: .infinity, alignment: .leading)
+                quickMarks(item, compact: true)
+                    .frame(width: 300)
+            }
+            .frame(minWidth: 640)
+            VStack(alignment: .leading, spacing: 6) {
+                quickTitle(item)
+                quickMarks(item, compact: false)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func quickTitle(_ item: PlanItem) -> some View {
+        Button {
+            itemSheet = item
+        } label: {
+            HStack(spacing: 6) {
+                KeyBadge(key: item.categoryKey)
+                Text(item.title)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func quickMarks(_ item: PlanItem, compact: Bool) -> some View {
+        MarkBar(mark: context.mark(item, on: day), options: context.options(item, on: day),
+                suggestion: context.suggestion(item, on: day), isProgress: item.schedule == .progress, compact: compact) {
+            app.setMark($0, item: item, day: day)
+        }
+    }
+
     private func saveAnswers() {
-        guard loaded else { return }
-        for (field, text) in answers {
+        guard loaded, answers != loadedAnswers else { return }
+        for (field, text) in answers where text != loadedAnswers[field] {
             app.store.setReflection(scope: day.string, field: field, text: text.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+        loadedAnswers = answers
     }
 }
 
@@ -391,6 +595,6 @@ struct OverrideSheet: View {
                 }
             }
         }
-        .sheetFrame(minWidth: 440, minHeight: 320)
+        .thaliaSheetFrame(width: 440, height: 320)
     }
 }

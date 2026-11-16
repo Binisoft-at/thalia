@@ -1,6 +1,19 @@
 # Thalia – Stand (zum Wiedereinstieg nach Kontext-Kompaktierung)
 
-Letzte Aktualisierung: 2026-11-04 · Arbeitsliste: [TASKS-v2.md](TASKS-v2.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+Letzte Aktualisierung: 2026-11-16 · Arbeitsliste: [TASKS-v7.md](TASKS-v7.md) · Durchsicht: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+
+## Stand v7 (Version 1.6.0, Tour-Version 7)
+- Alle neun Pakete P1–P9 aus [TASKS-v7.md](TASKS-v7.md) sind umgesetzt (R1–R97 und H1). Lokal geprüft: Core-Tests grün,
+  `swiftc -parse` für App, Shared, Watch, Widgets und WatchWidgets. Typprüfung und Build laufen erst in CI am Mac.
+- Keine CloudKit-Schemaänderung (nur lokale `#Index`, Schema-Diff leer). Neu: Watch-Komplikation als eigenes Target
+  `ThaliaWatchWidgets` – Owner-Schritt vor `[testflight]`: App-ID `…watchkitapp.widgets` mit App Group (siehe [SETUP.md](SETUP.md)).
+- Neue Dateien: `App/Sources/SheetChrome.swift` (Toasts im obersten Fenster, `thaliaSheetFrame`, ×-Knopf), `Glance.swift`,
+  `Focus.swift`, `Expenses.swift`, `MenuBar.swift`; `Shared/WidgetPublisher.swift`, `WidgetActions.swift`, `GoalPalette.swift`;
+  Core `Merge.swift`, `SyncGerman.swift`; `WatchWidgets/`. Kontrastfarben (R44) als Assets `ThaliaAccentFill`, `Mark…Text`.
+- Nächste Schritte: Push mit `[screenshots]` → Bilder prüfen (Heute iPhone mit Titelmenü, Heute im Blick, Fokus, Ausgaben,
+  Woche, Wochenziele, Zielüberprüfung, Mac Heute/Woche/Abschluss/Heute im Blick) → `[testflight]` → TESTING.md „v7“.
+- Bekannte Risiken mit Ausweichweg: [TASKS-v7.md](TASKS-v7.md) Abschnitt 7 (Widget-Abhaken aus der Erweiterung, `#Index`
+  mit CloudKit, Transaktion-Betrag, Ziffernblock-Leiste).
 
 ## Repos und Regeln
 - App: `Binisoft-at/thalia` → lokal `/home/user/thalia`. Push auf `claude/gifted-mendel-nn3d4f` **und** `main` (Handbuch: direkt auf main; CI läuft nur auf main).

@@ -38,7 +38,7 @@ struct ExplainerView: View {
     private var scoring: some View {
         Group {
             Step(number: 1, title: "Kategorie am Tag",
-                 text: "10 × erreichte Punkte ÷ zählende Punkte. ✓ = 1, ½ = 0,5, ✗ = 0. N/A und leer zählen nicht mit.",
+                 text: "10 × erreichte Punkte ÷ zählende Punkte. Erledigt = 1, Teilweise = 0,5, Nicht erledigt = 0. Entfällt und leer zählen nicht mit.",
                  example: "Ernährung: 8 von 10 erledigt → 8,0 · Training: 6 von 10 → 6,0")
             Step(number: 2, title: "Kategorie in der Woche",
                  text: "Durchschnitt ihrer gültigen Tageswerte. Ein Tag ohne zählende Punkte ist kein Nullwert, er fällt weg.",
@@ -52,11 +52,11 @@ struct ExplainerView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Wichtig", systemImage: "exclamationmark.circle")
                     .font(.headline)
-                Text("• Nicht geplant ist nicht verpasst. Ein überfälliger Punkt wird aber nicht zu N/A, nur um die Wertung zu schützen.")
+                Text("• Nicht geplant ist nicht verpasst. Ein überfälliger Punkt wird aber nicht zu „Entfällt“, nur um die Wertung zu schützen.")
                 Text("• Optional heißt nicht automatisch erfolgreich: Eine ganz optionale Woche bleibt unbewertet – weder geschenkte 10 noch automatische 0.")
                 Text("• Fehlende Abdeckung bleibt sichtbar: „9/10 Ziele bewertet – nicht voll vergleichbar“.")
-                Text("• „n× pro Woche“: jeder ✓ ½ ✗ verbraucht einen Platz; was am Wochenende fehlt, zählt als verpasst.")
-                Text("• Persönliche Null-Regeln (z. B. Schlaf): ✗ setzt die Kategorie an dem Tag auf 0 – die Messwerte bleiben erhalten.")
+                Text("• „n× pro Woche“: jedes Erledigt, Teilweise oder Nicht erledigt verbraucht einen Platz; was am Wochenende fehlt, zählt als nicht erledigt.")
+                Text("• Persönliche Null-Regeln (z. B. Schlaf): Nicht erledigt setzt die Kategorie an dem Tag auf 0 – die Messwerte bleiben erhalten.")
                 Text("• Deine eigene Wertung ersetzt die Rechnung, wenn du sie setzt.")
                 Text("• Seit KW42 2026 gleich gewichtet – ältere Wochen sind nicht direkt vergleichbar.")
                 Text("• Eine Verhaltenswertung belegt kein Jahresergebnis: Eine hohe Finanz-Wertung heißt noch nicht, dass das Vermögensziel erreicht ist.")
@@ -78,15 +78,15 @@ struct ExplainerView: View {
                  text: "Keine 60-Minuten-Stunde. Pausen zählen nicht.",
                  example: "8 PH stammloop + 3 PH HAEB + 1 PH Sonstiges = 12 PH")
             Step(number: 2, title: "Nachhilfe zählt genauso",
-                 text: "Eine Nachhilfestunde (50 Minuten) ist 1 PH, eine Doppelstunde 2 PH. Abweichungen trägst du einfach mit 0,25-Schritten ein.",
+                 text: "Eine Nachhilfestunde (50 Minuten) ist 1 PH, eine Doppelstunde 2 PH. Abweichungen erfasst du in 0,25-Schritten.",
                  example: "16 PH Nachhilfe")
             Step(number: 3, title: "Netto-Arbeitszeit",
                  text: "Alle PH × 50 Minuten.",
                  example: example.explanation)
             Step(number: 4, title: "Schnell erfassen",
-                 text: "Auf der Kachel einer Kategorie: + tippen ist 1 PH, halten zeigt 0,25 bis 2 PH. Mit Beschreibung (z. B. „Lena – Mathe“) über „+“ unten.",
-                 example: "+ 1 PH · stammloop")
-            Text("Zu einem Eintrag gehört idealerweise eine Beschreibung – Thalia schlägt dir die bisherigen pro Kategorie vor. Höchstens zwei aktive Hauptprojekte: stammloop und HAEB.")
+                 text: powerHoursCaptureText,
+                 example: "Menge 2 PH · Wofür „Thema A“ · +")
+            Text("Jeder Eintrag braucht einen Bereich und ein „Wofür“ – ohne Beschreibung sichert Thalia keine Power-Hours. Vorschläge kommen aus deinen Einträgen der letzten Monate im selben Bereich. Höchstens zwei aktive Hauptprojekte: stammloop und HAEB.")
                 .font(.subheadline)
                 .card()
         }
@@ -112,12 +112,15 @@ struct ExplainerView: View {
                     .foregroundStyle(Optional<Mark>.none.color)
                     .frame(width: 32)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("leer – noch nicht erfasst").font(.headline)
-                    Text("Weder Versäumnis noch N/A. Bleibt als fehlende Abdeckung sichtbar, bis du es einträgst.")
+                    Text("○  leer – nicht erfasst").font(.headline)
+                    Text("Weder „Nicht erledigt“ noch „Entfällt“. Bleibt als fehlende Abdeckung sichtbar, bis du den Punkt markierst.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
             }
-            Text("Tippen wechselt ✓ → ½ → ✗ → N/A → leer. Gedrückt halten zeigt alle Möglichkeiten. Wischen: rechts ✓ / ½, links ✗ / N/A.")
+            Text(markingText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text("Fortschrittspunkte heißen „Gearbeitet“ und „Nicht heute“ – am Wochenende zählt, wie weit das Wochenziel erreicht ist.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -128,16 +131,34 @@ struct ExplainerView: View {
         switch mark {
         case .done: "Zählt 1 Punkt."
         case .partial: "Zählt 0,5 – wo „teilweise“ sinnvoll ist."
-        case .missed: "Fällig und nicht erledigt: zählt 0 von 1. Auf Papier dein X."
-        case .notApplicable: "Nicht fällig oder nicht geplant: fällt aus der Rechnung."
+        case .missed: "War dran und ist nicht passiert: zählt 0 von 1. Auf Papier dein X."
+        case .notApplicable: "Heute nicht dran oder nicht geplant: fällt aus der Rechnung."
         }
+    }
+
+    /// R76: direct buttons on Today, stepping through only in the week.
+    private var markingText: String {
+        #if os(macOS)
+        return "Auf „Heute“ klickst du direkt auf Erledigt, Teilweise, Nicht erledigt oder Entfällt – oder drückst 1, 2, 3, 4. Ein zweiter Klick auf die gewählte Markierung leert den Punkt. In der Woche schaltet ein Klick auf eine Zelle der Reihe nach weiter: ✓ → ½ → ✗ → – → leer; das Kontextmenü zeigt alle Möglichkeiten."
+        #else
+        return "Auf „Heute“ tippst du direkt auf Erledigt, Teilweise, Nicht erledigt oder Entfällt. Ein zweiter Tipp auf die gewählte Markierung leert den Punkt. In der Woche schaltet ein Tipp auf eine Zelle der Reihe nach weiter: ✓ → ½ → ✗ → – → leer."
+        #endif
+    }
+
+    /// R76: power-hours always with area and "Wofür" – no "+ = 1 PH" any more.
+    private var powerHoursCaptureText: String {
+        #if os(macOS)
+        return "⌘N oder „Erfassen“ → Power-Hours: oben stehen deine letzten drei Einträge zum Anklicken, sonst Bereich, Menge und Wofür – Return sichert. In den Arbeits-Kategorien auf „Heute“ steht die Zeile „Menge · Wofür · +“ direkt unter dem Wochenziel."
+        #else
+        return "„+“ unten → Power-Hours: oben stehen deine letzten drei Einträge zum Antippen, sonst Bereich, Menge und Wofür – Return sichert. In den Arbeits-Kategorien auf „Heute“ steht die Zeile „Menge · Wofür · +“ direkt unter dem Wochenziel."
+        #endif
     }
 
     private var suggestions: some View {
         Group {
             Step(number: 1, title: "Objektive Einträge – Thalia rechnet",
                  text: "Minuten, Seiten, TEREA, Ausgaben, Trainingseinheiten, Bettzeit: Summen, Fortschritt und klare Schwellen.",
-                 example: "Protein 162 g ≥ 150 → Vorschlag ✓ für „Proteinziel erreichen“")
+                 example: "Protein 162 g ≥ 150 → Vorschlag „Erledigt“ für „Proteinziel erreichen“")
             Step(number: 2, title: "Berichtete Erledigung – dein Eintrag zählt",
                  text: "Journal geschrieben? Block wie geplant? Anruf gemacht? Dein Haken ist der Beleg. Thalia schließt nicht aus anderen Daten darauf.",
                  example: "Viele Schritte belegen keine geplante Cardio-Einheit.")
@@ -187,9 +208,11 @@ struct ExplainerSheet: View {
         NavigationStack {
             ExplainerView(explainer: explainer)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        SheetCloseButton { dismiss() }
+                    }
                 }
         }
-        .sheetFrame(minWidth: 560, minHeight: 620)
+        .thaliaSheetFrame(width: 560, height: 740)
     }
 }

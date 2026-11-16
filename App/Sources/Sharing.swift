@@ -1,6 +1,10 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BinisoftKit
 import ThaliaCore
+#if os(macOS)
+import AppKit
+#endif
 
 // V12: livelier overviews (animated gradient heads, a small celebration), V13: share a day or a
 // week as an image in a few designed templates, V1: the week as a PDF with every category.
@@ -54,20 +58,28 @@ struct HeroCard: View {
     var celebrate = false
     /// Still gradient (PDF and images).
     var animated = true
+    /// R55: smaller ring and padding, at most two facts (iPhone week).
+    var compact = false
 
     @State private var shown = false
 
+    private var ringSize: CGFloat { compact ? 68 : 96 }
+    private var ringWidth: CGFloat { compact ? 7 : 9 }
+    private var valueSize: CGFloat { compact ? 20 : 26 }
+    private var cardPadding: CGFloat { compact ? 12 : 18 }
+    private var maxFacts: Int { compact ? 2 : 3 }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 18) {
+        HStack(alignment: .center, spacing: compact ? 14 : 18) {
             ZStack {
-                Circle().stroke(Color.white.opacity(0.22), lineWidth: 9)
+                Circle().stroke(Color.white.opacity(0.22), lineWidth: ringWidth)
                 Circle()
                     .trim(from: 0, to: (shown || !animated) ? CGFloat(min(1, max(0, progress))) : 0)
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 0) {
                     Text(value)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .font(.system(size: valueSize, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
@@ -76,24 +88,25 @@ struct HeroCard: View {
                         .font(.caption2.weight(.semibold))
                         .opacity(0.85)
                 }
-                .padding(10)
+                .padding(compact ? 7 : 10)
             }
-            .frame(width: 96, height: 96)
+            .frame(width: ringSize, height: ringSize)
             .overlay(alignment: .topTrailing) {
-                if celebrate {
-                    Image(systemName: "sparkles")
-                        .font(.title3)
-                        .symbolEffect(.bounce, value: shown)
-                        .offset(x: 8, y: -6)
-                }
+                // Always there (hidden), so the bounce sees `celebrate` change (R39).
+                Image(systemName: "sparkles")
+                    .font(.title3)
+                    .opacity(celebrate ? 1 : 0)
+                    .symbolEffect(.bounce, value: celebrate)
+                    .offset(x: 8, y: -6)
+                    .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: compact ? 4 : 6) {
                 Text(title)
                     .font(.headline)
                 Text(subtitle)
                     .font(.caption)
                     .opacity(0.85)
-                ForEach(Array(facts.prefix(3).enumerated()), id: \.offset) { _, fact in
+                ForEach(Array(facts.prefix(maxFacts).enumerated()), id: \.offset) { _, fact in
                     HStack(spacing: 6) {
                         Text(fact.0).opacity(0.8)
                         Text(fact.1).fontWeight(.semibold)
@@ -105,10 +118,10 @@ struct HeroCard: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(.white)
-        .padding(18)
+        .padding(cardPadding)
         .background {
             AuroraBackground(animated: animated)
-                .clipShape(.rect(cornerRadius: 24, style: .continuous))
+                .clipShape(.rect(cornerRadius: compact ? 20 : 24, style: .continuous))
         }
         .overlay {
             if celebrate { CelebrationView() }
@@ -116,7 +129,8 @@ struct HeroCard: View {
         .onAppear {
             withAnimation(.easeOut(duration: 0.9)) { shown = true }
         }
-        .sensoryFeedback(.success, trigger: celebrate && shown)
+        // Only when a closing turns the celebration on – never just for looking at it again (R72).
+        .sensoryFeedback(.success, trigger: celebrate) { _, isOn in isOn }
         .accessibilityElement(children: .combine)
     }
 }
@@ -344,6 +358,9 @@ struct ShareSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var template: ShareTemplate = .aurora
     @State private var showsGoalNames = false
+    /// Mac: the picture as PNG for the save panel (R71).
+    @State private var exportFile: ExportFile?
+    @State private var exporting = false
 
     var body: some View {
         NavigationStack {
@@ -364,8 +381,16 @@ struct ShareSheet: View {
                             Label("Bild teilen", systemImage: "square.and.arrow.up")
                                 .frame(maxWidth: .infinity)
                         }
-                        .primaryActionStyle()
+                        .thaliaPrimaryAction()
                     }
+                    #if os(macOS)
+                    Button(action: saveImage) {
+                        Label("Bild sichern…", systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    #endif
                     Text("Das Bild zeigt nur Zahlen und – wenn du willst – die Namen deiner Ziele, keine Einträge oder Notizen.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -378,11 +403,30 @@ struct ShareSheet: View {
             .navigationTitle("Teilen")
             .inlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
+                }
+            }
+            .fileExporter(isPresented: $exporting, document: exportFile, contentType: .png,
+                          defaultFilename: "Thalia-\(template.title)") { _ in
+                exportFile = nil
             }
         }
-        .sheetFrame(minWidth: 480, minHeight: 720)
+        .thaliaSheetFrame(width: 480, height: 720)
     }
+
+    #if os(macOS)
+    /// R71: the card as a PNG into the save panel.
+    @MainActor
+    private func saveImage() {
+        let renderer = ImageRenderer(content: ShareCard(content: content, template: template, showsGoalNames: showsGoalNames))
+        renderer.scale = 3
+        guard let cgImage = renderer.cgImage,
+              let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else { return }
+        exportFile = ExportFile(data: data)
+        exporting = true
+    }
+    #endif
 
     @MainActor
     private var rendered: Image? {

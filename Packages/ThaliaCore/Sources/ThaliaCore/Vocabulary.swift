@@ -34,12 +34,23 @@ public enum Mark: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// The words on buttons, menus, watch, PDF and VoiceOver (R43).
     public var label: String {
         switch self {
         case .done: "Erledigt"
         case .partial: "Teilweise"
-        case .missed: "Fällig, nicht erledigt"
-        case .notApplicable: "Nicht fällig (N/A)"
+        case .missed: "Nicht erledigt"
+        case .notApplicable: "Entfällt"
+        }
+    }
+
+    /// Progress items ("daran gearbeitet"): "Gearbeitet" and "Nicht heute", otherwise `label` (R43).
+    public func label(progress: Bool) -> String {
+        guard progress else { return label }
+        switch self {
+        case .done: return "Gearbeitet"
+        case .notApplicable: return "Nicht heute"
+        default: return label
         }
     }
 
@@ -238,6 +249,29 @@ public struct Target: Equatable, Hashable, Sendable {
 
     /// True for limits (TEREA ≤ 6, spending < 50 €): less is fine.
     public var isLimit: Bool { comparison == .atMost || comparison == .below }
+
+    /// "Erfüllt bei ≤ 6 pro Tag", "Erfüllt bei ≤ 23:00 pro Tag", "Erfüllt bei 150–180 g pro Woche" (R77).
+    public func sentence(period: TargetPeriod, unit: String = "") -> String {
+        let shown = isTime || Units.isTime(unit) ? "" : Units.display(unit)
+        return "Erfüllt bei \(label)\(shown.isEmpty ? "" : " " + shown) \(period.label)"
+    }
+}
+
+extension Target.Comparison {
+    /// The words in the target picker (R77).
+    public var choiceLabel: String {
+        switch self {
+        case .atLeast: "mindestens"
+        case .atMost: "höchstens"
+        case .below: "unter"
+        case .above: "über"
+        case .equal: "genau"
+        case .range: "zwischen"
+        }
+    }
+
+    /// The picker's order.
+    public static let choices: [Target.Comparison] = [.atLeast, .atMost, .below, .above, .equal, .range]
 }
 
 /// Whether a measurement target is per day or for the week's total.
@@ -316,6 +350,21 @@ public enum Units {
         case "uhrzeit", "text": return ""
         case "stück": return "Stk."
         default: return unit.trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    /// The units offered when creating a measurement (R77) – power-hours come from work, not from here.
+    public static let choices: [String] = ["", "kg", "g", "l", "min", "h", "Uhrzeit", "€", "Stück", "Seiten", "Schritte", "Text"]
+
+    /// One step of the watch's Digital Crown (R81).
+    public static func crownStep(_ unit: String) -> Double {
+        switch normalized(unit) {
+        case "kg": return 0.1
+        case "l": return 0.25
+        case "€": return 0.5
+        case "uhrzeit": return 5
+        case "h": return 0.25
+        default: return 1
         }
     }
 
@@ -434,6 +483,9 @@ public enum DayTypes {
         return "calendar"
     }
 
+    /// Shown on work-free days (R78).
+    public static let workFreeHint = "Arbeitsfreier Tag: Arbeitspunkte zählen heute nicht"
+
     /// Days on which no work is planned at all.
     public static func isWorkFree(_ type: String) -> Bool {
         let t = type.lowercased()
@@ -453,6 +505,9 @@ public enum NoteKind: String, CaseIterable, Sendable {
         let t = raw.lowercased()
         self = NoteKind.allCases.first { $0.rawValue == t || $0.label.lowercased() == t } ?? .observation
     }
+
+    /// The kinds in one line (R78).
+    public static let listText = "Beobachtung, Auslöser, Erfolg, Kontakt, Idee"
 
     public var label: String {
         switch self {
@@ -484,11 +539,19 @@ public struct ReflectionQuestion: Identifiable, Equatable, Sendable {
     /// The evening: no questions any more – a check "ins Journal eingetragen" (`journalField`)
     /// and one optional line.
     public static let day: [ReflectionQuestion] = [
-        .init(id: "notiz", question: "Notiz zum Tag", hint: "Optional – ein Satz genügt."),
+        .init(id: ReflectionQuestion.dayNoteField, question: "Notiz zum Tag", hint: "Optional – ein Satz genügt."),
     ]
 
     /// Stored as a reflection with text "ja" / "nein".
     public static let journalField = "journal"
+
+    /// The day's note ("Notiz zum Tag") is stored under this field (R26).
+    public static let dayNoteField = "notiz"
+
+    /// The plan's journal item: its title contains "journal", any case (R58).
+    public static func isJournalTitle(_ title: String) -> Bool {
+        title.lowercased().contains("journal")
+    }
 
     public static let week: [ReflectionQuestion] = [
         .init(id: "interpretation", question: "Meine Deutung der Woche", hint: "Was ist wirklich passiert – hinter den Zahlen?"),

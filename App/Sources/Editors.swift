@@ -6,30 +6,45 @@ import ThaliaCore
 
 // MARK: Work
 
-/// Record or edit power-hours (U9): area, how many PH (quick chips or free), what for – with the
-/// descriptions used before in that area as suggestions. Result and next step are optional.
+/// Record or edit power-hours (U9): the day, area, how many PH (quick chips or free), what for –
+/// with the last combinations and earlier descriptions of the area as one-tap suggestions (R32,
+/// R33). Result and next step are optional.
 struct WorkEditor: View {
     let draft: WorkDraft
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Query(filter: #Predicate<TrackCategory> { $0.deletedAt == nil }) private var categories: [TrackCategory]
 
+    @State private var day: DayKey
     @State private var categoryKey: String
     @State private var powerHours: Double
     @State private var task: String
     @State private var result: String
     @State private var nextStep: String
     @State private var showsMore: Bool
+    /// What the area was used for before – loaded once per area (R32).
+    @State private var suggestions: [String] = []
+    /// The last three combinations, loaded once (R33).
+    @State private var combos: [WorkCombo] = []
     @FocusState private var taskFocused: Bool
+    /// Description, result and next step as the sheet opened (R14).
+    private let initialTexts: [String]
 
     init(draft: WorkDraft) {
         self.draft = draft
-        _categoryKey = State(initialValue: draft.block?.categoryKey ?? draft.categoryKey)
-        _powerHours = State(initialValue: draft.block?.hours ?? draft.powerHours)
-        _task = State(initialValue: draft.block?.task ?? "")
-        _result = State(initialValue: draft.block?.result ?? "")
-        _nextStep = State(initialValue: draft.block?.nextStep ?? "")
-        _showsMore = State(initialValue: !(draft.block?.result.isEmpty ?? true) || !(draft.block?.nextStep.isEmpty ?? true))
+        let block: WorkBlock? = draft.block
+        let blockDay: DayKey? = block.flatMap { DayKey($0.dayKey) }
+        let task: String = block?.task ?? ""
+        let result: String = block?.result ?? ""
+        let nextStep: String = block?.nextStep ?? ""
+        _day = State(initialValue: blockDay ?? draft.day)
+        _categoryKey = State(initialValue: block?.categoryKey ?? draft.categoryKey)
+        _powerHours = State(initialValue: block?.hours ?? draft.powerHours)
+        _task = State(initialValue: task)
+        _result = State(initialValue: result)
+        _nextStep = State(initialValue: nextStep)
+        _showsMore = State(initialValue: !result.isEmpty || !nextStep.isEmpty)
+        initialTexts = [task, result, nextStep]
     }
 
     private var sortedCategories: [TrackCategory] {
@@ -37,37 +52,94 @@ struct WorkEditor: View {
             .sorted { CategoryRecord.sortKey($0.key).lexicographicallyPrecedes(CategoryRecord.sortKey($1.key)) }
     }
 
-    /// Business areas first (where PH are planned), the rest after.
-    private var workCategories: [TrackCategory] {
-        let business = sortedCategories.filter { $0.goalKey == "3" && $0.key != "3.1" }
-        return business + sortedCategories.filter { !business.contains($0) }
+    /// Business areas (goal 3 without 3.1) as chips – all of them, wrapping (R33). Without any,
+    /// the first six areas.
+    private var chipCategories: [TrackCategory] {
+        let business: [TrackCategory] = sortedCategories.filter { $0.goalKey == "3" && $0.key != "3.1" }
+        return business.isEmpty ? Array(sortedCategories.prefix(6)) : business
     }
 
-    private var suggestions: [String] {
-        app.store.workSuggestions(categoryKey: categoryKey).filter { $0 != task }
+    /// Every other area, in the menu "Anderer Bereich".
+    private var menuCategories: [TrackCategory] {
+        let chips: Set<String> = Set(chipCategories.map(\.key))
+        return sortedCategories.filter { !chips.contains($0.key) }
+    }
+
+    /// The menu shows the chosen area only when it is one of its own.
+    private var menuSelection: Binding<String> {
+        let keys: Set<String> = Set(menuCategories.map(\.key))
+        let chosen: String = categoryKey
+        return Binding(
+            get: { keys.contains(chosen) ? chosen : "" },
+            set: { if !$0.isEmpty { categoryKey = $0 } }
+        )
+    }
+
+    private var trimmedTask: String {
+        task.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        powerHours > 0 && !categoryKey.isEmpty && !trimmedTask.isEmpty
+    }
+
+    /// R14: description, result or next step typed but not saved.
+    private var isDirty: Bool {
+        [task, result, nextStep] != initialTexts
+    }
+
+    private var baseTitle: String {
+        draft.block == nil ? "Power-Hours" : "Power-Hours bearbeiten"
+    }
+
+    private func categoryLine(_ category: TrackCategory) -> String {
+        "\(category.key) \(category.title)"
+    }
+
+    /// "3.3 · Thema A · 2 PH".
+    private func comboTitle(_ combo: WorkCombo) -> String {
+        "\(combo.categoryKey) · \(combo.task) · \(Format.powerHours(combo.powerHours))"
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(workCategories.prefix(6)) { category in
-                                ChipButton(title: "\(category.key) \(category.title)", isSelected: category.key == categoryKey) {
-                                    categoryKey = category.key
-                                }
+                    CaptureDayRow(day: $day, today: app.today)
+                }
+                if draft.block == nil, !combos.isEmpty {
+                    Section {
+                        ForEach(combos) { combo in
+                            Button {
+                                apply(combo)
+                            } label: {
+                                Label(comboTitle(combo), systemImage: "clock.arrow.circlepath")
+                                    .lineLimit(1)
                             }
                         }
-                        .padding(.vertical, 2)
+                    } header: {
+                        Text("Zuletzt")
+                    } footer: {
+                        Text("Ein Tipp füllt Bereich, Wofür und Menge – „Sichern“ oder Return bucht.")
                     }
-                    if workCategories.count > 6 {
-                        Picker("Anderer Bereich", selection: $categoryKey) {
-                            Text("bitte wählen").tag("")
-                            ForEach(workCategories) { category in
-                                Text("\(category.key) \(category.title)").tag(category.key)
+                }
+                Section {
+                    WrapLayout(spacing: 8) {
+                        ForEach(chipCategories) { category in
+                            ChipButton(title: categoryLine(category), isSelected: category.key == categoryKey) {
+                                categoryKey = category.key
                             }
                         }
+                    }
+                    .padding(.vertical, 2)
+                    if !menuCategories.isEmpty {
+                        Picker("Anderer Bereich", selection: menuSelection) {
+                            Text("–").tag("")
+                            ForEach(menuCategories) { category in
+                                Text(categoryLine(category)).tag(category.key)
+                            }
+                        }
+                        .pickerStyle(.menu)
                     }
                 } header: {
                     Text("Bereich (Pflicht)")
@@ -93,25 +165,17 @@ struct WorkEditor: View {
                     Text("1 PH = \(Format.number(Double(PowerHour.minutes))) Minuten konzentrierte Arbeit – Nachhilfe zählt genauso (\(Format.powerHours(powerHours)) = \(Format.duration(minutes: Int(PowerHour.minutes(powerHours).rounded())))).")
                 }
                 Section {
-                    TextField("Woran? (Pflicht, z. B. Lena – Mathe)", text: $task)
+                    TextField("Woran? (Pflicht, z. B. Thema A)", text: $task)
                         .focused($taskFocused)
                         .submitLabel(.done)
-                    if !suggestions.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(suggestions, id: \.self) { suggestion in
-                                    ChipButton(title: suggestion, isSelected: false, symbol: "clock.arrow.circlepath") {
-                                        task = suggestion
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
+                        .onSubmit(save)
+                    SuggestionChips(suggestions: suggestions, typed: task, selected: task) { suggestion in
+                        task = suggestion
                     }
                 } header: {
                     Text("Beschreibung (Pflicht)")
                 } footer: {
-                    Text("Ohne Beschreibung keine Power-Hours: so weißt du später, woran du gearbeitet hast. Vorschläge kommen aus deinen bisherigen Einträgen in diesem Bereich.")
+                    Text("Ohne Beschreibung keine Power-Hours: so weißt du später, woran du gearbeitet hast. Vorschläge kommen aus deinen Einträgen der letzten Monate in diesem Bereich.")
                 }
                 Section {
                     DisclosureGroup("Ergebnis und nächster Schritt", isExpanded: $showsMore) {
@@ -131,30 +195,60 @@ struct WorkEditor: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(draft.block == nil ? "Power-Hours" : "Power-Hours bearbeiten")
+            .navigationTitle(captureTitle(baseTitle, day: day, today: app.today))
             .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sichern", action: save)
-                        .disabled(powerHours <= 0 || categoryKey.isEmpty || task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(!canSave)
                 }
             }
             .onAppear {
                 // K1: an unknown area is cleared – the area is always chosen on purpose.
                 if !categoryKey.isEmpty, !sortedCategories.contains(where: { $0.key == categoryKey }) { categoryKey = "" }
-                if draft.block == nil, categoryKey.isEmpty == false { taskFocused = true }
+                loadSuggestions()
+                if draft.block == nil {
+                    loadCombos()
+                    if !categoryKey.isEmpty { taskFocused = true }
+                }
+            }
+            .onChange(of: categoryKey) { _, _ in
+                loadSuggestions()
             }
         }
-        .sheetFrame(minWidth: 480, minHeight: 520)
+        .unsavedInput(isDirty, in: app)
+        .thaliaSheetFrame(width: 480, height: 640)
+    }
+
+    /// R32: once per area, not per keystroke.
+    private func loadSuggestions() {
+        suggestions = categoryKey.isEmpty ? [] : app.store.workSuggestions(categoryKey: categoryKey)
+    }
+
+    /// R33: the last three combinations whose area still exists.
+    private func loadCombos() {
+        let known: Set<String> = Set(sortedCategories.map(\.key))
+        combos = app.store.recentWorkCombos().filter { known.contains($0.categoryKey) }
+    }
+
+    /// R33: a tap fills area, description and amount; saving stays a deliberate step (K1).
+    private func apply(_ combo: WorkCombo) {
+        categoryKey = combo.categoryKey
+        task = combo.task
+        powerHours = combo.powerHours
+        taskFocused = true
     }
 
     private func save() {
+        guard canSave else { return }
         if let block = draft.block {
+            // R41: a changed day moves the entry.
             app.store.update(block, categoryKey: categoryKey, task: task, powerHours: powerHours, result: result,
-                             nextStep: nextStep, day: draft.day)
+                             nextStep: nextStep, day: day)
         } else {
-            app.store.addWork(day: draft.day, categoryKey: categoryKey, task: task, powerHours: powerHours,
+            // R13: new power-hours get the toast with Undo.
+            app.addPowerHours(powerHours, categoryKey: categoryKey, task: task, day: day,
                               result: result, nextStep: nextStep)
         }
         dismiss()
@@ -167,6 +261,10 @@ struct ChipButton: View {
     let isSelected: Bool
     var symbol: String?
     let action: () -> Void
+    /// R67: grows with the system text size; identical at the standard size.
+    @ScaledMetric(relativeTo: .subheadline) private var horizontalPadding: CGFloat = 12
+    @ScaledMetric(relativeTo: .subheadline) private var verticalPadding: CGFloat = 7
+    @ScaledMetric(relativeTo: .subheadline) private var minHeight: CGFloat = 34
 
     var body: some View {
         Button(action: action) {
@@ -175,11 +273,11 @@ struct ChipButton: View {
                 Text(title).lineLimit(1)
             }
             .font(.subheadline.weight(.semibold))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .frame(minHeight: 34)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
+            .frame(minHeight: minHeight)
             .foregroundStyle(isSelected ? Color.white : Color.primary)
-            .background(isSelected ? Brand.accent : Color.secondary.opacity(0.14), in: .capsule)
+            .background(isSelected ? Color.accentFill : Color.secondary.opacity(0.14), in: .capsule)
             .contentShape(.capsule)
         }
         .buttonStyle(.plain)
@@ -209,10 +307,12 @@ struct MeasureSheet: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
+                }
             }
         }
-        .sheetFrame(minWidth: 480, minHeight: 600)
+        .thaliaSheetFrame(width: 480, height: 720)
     }
 }
 
@@ -234,11 +334,14 @@ struct MeasurePicker: View {
                 ContentUnavailableView("Keine Messwerte", systemImage: "ruler", description: Text("Der Wochenplan legt die Messwerte fest."))
             }
         }
-        .navigationTitle("Messwert erfassen")
+        .navigationTitle("Messwert eintragen")
         .inlineNavigationTitle()
     }
 }
 
+/// One measurement on one day. Power-hours and spendings keep their rules here, too (R3): work
+/// measurements list the day's power-hours with what they were for and open the power-hours sheet;
+/// spendings use the same row as Today, with "Wofür" required and every spending editable.
 struct MeasureForm: View {
     let measure: MeasureDefinition
     let day: DayKey
@@ -247,10 +350,15 @@ struct MeasureForm: View {
     @Environment(HealthService.self) private var health
     @Query private var history: [MeasureEntry]
     @State private var valueText = ""
-    @State private var time = Date()
+    @State private var time: Date
     @State private var text = ""
     @State private var estimate = false
     @State private var note = ""
+    /// Power-hours sheet opened from a work measurement (R3).
+    @State private var workDraft: WorkDraft? = nil
+    /// The spending being changed in the spending row (R3, R46).
+    @State private var editingExpense: MeasureEntry? = nil
+    @FocusState private var valueFocused: Bool
 
     init(measure: MeasureDefinition, day: DayKey, context: WeekContext) {
         self.measure = measure
@@ -259,12 +367,53 @@ struct MeasureForm: View {
         let code = measure.code
         let days = (0..<14).map { day.adding(days: -$0).string }
         _history = Query(filter: #Predicate<MeasureEntry> { $0.code == code && $0.deletedAt == nil && days.contains($0.dayKey) })
+        // R3/R29: a new time starts like the tile – the time target, else 23:00 – built for this day.
+        let startMinutes: Double = measure.record?.defaultClockMinutes ?? 23 * 60
+        _time = State(initialValue: day.date(minutes: startMinutes))
     }
 
     private var record: MeasureRecord? { measure.record }
     private var isTime: Bool { record?.isTime ?? false }
     private var isText: Bool { record?.isText ?? false }
+    private var isWork: Bool { record?.isWork ?? false }
+    private var isExpense: Bool { context.isExpense(measure) }
+    /// Quick +step buttons only where the day's entries add up (no "+0,1" on a weight).
+    private var isSum: Bool { record?.aggregation == .sum }
     private var todays: [MeasureEntry] { context.entries.filter { $0.code == measure.code && $0.dayKey == day.string }.sorted { $0.recordedAt < $1.recordedAt } }
+
+    /// The area a work measurement counts.
+    private var workArea: String {
+        guard let record, case .work(let category) = record.source else { return "" }
+        return category.isEmpty ? measure.categoryKey : category
+    }
+
+    /// The day's power-hours of that area, oldest first.
+    private var workBlocks: [WorkBlock] {
+        let area: String = workArea
+        return context.work(on: day).filter { $0.categoryKey == area }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private var dayValueText: String {
+        guard let value = context.dayValue(measure, on: day) else { return "–" }
+        return Format.measure(value, unit: measure.unit)
+    }
+
+    private var weekValueText: String {
+        guard let value = context.weekValue(measure) else { return "–" }
+        return Format.measure(value, unit: measure.unit)
+    }
+
+    /// Text needs some text, a number a valid number; a time always has one.
+    private var canAdd: Bool {
+        if isText { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if isTime { return true }
+        return Format.parse(valueText) != nil
+    }
+
+    private var quickSteps: [Double] {
+        let step: Double = Units.step(measure.unit)
+        return [1.0, 2.0, 5.0].map { $0 * step }
+    }
 
     private var chartPoints: [MeasurePoint] {
         let aggregation = record?.aggregation ?? .sum
@@ -279,14 +428,20 @@ struct MeasureForm: View {
         Form {
             Section {
                 LabeledContent(day.shortLabel) {
-                    Text(context.dayValue(measure, on: day).map { Format.measure($0, unit: measure.unit) } ?? "–")
+                    Text(dayValueText)
                         .font(.title3.weight(.bold))
                         .monospacedDigit()
+                }
+                if day != app.today {
+                    // R41: the same hint as every capture sheet.
+                    Label("Zählt für \(day.shortLabel) – nicht für heute", systemImage: "exclamationmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
                 }
                 if let target = record?.target {
                     LabeledContent("Ziel", value: "\(target.label) \(record?.period.label ?? "")")
                     if record?.period == .week {
-                        LabeledContent("Diese Woche", value: context.weekValue(measure).map { Format.measure($0, unit: measure.unit) } ?? "–")
+                        LabeledContent("Diese Woche", value: weekValueText)
                     }
                 }
                 if !measure.details.isEmpty {
@@ -294,43 +449,12 @@ struct MeasureForm: View {
                 }
             }
 
-            if case .work? = record?.source {
-                Section {
-                    Text("Dieser Wert kommt aus den Power-Hours (\(MeasureSource(raw: measure.sourceRaw).raw)). Erfasse sie mit + auf der Kachel oder unten.")
-                        .font(.subheadline)
-                }
-            }
-
-            Section {
-                if isText {
-                    TextField("Text", text: $text, axis: .vertical)
-                } else if isTime {
-                    DatePicker("Uhrzeit", selection: $time, displayedComponents: .hourAndMinute)
-                } else {
-                    HStack {
-                        TextField("Wert", text: $valueText)
-                            .decimalKeyboard()
-                        Text(Units.display(measure.unit)).foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        ForEach([1.0, 2.0, 5.0].map { $0 * Units.step(measure.unit) }, id: \.self) { step in
-                            Button("+\(Format.number(step))") { app.add(step, to: measure, day: day) }
-                                .buttonStyle(.bordered)
-                        }
-                    }
-                }
-                Toggle("Schätzung", isOn: $estimate)
-                TextField("Notiz (optional)", text: $note)
-                Button {
-                    addEntry()
-                } label: {
-                    Label("Eintragen", systemImage: "plus.circle.fill")
-                }
-                .disabled(!isText && !isTime && Format.parse(valueText) == nil)
-            } header: {
-                Text("Neuer Eintrag")
-            } footer: {
-                Text(record?.aggregation == .sum ? "Mehrere Einträge eines Tages werden addiert." : "Der letzte Eintrag des Tages zählt.")
+            if isWork {
+                workSection
+            } else if isExpense {
+                expenseSection
+            } else {
+                entrySection
             }
 
             if let suggestion = health.suggestion(code: measure.code, day: day) {
@@ -353,7 +477,7 @@ struct MeasureForm: View {
                 }
             }
 
-            if !todays.isEmpty {
+            if !isExpense, !todays.isEmpty {
                 Section("Einträge \(day.shortLabel)") {
                     ForEach(todays) { entry in
                         HStack {
@@ -398,32 +522,136 @@ struct MeasureForm: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(measure.title)
+        .navigationTitle(captureTitle(measure.title, day: day, today: app.today))
         .inlineNavigationTitle()
-        .onAppear {
-            if isTime {
-                var components = DateComponents()
-                components.hour = 22
-                components.minute = 45
-                time = Calendar.current.date(from: components) ?? Date()
+        .sheet(item: $workDraft) { draft in
+            WorkEditor(draft: draft)
+                .environment(app)
+                .modelContainer(app.container)
+                .toastHost(app)
+        }
+    }
+
+    /// R3: power-hours only with an area and what they were for – the day's entries and the sheet.
+    private var workSection: some View {
+        Section {
+            ForEach(workBlocks) { block in
+                Button {
+                    workDraft = WorkDraft(block: block, day: day, categoryKey: block.categoryKey, powerHours: block.hours)
+                } label: {
+                    WorkBlockLine(block: block)
+                }
+                .buttonStyle(.plain)
             }
+            Button {
+                workDraft = WorkDraft(day: day, categoryKey: workArea)
+            } label: {
+                Label("Power-Hours erfassen", systemImage: "bolt.fill")
+            }
+        } header: {
+            Text("Power-Hours \(day.shortLabel)")
+        } footer: {
+            Text("Dieser Wert kommt aus den Power-Hours im Bereich \(workArea) – jeder Eintrag mit „Wofür“. Ein Tipp auf einen Eintrag ändert ihn.")
+        }
+    }
+
+    /// R3: the spending row of Today – amount and "Wofür" (K2) – and the day's spendings to change (R46).
+    private var expenseSection: some View {
+        Section {
+            ExpenseInputRow(measure: measure, context: context, day: day, editing: $editingExpense)
+            ForEach(context.expenseEntries(measure, on: day)) { expense in
+                ExpenseEntryRow(entry: expense, onEdit: { editingExpense = expense })
+            }
+        } header: {
+            Text("Ausgaben \(day.shortLabel)")
+        } footer: {
+            Text("Jede Ausgabe mit „Wofür“. Ein Tipp auf eine Ausgabe ändert sie.")
+        }
+    }
+
+    private var entrySection: some View {
+        Section {
+            if isText {
+                TextField("Text", text: $text, axis: .vertical)
+            } else if isTime {
+                DatePicker("Uhrzeit", selection: $time, displayedComponents: .hourAndMinute)
+            } else {
+                HStack {
+                    TextField("Wert", text: $valueText)
+                        .decimalKeyboard()
+                        .focused($valueFocused)
+                        .onSubmit(addEntry)
+                        .keypadButton("Fertig", isActive: valueFocused) { addEntry() }
+                    Text(Units.display(measure.unit)).foregroundStyle(.secondary)
+                }
+                if isSum {
+                    HStack {
+                        ForEach(quickSteps, id: \.self) { step in
+                            Button("+\(Format.number(step))") { app.add(step, to: measure, day: day) }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+            Toggle("Schätzung", isOn: $estimate)
+            TextField("Notiz (optional)", text: $note)
+            Button {
+                addEntry()
+            } label: {
+                Label("Eintragen", systemImage: "plus.circle.fill")
+            }
+            .disabled(!canAdd)
+        } header: {
+            Text("Neuer Eintrag")
+        } footer: {
+            Text(isSum ? "Mehrere Einträge eines Tages werden addiert." : "Der letzte Eintrag des Tages zählt.")
         }
     }
 
     private func addEntry() {
+        guard canAdd else { return }
         var value: Double?
         if isTime {
-            let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
-            value = Double((parts.hour ?? 0) * 60 + (parts.minute ?? 0))
+            // R29: minutes of the picked time on this day, not seconds since midnight.
+            value = DayKey.minutes(of: time).rounded(.down)
         } else if !isText {
             value = Format.parse(valueText)
-            guard value != nil else { return }
         }
-        app.store.addEntry(code: measure.code, day: day, value: value, text: isText ? text : "", estimate: estimate, note: note)
+        let typed: String = isText ? text.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        app.store.addEntry(code: measure.code, day: day, value: value, text: typed, estimate: estimate, note: note)
         valueText = ""
         text = ""
         note = ""
         estimate = false
+        valueFocused = false
+    }
+}
+
+/// One power-hours entry: what for, the amount.
+private struct WorkBlockLine: View {
+    let block: WorkBlock
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "bolt.fill")
+                .foregroundStyle(Brand.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(block.task.isEmpty ? "ohne Beschreibung" : block.task)
+                    .foregroundStyle(block.task.isEmpty ? Color.orange : Color.primary)
+                    .lineLimit(2)
+                if !block.result.isEmpty {
+                    Text(block.result)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 6)
+            Text(Format.powerHours(block.hours))
+                .font(.callout.weight(.semibold))
+                .monospacedDigit()
+        }
+        .contentShape(.rect)
     }
 }
 
@@ -437,58 +665,107 @@ struct MeasurePoint: Identifiable {
 
 struct NoteEditor: View {
     let note: DayNote?
-    let day: DayKey
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    /// The day the note counts for; editing can move it (R41).
+    @State private var day: DayKey
     @State private var kind: NoteKind
     @State private var text: String
     @FocusState private var focused: Bool
+    private let initialKind: NoteKind
+    private let initialText: String
+    private let initialDay: DayKey
 
     init(note: DayNote?, day: DayKey) {
         self.note = note
-        self.day = day
-        _kind = State(initialValue: note?.kind ?? .observation)
-        _text = State(initialValue: note?.text ?? "")
+        let noteDay: DayKey? = note.flatMap { DayKey($0.dayKey) }
+        let start: DayKey = noteDay ?? day
+        let kind: NoteKind = note?.kind ?? .observation
+        let text: String = note?.text ?? ""
+        _day = State(initialValue: start)
+        _kind = State(initialValue: kind)
+        _text = State(initialValue: text)
+        initialKind = kind
+        initialText = text
+        initialDay = start
+    }
+
+    private var trimmedText: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// R14: typed text (or a changed kind/day of an existing note) not saved yet.
+    private var isDirty: Bool {
+        guard note != nil else { return !trimmedText.isEmpty }
+        return text != initialText || kind != initialKind || day != initialDay
+    }
+
+    private var baseTitle: String {
+        note == nil ? "Notiz" : "Notiz bearbeiten"
+    }
+
+    private var placeholder: String {
+        kind == .idea ? "Idee – geparkt, kein neues Projekt" : "Was ist passiert?"
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Art", selection: $kind) {
-                    ForEach(NoteKind.allCases, id: \.self) { kind in
-                        Label(kind.label, systemImage: kind.symbol).tag(kind)
-                    }
+                Section {
+                    CaptureDayRow(day: $day, today: app.today)
                 }
-                TextField(kind == .idea ? "Idee – geparkt, kein neues Projekt" : "Was ist passiert?", text: $text, axis: .vertical)
-                    .lineLimit(3...10)
-                    .focused($focused)
+                Section {
+                    // R78: the kinds as chips with their symbol.
+                    WrapLayout(spacing: 8) {
+                        ForEach(NoteKind.allCases, id: \.self) { option in
+                            ChipButton(title: option.label, isSelected: kind == option, symbol: option.symbol) {
+                                kind = option
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                } header: {
+                    Text("Art")
+                }
+                Section {
+                    TextField(placeholder, text: $text, axis: .vertical)
+                        .lineLimit(3...10)
+                        .focused($focused)
+                }
                 if let note {
-                    Button("Notiz löschen", systemImage: "trash", role: .destructive) {
-                        app.trash([note])
-                        dismiss()
+                    Section {
+                        Button("Notiz löschen", systemImage: "trash", role: .destructive) {
+                            app.trash([note])
+                            dismiss()
+                        }
                     }
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(note == nil ? "Notiz" : "Notiz bearbeiten")
+            .navigationTitle(captureTitle(baseTitle, day: day, today: app.today))
             .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Sichern") {
-                        if let note {
-                            app.store.update(note, kind: kind, text: text)
-                        } else {
-                            app.store.addNote(day: day, kind: kind, text: text)
-                        }
-                        dismiss()
-                    }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Sichern", action: save)
+                        .disabled(trimmedText.isEmpty)
                 }
             }
             .onAppear { if note == nil { focused = true } }
         }
-        .sheetFrame(minWidth: 440, minHeight: 320)
+        .unsavedInput(isDirty, in: app)
+        .thaliaSheetFrame(width: 440, height: 440)
+    }
+
+    private func save() {
+        guard !trimmedText.isEmpty else { return }
+        if let note {
+            // R41: a changed day moves the note.
+            app.store.update(note, kind: kind, text: trimmedText, day: day)
+        } else {
+            app.store.addNote(day: day, kind: kind, text: trimmedText)
+        }
+        dismiss()
     }
 }
 
@@ -507,10 +784,12 @@ struct ItemDetailView: View {
                 ItemDetailForm(item: item, day: context.week.contains(day) ? day : context.week.monday, context: context)
             }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
+                }
             }
         }
-        .sheetFrame(minWidth: 480, minHeight: 600)
+        .thaliaSheetFrame(width: 480, height: 720)
     }
 }
 
@@ -519,9 +798,42 @@ struct ItemDetailForm: View {
     let day: DayKey
     let context: WeekContext
     @Environment(AppModel.self) private var app
+    @Environment(HealthService.self) private var health
+    @Environment(\.dismiss) private var dismiss
     @State private var note = ""
     @State private var editing = false
     @State private var confirmsDelete = false
+    /// R9: the value behind an automatic item, opened on top of this sheet.
+    @State private var valueSheet: AppSheet? = nil
+    /// After deleting, the note isn't written back on closing.
+    @State private var isDeleted = false
+
+    private var isProgress: Bool { item.schedule == .progress }
+
+    /// "Liegestütze ≥ 20" or "Liegestütze (erfasst)".
+    private var measureLine: String {
+        let title: String = context.measure(code: item.measureCode)?.title ?? item.measureCode
+        guard !item.targetRaw.isEmpty else { return "\(title) (erfasst)" }
+        let label: String = Target.parse(item.targetRaw)?.label ?? ""
+        return "\(title) \(label)"
+    }
+
+    /// R43: the words of the marks, the same as on the buttons.
+    private var markFooter: String {
+        if isProgress {
+            return "Gearbeitet · Nicht heute · leer = nicht erfasst. Am Wochenende zählt, wie weit das Wochenziel erreicht ist."
+        }
+        return "Erledigt · Teilweise · Nicht erledigt · Entfällt · leer = nicht erfasst"
+    }
+
+    private var emptyText: String {
+        context.isDerived(item) ? "Automatisch aus dem Wochenziel" : "Zählt heute nicht"
+    }
+
+    /// A typed note that isn't stored yet blocks the menu commands (R14).
+    private var isDirty: Bool {
+        !isDeleted && note != context.markNote(item, on: day)
+    }
 
     var body: some View {
         let mark = context.mark(item, on: day)
@@ -545,52 +857,30 @@ struct ItemDetailForm: View {
                     LabeledContent("Diese Woche", value: "\(quota.done) von \(quota.target)")
                 }
                 if !item.measureCode.isEmpty {
-                    let measure = context.measure(code: item.measureCode)
-                    LabeledContent("Messwert", value: (measure?.title ?? item.measureCode) + (item.targetRaw.isEmpty ? " (erfasst)" : " \(Target.parse(item.targetRaw)?.label ?? "")"))
+                    LabeledContent("Messwert", value: measureLine)
                 }
                 if item.isKnockout {
-                    Label("Persönliche Null-Regel: ✗ setzt die Kategorie an diesem Tag auf 0. Die Daten bleiben erhalten.", systemImage: "exclamationmark.octagon")
+                    Label("Persönliche Null-Regel: „Nicht erledigt“ setzt die Kategorie an diesem Tag auf 0. Die Daten bleiben erhalten.", systemImage: "exclamationmark.octagon")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
             }
 
             Section {
-                HStack(spacing: 10) {
-                    ForEach(context.options(item, on: day), id: \.self) { option in
-                        Button {
-                            app.setMark(mark == option ? nil : option, item: item, day: day)
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: Optional(option).symbolName)
-                                    .font(.title2)
-                                    .foregroundStyle(Optional(option).color)
-                                Text(option == .notApplicable ? "N/A" : option.symbol)
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 54)
-                            .background(mark == option ? Optional(option).color.opacity(0.18) : Color.clear,
-                                        in: .rect(cornerRadius: 12, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(option.label)
-                    }
-                }
+                markButtons(mark: mark)
                 if let suggestion = context.suggestion(item, on: day) {
                     Button {
                         app.setMark(suggestion, item: item, day: day)
                     } label: {
-                        Label("Vorschlag aus dem Messwert: \(suggestion.symbol) \(suggestion.label)", systemImage: "wand.and.stars")
+                        Label("Vorschlag aus dem Messwert: \(suggestion.label(progress: isProgress))", systemImage: "wand.and.stars")
                     }
                 }
                 TextField("Notiz zu \(day.weekday.name)", text: $note, axis: .vertical)
-                    .onSubmit { app.store.setMarkNote(note, item: item, day: day, current: mark) }
+                    .onSubmit(saveNote)
             } header: {
                 Text(day.longLabel)
             } footer: {
-                Text(item.schedule == .progress
-                     ? "✓ heute daran gearbeitet · N/A heute nicht. Am Wochenende zählt, wie weit das Wochenziel erreicht ist."
-                     : "✓ erledigt · ½ teilweise · ✗ fällig, nicht erledigt · N/A nicht fällig · leer = noch nicht erfasst")
+                Text(markFooter)
             }
 
             Section("Woche") {
@@ -598,8 +888,7 @@ struct ItemDetailForm: View {
                     ForEach(context.week.days, id: \.self) { d in
                         VStack(spacing: 3) {
                             Text(d.weekday.short).font(.caption2).foregroundStyle(.secondary)
-                            MarkCell(mark: context.mark(item, on: d), applies: item.days.contains(d.weekday), isToday: d == context.today,
-                                     onSet: { app.setMark($0, item: item, day: d) })
+                            weekCell(d)
                                 .frame(height: 32)
                         }
                     }
@@ -614,8 +903,8 @@ struct ItemDetailForm: View {
             }
         }
         .confirmationDialog("„\(item.title)“ löschen?", isPresented: $confirmsDelete, titleVisibility: .visible) {
-            Button("Löschen – auch künftig weglassen", role: .destructive) { app.trash([item], carryOver: true) }
-            Button("Nur diese Woche löschen", role: .destructive) { app.trash([item], carryOver: false) }
+            Button("Löschen – auch künftig weglassen", role: .destructive) { delete(carryOver: true) }
+            Button("Nur diese Woche löschen", role: .destructive) { delete(carryOver: false) }
         } message: {
             Text("Der nächste Planungs-Prompt sagt der KI, ob der Punkt dauerhaft wegfällt.")
         }
@@ -623,15 +912,95 @@ struct ItemDetailForm: View {
         .navigationTitle("Punkt")
         .inlineNavigationTitle()
         .onAppear { note = context.markNote(item, on: day) }
-        .onDisappear {
-            if note != context.markNote(item, on: day) {
-                app.store.setMarkNote(note, item: item, day: day, current: context.mark(item, on: day))
-            }
-        }
+        .onDisappear(perform: saveNote)
+        .unsavedInput(isDirty, in: app)
         .sheet(isPresented: $editing) {
             ItemEditor(week: context.week, item: item)
                 .environment(app)
+                .toastHost(app)
         }
+        .sheet(item: $valueSheet) { sheet in
+            valueView(sheet)
+                .environment(app)
+                .environment(health)
+                .modelContainer(app.container)
+                .toastHost(app)
+        }
+    }
+
+    /// R43: the same buttons as Today; nothing to mark → why, and for automatic items the value (R9).
+    @ViewBuilder
+    private func markButtons(mark: Mark?) -> some View {
+        let options: [Mark] = context.options(item, on: day)
+        if options.isEmpty {
+            Label(emptyText, systemImage: "wand.and.stars")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            if let sheet = MarkCell.valueSheet(for: item, context: context, day: day) {
+                Button("Wert eintragen", systemImage: "square.and.pencil") { valueSheet = sheet }
+            }
+        } else {
+            MarkBar(mark: mark, options: options, suggestion: context.suggestion(item, on: day),
+                    isProgress: isProgress) { app.setMark($0, item: item, day: day) }
+        }
+    }
+
+    /// R9: one day of the week – the same rules as the week (no tap on free days, automatic items
+    /// open their value).
+    private func weekCell(_ d: DayKey) -> some View {
+        let mark: Mark? = context.mark(item, on: d)
+        let sheet: AppSheet? = MarkCell.valueSheet(for: item, context: context, day: d)
+        return MarkCell(
+            mark: mark,
+            applies: item.days.contains(d.weekday) && item.schedule != .optional,
+            isToday: d == context.today,
+            suggestion: context.suggestion(item, on: d),
+            options: context.options(item, on: d),
+            hasNote: !context.markNote(item, on: d).isEmpty,
+            accessibilityPrefix: "\(d.weekday.name), \(item.title)",
+            help: cellHelp(mark, day: d),
+            onOpenValue: opener(sheet),
+            onSet: { app.setMark($0, item: item, day: d) }
+        )
+    }
+
+    /// "Mi, 18. Nov. · Erledigt".
+    private func cellHelp(_ mark: Mark?, day: DayKey) -> String {
+        let word: String = mark?.label(progress: isProgress) ?? "Nicht erfasst"
+        return "\(day.shortLabel) · \(word)"
+    }
+
+    private func opener(_ sheet: AppSheet?) -> (() -> Void)? {
+        guard let sheet else { return nil }
+        return { valueSheet = sheet }
+    }
+
+    @ViewBuilder
+    private func valueView(_ sheet: AppSheet) -> some View {
+        switch sheet {
+        case .work(let draft):
+            WorkEditor(draft: draft)
+        case .expenses(let day):
+            ExpensesSheet(day: day)
+        case .measure(let code, let day):
+            MeasureSheet(code: code, day: day)
+        default:
+            EmptyView()
+        }
+    }
+
+    /// R23: only the note – the mark stays as it is stored.
+    private func saveNote() {
+        guard !isDeleted, note != context.markNote(item, on: day) else { return }
+        app.store.setMarkNote(note, item: item, day: day)
+    }
+
+    /// R13: deleting closes the sheet; the toast with Undo shows on the layer below.
+    private func delete(carryOver: Bool) {
+        saveNote()
+        isDeleted = true
+        app.trash([item], carryOver: carryOver)
+        dismiss()
     }
 }
 
@@ -655,6 +1024,8 @@ struct ItemEditor: View {
     @State private var carryOver = true
     @State private var secondary: Bool
     @State private var dayRule: DayRule
+    /// The fields as the sheet opened (R14); set once on appear.
+    @State private var initialFields: [String]? = nil
     @Query(filter: #Predicate<MeasureDefinition> { $0.deletedAt == nil }) private var allMeasures: [MeasureDefinition]
 
     init(week: WeekKey, item: PlanItem?, presetCategory: String? = nil) {
@@ -701,6 +1072,18 @@ struct ItemEditor: View {
             .sorted { $0.title < $1.title }
     }
 
+    /// Everything the form edits, to see whether something changed (R14).
+    private func fields(category: String) -> [String] {
+        let dayLetters: String = Weekday.allCases.filter { days.contains($0) }.map(\.short).joined(separator: ",")
+        return [category, title, details, dayLetters, scheduleKind, String(weeklyCount), String(knockout), measureCode,
+                String(secondary), dayRule.rawValue]
+    }
+
+    private var isDirty: Bool {
+        guard let initialFields else { return false }
+        return fields(category: categoryKey) != initialFields
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -743,7 +1126,7 @@ struct ItemEditor: View {
                             }
                         }
                     }
-                    Toggle("Persönliche Null-Regel (✗ → Kategorie 0)", isOn: $knockout)
+                    Toggle("Persönliche Null-Regel (Nicht erledigt → Kategorie 0)", isOn: $knockout)
                     Toggle("Nebensache (zählt nur, wenn ausgefüllt)", isOn: $secondary)
                     DayRulePicker(rule: $dayRule)
                 } header: {
@@ -771,10 +1154,13 @@ struct ItemEditor: View {
                 }
             }
             .onAppear {
-                if categoryKey.isEmpty { categoryKey = sortedCategories.first?.key ?? "" }
+                let category: String = categoryKey.isEmpty ? (sortedCategories.first?.key ?? "") : categoryKey
+                categoryKey = category
+                if initialFields == nil { initialFields = fields(category: category) }
             }
         }
-        .sheetFrame(minWidth: 480, minHeight: 520)
+        .unsavedInput(isDirty, in: app)
+        .thaliaSheetFrame(width: 480, height: 640)
     }
 
     private func save() {
@@ -817,29 +1203,60 @@ struct MeasureDefinitionEditor: View {
     @State private var title: String
     @State private var details: String
     @State private var unit: String
-    @State private var targetText: String
+    /// R77: the target from a choice – "" = no target, else `Target.Comparison.rawValue`.
+    @State private var comparisonRaw: String
+    @State private var lowerText: String
+    @State private var upperText: String
+    @State private var lowerTime: Date
+    @State private var upperTime: Date
     @State private var period: TargetPeriod
     @State private var days: Set<Weekday>
     @State private var carryOver = true
     @State private var confirmsDelete = false
     @State private var secondary: Bool
     @State private var dayRule: DayRule
-
-    static let units = ["", "kg", "g", "l", "min", "h", "PH", "Uhrzeit", "€", "Stück", "Seiten", "Schritte", "Text"]
+    /// The fields as the sheet opened (R14); set once on appear.
+    @State private var initialFields: [String]? = nil
+    /// The unit the measurement had – still offered when it is no longer a standard choice.
+    private let initialUnit: String
+    /// The stored target was a time of day.
+    private let initialTimeTarget: Bool
 
     init(week: WeekKey, measure: MeasureDefinition?, presetCategory: String? = nil) {
         self.week = week
         self.measure = measure
         self.presetCategory = presetCategory
+        let unit: String = measure?.unit ?? ""
+        // R77: an existing target is split into the fields.
+        let parsed: Target? = Target.parse(measure?.targetRaw ?? "")
+        let isTimeTarget: Bool = parsed?.isTime ?? false
         _categoryKey = State(initialValue: measure?.categoryKey ?? presetCategory ?? "")
         _title = State(initialValue: measure?.title ?? "")
         _details = State(initialValue: measure?.details ?? "")
-        _unit = State(initialValue: measure?.unit ?? "")
-        _targetText = State(initialValue: measure?.targetRaw ?? "")
+        _unit = State(initialValue: unit)
+        _comparisonRaw = State(initialValue: parsed?.comparison.rawValue ?? "")
+        _lowerText = State(initialValue: MeasureDefinitionEditor.fieldText(parsed?.value, isTime: isTimeTarget))
+        _upperText = State(initialValue: MeasureDefinitionEditor.fieldText(parsed?.upper, isTime: isTimeTarget))
+        _lowerTime = State(initialValue: MeasureDefinitionEditor.fieldTime(parsed?.value, isTime: isTimeTarget))
+        _upperTime = State(initialValue: MeasureDefinitionEditor.fieldTime(parsed?.upper, isTime: isTimeTarget))
         _period = State(initialValue: TargetPeriod(raw: measure?.periodRaw ?? "tag"))
         _days = State(initialValue: Set(measure?.days.days ?? Weekday.allCases))
         _secondary = State(initialValue: measure?.record?.secondary ?? false)
         _dayRule = State(initialValue: measure?.record?.dayRule ?? .auto)
+        initialUnit = unit
+        initialTimeTarget = isTimeTarget
+    }
+
+    /// A number for the value field ("8", "2,5", "1.200"); empty for times and missing values.
+    private static func fieldText(_ value: Double?, isTime: Bool) -> String {
+        guard let value, !isTime else { return "" }
+        return Format.number(value, decimals: 4)
+    }
+
+    /// A time for the time picker; 23:00 when there is none.
+    private static func fieldTime(_ value: Double?, isTime: Bool) -> Date {
+        let minutes: Double = isTime ? (value ?? 23 * 60) : 23 * 60
+        return DayKey.today().date(minutes: minutes)
     }
 
     private var sortedCategories: [TrackCategory] {
@@ -847,14 +1264,64 @@ struct MeasureDefinitionEditor: View {
             .sorted { CategoryRecord.sortKey($0.key).lexicographicallyPrecedes(CategoryRecord.sortKey($1.key)) }
     }
 
+    /// R77: the standard units without "PH" – plus the unit the measurement already had.
+    private var unitChoices: [String] {
+        Units.choices.contains(initialUnit) ? Units.choices : Units.choices + [initialUnit]
+    }
+
+    private var comparison: Target.Comparison? {
+        Target.Comparison(rawValue: comparisonRaw)
+    }
+
+    private var isRange: Bool {
+        comparison == .range
+    }
+
+    /// Time picker for times of day (unit "Uhrzeit", or a time target kept with its unit).
+    private var usesTime: Bool {
+        Units.isTime(unit) || (initialTimeTarget && unit == initialUnit)
+    }
+
+    /// The target the fields describe; nil without a target or while a number is missing.
     private var target: Target? {
-        let trimmed = targetText.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? nil : Target.parse(trimmed)
+        guard let comparison else { return nil }
+        if usesTime {
+            let low: Double = DayKey.minutes(of: lowerTime).rounded(.down)
+            guard comparison == .range else { return Target(comparison, low, isTime: true) }
+            let high: Double = DayKey.minutes(of: upperTime).rounded(.down)
+            return Target(.range, min(low, high), upper: max(low, high), isTime: true)
+        }
+        guard let low = Format.parse(lowerText) else { return nil }
+        guard comparison == .range else { return Target(comparison, low) }
+        guard let high = Format.parse(upperText) else { return nil }
+        return Target(.range, min(low, high), upper: max(low, high))
+    }
+
+    /// A target is chosen, but its value is missing or not a number.
+    private var targetIncomplete: Bool {
+        comparison != nil && target == nil
     }
 
     private var isWork: Bool {
         if let measure, case .work = MeasureSource(raw: measure.sourceRaw) { return true }
         return false
+    }
+
+    /// Everything the form edits, to see whether something changed (R14).
+    private func fields(category: String) -> [String] {
+        let dayLetters: String = Weekday.allCases.filter { days.contains($0) }.map(\.short).joined(separator: ",")
+        let times: String = "\(DayKey.minutes(of: lowerTime).rounded(.down))-\(DayKey.minutes(of: upperTime).rounded(.down))"
+        return [category, title, details, unit, comparisonRaw, lowerText, upperText, times, period.rawValue, dayLetters,
+                String(secondary), dayRule.rawValue]
+    }
+
+    private var isDirty: Bool {
+        guard let initialFields else { return false }
+        return fields(category: categoryKey) != initialFields
+    }
+
+    private func unitLabel(_ unit: String) -> String {
+        unit.isEmpty ? "Zahl" : unit
     }
 
     var body: some View {
@@ -876,14 +1343,26 @@ struct MeasureDefinitionEditor: View {
                         LabeledContent("Einheit", value: "PH aus den Einträgen")
                     } else {
                         Picker("Einheit", selection: $unit) {
-                            ForEach(Self.units, id: \.self) { unit in
-                                Text(unit.isEmpty ? "Zahl" : unit).tag(unit)
+                            ForEach(unitChoices, id: \.self) { choice in
+                                Text(unitLabel(choice)).tag(choice)
                             }
                         }
                     }
-                    TextField("Ziel (z. B. >=8, <=23:00, 150-180)", text: $targetText)
-                    if !targetText.trimmingCharacters(in: .whitespaces).isEmpty && target == nil {
-                        Label("Das Ziel verstehe ich nicht – z. B. >=8, <=6, 22:30-23:00.", systemImage: "exclamationmark.triangle")
+                    Picker("Ziel", selection: $comparisonRaw) {
+                        Text("kein Ziel").tag("")
+                        ForEach(Target.Comparison.choices, id: \.self) { choice in
+                            Text(choice.choiceLabel).tag(choice.rawValue)
+                        }
+                    }
+                    if comparison != nil {
+                        targetFields
+                    }
+                    if let target {
+                        Text(target.sentence(period: period, unit: unit))
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    } else if targetIncomplete {
+                        Label("Bitte einen Wert für das Ziel eintragen.", systemImage: "exclamationmark.triangle")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
@@ -926,16 +1405,43 @@ struct MeasureDefinitionEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sichern", action: save)
-                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || days.isEmpty
-                                  || (!targetText.trimmingCharacters(in: .whitespaces).isEmpty && target == nil))
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || days.isEmpty || targetIncomplete)
                 }
             }
             .confirmationDialog("„\(title)“ löschen?", isPresented: $confirmsDelete, titleVisibility: .visible) {
                 Button("Löschen – auch künftig weglassen", role: .destructive) { delete(carryOver: true) }
                 Button("Nur diese Woche löschen", role: .destructive) { delete(carryOver: false) }
             }
+            .onAppear {
+                if initialFields == nil { initialFields = fields(category: categoryKey) }
+            }
         }
-        .sheetFrame(minWidth: 480, minHeight: 560)
+        .unsavedInput(isDirty, in: app)
+        .thaliaSheetFrame(width: 480, height: 680)
+    }
+
+    /// R77: the target's value – a number, or a time of day; "zwischen" needs a second one.
+    @ViewBuilder
+    private var targetFields: some View {
+        if usesTime {
+            DatePicker(isRange ? "Von" : "Uhrzeit", selection: $lowerTime, displayedComponents: .hourAndMinute)
+            if isRange {
+                DatePicker("Bis", selection: $upperTime, displayedComponents: .hourAndMinute)
+            }
+        } else {
+            HStack {
+                TextField(isRange ? "Von" : "Wert", text: $lowerText)
+                    .decimalKeyboard()
+                Text(Units.display(unit)).foregroundStyle(.secondary)
+            }
+            if isRange {
+                HStack {
+                    TextField("Bis", text: $upperText)
+                        .decimalKeyboard()
+                    Text(Units.display(unit)).foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private func save() {
@@ -981,23 +1487,44 @@ struct DayInfoEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var type = ""
     @State private var note = ""
+    /// R78: an own day type – only then the text field shows.
+    @State private var isCustom = false
+    /// Type and note as loaded (R14); nil until loaded.
+    @State private var loaded: [String]? = nil
+
+    private var isDirty: Bool {
+        guard let loaded else { return false }
+        return [type, note] != loaded
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Tagestyp", selection: $type) {
-                        Text("Kein Tagestyp").tag("")
+                    WrapLayout(spacing: 8) {
                         ForEach(DayTypes.presets, id: \.self) { preset in
-                            Label(preset, systemImage: DayTypes.symbol(for: preset)).tag(preset)
+                            ChipButton(title: preset, isSelected: !isCustom && type == preset,
+                                       symbol: DayTypes.symbol(for: preset)) {
+                                choose(preset)
+                            }
                         }
-                        if !type.isEmpty && !DayTypes.presets.contains(type) {
-                            Text(type).tag(type)
+                        ChipButton(title: "Eigener …", isSelected: isCustom, symbol: "pencil") {
+                            chooseCustom()
                         }
                     }
-                    TextField("Eigener Tagestyp", text: $type)
+                    .padding(.vertical, 2)
+                    if isCustom {
+                        TextField("Eigener Tagestyp", text: $type)
+                    }
+                } header: {
+                    Text("Tagestyp")
                 } footer: {
-                    Text("Ein Arbeits-, Reise-, Familien- oder Erholungstag ist nicht dasselbe. Null Arbeit an einem geplanten freien Tag ist genau richtig.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        if DayTypes.isWorkFree(type) {
+                            Label(DayTypes.workFreeHint, systemImage: "sun.max")
+                        }
+                        Text("Ein Arbeits-, Reise-, Familien- oder Erholungstag ist nicht dasselbe. Null Arbeit an einem geplanten freien Tag ist genau richtig.")
+                    }
                 }
                 Section("Besonderheit") {
                     TextField("z. B. Arbeit endet um 15:00", text: $note, axis: .vertical)
@@ -1010,18 +1537,35 @@ struct DayInfoEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sichern") {
-                        app.store.setDayInfo(day, type: type, note: note)
+                        app.store.setDayInfo(day, type: type.trimmingCharacters(in: .whitespacesAndNewlines), note: note)
                         dismiss()
                     }
                 }
             }
             .onAppear {
+                guard loaded == nil else { return }
                 let info = app.store.planDay(day)
-                type = info?.dayType ?? ""
-                note = info?.note ?? ""
+                let storedType: String = info?.dayType ?? ""
+                let storedNote: String = info?.note ?? ""
+                type = storedType
+                note = storedNote
+                isCustom = !storedType.isEmpty && !DayTypes.presets.contains(storedType)
+                loaded = [storedType, storedNote]
             }
         }
-        .sheetFrame(minWidth: 440, minHeight: 380)
+        .unsavedInput(isDirty, in: app)
+        .thaliaSheetFrame(width: 440, height: 500)
+    }
+
+    /// A tap on the chosen type clears it again.
+    private func choose(_ preset: String) {
+        type = (!isCustom && type == preset) ? "" : preset
+        isCustom = false
+    }
+
+    private func chooseCustom() {
+        if DayTypes.presets.contains(type) { type = "" }
+        isCustom = true
     }
 }
 
@@ -1031,6 +1575,13 @@ struct WeekInfoEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var details = ""
+    /// Title and context as loaded (R14); nil until loaded.
+    @State private var loaded: [String]? = nil
+
+    private var isDirty: Bool {
+        guard let loaded else { return false }
+        return [title, details] != loaded
+    }
 
     var body: some View {
         NavigationStack {
@@ -1052,12 +1603,17 @@ struct WeekInfoEditor: View {
                 }
             }
             .onAppear {
+                guard loaded == nil else { return }
                 let plan = app.store.plan(week)
-                title = plan?.title ?? ""
-                details = plan?.details ?? ""
+                let storedTitle: String = plan?.title ?? ""
+                let storedDetails: String = plan?.details ?? ""
+                title = storedTitle
+                details = storedDetails
+                loaded = [storedTitle, storedDetails]
             }
         }
-        .sheetFrame(minWidth: 480, minHeight: 420)
+        .unsavedInput(isDirty, in: app)
+        .thaliaSheetFrame(width: 480, height: 540)
     }
 }
 
@@ -1066,32 +1622,45 @@ struct WeekInfoEditor: View {
 struct ThaliaCreateSheet: View {
     @Environment(AppModel.self) private var app
 
+    /// R31/R75: every shortcut of the capture commands – Mac and iPad only.
+    static let shortcutNote = "⌘N Power-Hours · ⇧⌘N Erfassen · ⌥⌘N Notiz · ⇧⌘E Messwert eintragen · ⌘↩ Tag abschließen · ⇧⌘↩ Woche abschließen · ⇧⌘I Wochenplan importieren"
+
+    private var footnote: String? {
+        PlatformInfo.isPhone ? nil : ThaliaCreateSheet.shortcutNote
+    }
+
     var body: some View {
-        let day = app.selectedDay
+        // R41: every option records on the day the app shows; the title names it when it isn't today.
+        let day: DayKey = app.captureDay
         CreateSheet(
-            title: "Erfassen",
-            options: [
-                CreateOption(id: "ph", title: "Power-Hours", subtitle: "Bereich, Anzahl, wofür – Nachhilfe inklusive",
-                             symbol: "bolt.fill") { app.sheet = .work(WorkDraft(day: day)) },
-                CreateOption(id: "expense", title: "Ausgabe", subtitle: "Betrag und wofür – Tag und Woche im Blick",
-                             symbol: "eurosign.circle.fill", tint: .green) { app.sheet = .expenses(day) },
-                CreateOption(id: "focus", title: "Fokus ansehen", subtitle: "Power-Hours heute und diese Woche, je Bereich",
-                             symbol: "chart.bar.fill", tint: .orange, isFeatured: false) { app.sheet = .focus(day.week) },
-                CreateOption(id: "measure", title: "Messwert eintragen", subtitle: "Gewicht, Aufschläge, Schlaf, TEREA …",
-                             symbol: "ruler.fill", tint: .teal) { app.sheet = .measure(code: "", day: day) },
-                CreateOption(id: "note", title: "Notiz", subtitle: "Beobachtung, Auslöser, Erfolg, Idee",
-                             symbol: "note.text", tint: .indigo) { app.sheet = .note(nil, day) },
-                CreateOption(id: "close", title: "Tag abschließen", subtitle: "Offenes ergänzen, Journal abhaken, Wertung sehen",
-                             symbol: "moon.stars.fill", tint: .purple, isFeatured: false) { app.sheet = .closeDay(day) },
-                CreateOption(id: "item", title: "Punkt hinzufügen", subtitle: "Ein bewerteter Punkt für diese Woche",
-                             symbol: "checklist", tint: .green, isFeatured: false) { app.sheet = .newItem(day.week, categoryKey: nil) },
-                CreateOption(id: "new-measure", title: "Messwert anlegen", subtitle: "Neuer Wert mit Ziel – auch für die nächsten Wochen",
-                             symbol: "plus.forwardslash.minus", tint: .mint, isFeatured: false) { app.sheet = .editMeasure(nil, day.week, categoryKey: nil) },
-                CreateOption(id: "import", title: "Wochenplan importieren", subtitle: "Planungs-Prompt kopieren, CSV aus ChatGPT einfügen, Vorschau",
-                             symbol: "square.and.arrow.down", tint: .pink, isFeatured: false) { app.sheet = .importPlan(prompt: true) },
-            ],
-            footnote: "Am Mac und iPad: ⌘N erfasst Power-Hours, ⇧⌘I importiert den Wochenplan."
+            title: captureTitle("Erfassen", day: day, today: app.today),
+            options: options(day: day),
+            footnote: footnote
         )
+    }
+
+    private func options(day: DayKey) -> [CreateOption] {
+        let app: AppModel = self.app
+        return [
+            CreateOption(id: "ph", title: "Power-Hours", subtitle: "Bereich, Menge, Wofür – Nachhilfe inklusive",
+                         symbol: "bolt.fill") { app.sheet = .work(WorkDraft(day: day)) },
+            CreateOption(id: "expense", title: "Ausgabe", subtitle: "Betrag und wofür – Tag und Woche im Blick",
+                         symbol: "eurosign.circle.fill", tint: .green) { app.sheet = .expenses(day) },
+            CreateOption(id: "focus", title: "Fokus ansehen", subtitle: "Power-Hours an diesem Tag und in der Woche, je Bereich",
+                         symbol: "chart.bar.fill", tint: .orange, isFeatured: false) { app.sheet = .focus(day) },
+            CreateOption(id: "measure", title: "Messwert eintragen", subtitle: "Gewicht, Aufschläge, Schlaf, TEREA …",
+                         symbol: "ruler.fill", tint: .teal) { app.sheet = .measure(code: "", day: day) },
+            CreateOption(id: "note", title: "Notiz", subtitle: NoteKind.listText,
+                         symbol: "note.text", tint: .indigo) { app.sheet = .note(nil, day) },
+            CreateOption(id: "close", title: "Tag abschließen", subtitle: "Offenes ergänzen, Journal abhaken, Wertung sehen",
+                         symbol: "moon.stars.fill", tint: .purple, isFeatured: false) { app.sheet = .closeDay(app.dayToClose(showing: day)) },
+            CreateOption(id: "item", title: "Punkt anlegen", subtitle: "Ein bewerteter Punkt für diese Woche",
+                         symbol: "checklist", tint: .green, isFeatured: false) { app.sheet = .newItem(day.week, categoryKey: nil) },
+            CreateOption(id: "new-measure", title: "Messwert anlegen", subtitle: "Neuer Wert mit Ziel – auch für die nächsten Wochen",
+                         symbol: "plus.forwardslash.minus", tint: .mint, isFeatured: false) { app.sheet = .editMeasure(nil, day.week, categoryKey: nil) },
+            CreateOption(id: "import", title: "Wochenplan importieren", subtitle: "Planungs-Prompt kopieren, CSV aus ChatGPT einfügen, Vorschau",
+                         symbol: "square.and.arrow.down", tint: .pink, isFeatured: false) { app.sheet = .importPlan(prompt: true) },
+        ]
     }
 }
 

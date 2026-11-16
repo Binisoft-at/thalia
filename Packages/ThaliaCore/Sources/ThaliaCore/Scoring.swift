@@ -72,6 +72,13 @@ public struct WeekData: Sendable {
         item.applies(on: day) && workFreeDays.contains(day) && isWorkOnly(item)
     }
 
+    /// A required item still blank on `day` (R5) – exactly what `CategoryDay.blank` counts: fixed or
+    /// progress, due that day, not a "Nebensache", no mark (derived progress items are never blank).
+    public func isOpenRequired(_ item: ItemRecord, on day: DayKey) -> Bool {
+        guard item.schedule == .fixed || item.schedule == .progress, !item.secondary, applies(item, on: day) else { return false }
+        return mark(item, on: day) == nil
+    }
+
     /// A progress item that follows its measurement (no ticking).
     public func isDerived(_ item: ItemRecord) -> Bool {
         item.schedule == .progress && worked[item.code] != nil
@@ -271,7 +278,7 @@ public enum Scorer {
             let mustFill = !(item.secondary && mark == nil)
             if item.schedule == .fixed || item.schedule == .progress, data.applies(item, on: day), mustFill {
                 entry.due += 1
-                if mark == nil { entry.blank += 1 }
+                if data.isOpenRequired(item, on: day) { entry.blank += 1 }
             }
             guard let mark, let points = mark.points else { continue }
             if item.schedule == .progress {
@@ -355,10 +362,11 @@ public struct Pace: Equatable, Sendable {
     /// What an even pace would have reached by the end of `today`.
     public var expected: Double
 
-    public init(done: Double, target: Double, days: DayMask, week: WeekKey, today: DayKey) {
+    /// `excluding`: days that don't count as planned (work-free days for work measurements, R47).
+    public init(done: Double, target: Double, days: DayMask, week: WeekKey, today: DayKey, excluding: Set<DayKey> = []) {
         self.done = done
         self.target = target
-        let planned = week.days.filter { days.contains($0.weekday) }
+        let planned = week.days.filter { days.contains($0.weekday) && !excluding.contains($0) }
         let passed = planned.filter { $0 <= today }.count
         expected = planned.isEmpty ? target : target * Double(passed) / Double(planned.count)
     }

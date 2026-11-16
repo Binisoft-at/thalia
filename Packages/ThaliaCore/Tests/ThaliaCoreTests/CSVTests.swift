@@ -81,7 +81,7 @@ struct PlanCSVTests {
         #expect(preview.items.updates == 1)
         #expect(preview.removedItems == ["2026-W45|1.1-05"])
         #expect(preview.replacedWeeks == [week])
-        #expect(preview.lines.contains { $0.contains("ersetzt den bisherigen Plan") })
+        #expect(preview.lines.contains { $0.hasPrefix("KW45 wird ersetzt – ") && $0.hasSuffix(" gehen ins Archiv.") })
         #expect(!preview.document.warnings.contains { $0.contains("genau 10") }, "no ten-items rule any more")
     }
 
@@ -288,30 +288,47 @@ struct ContentTests {
     @Test func remindersUseApplesWeekdays() {
         var settings = ReminderSettings()
         let requests = settings.requests()
-        #expect(requests.count == 7, "5 mornings, 1 evening, 1 weekly")
+        #expect(requests.count == 6, "5 mornings, 1 weekly – the evening is planned per day")
         #expect(requests.first { $0.id == "thalia.weekly" }?.gregorianWeekday == 1)
+        #expect(requests.first { $0.id == "thalia.weekly" }?.destination == "close-week")
         #expect(requests.first { $0.id == "thalia.morning.1" }?.gregorianWeekday == 2)
-        #expect(requests.first { $0.id == "thalia.evening" }?.hour == 21)
+        #expect(!requests.contains { $0.id.hasPrefix("thalia.evening") })
+        let evenings = settings.eveningRequests(from: today, isClosed: { _ in false })
+        #expect(evenings.first?.hour == 21)
+        #expect(evenings.first?.minute == 45)
+        #expect(evenings.first?.id == "thalia.evening.2026-11-04")
         settings.morning = false
         settings.weekly = false
-        #expect(settings.requests().map(\.id) == ["thalia.evening"])
+        #expect(settings.requests().isEmpty)
     }
 
     @Test func tourCatalogIsValid() {
         #expect(ThaliaTour.catalog.problems().isEmpty)
+        #expect(ThaliaTour.version == 7)
+        // v7: welcome, 11 steps, finish.
+        #expect(ThaliaTour.catalog.allSteps.count == 13)
         #expect(ThaliaTour.catalog.steps(newerThan: 0).first?.id == "welcome")
         #expect(ThaliaTour.catalog.steps(newerThan: ThaliaTour.version).isEmpty)
-        // v1 took the tour → v2 offers "Neu in Thalia" with the reworked steps.
+        // v6 took the tour → "Neu in Thalia" with the eight v7 steps.
+        let v7 = ThaliaTour.catalog.steps(newerThan: 6).map(\.id)
+        #expect(v7 == ["whats-new", "day", "mark", "work", "measure", "glance", "week", "review", "everywhere", "finish"])
+        // v1 took the tour → everything since v2, but not the unchanged undo step.
         let whatsNew = ThaliaTour.catalog.steps(newerThan: 1).map(\.id)
         #expect(whatsNew.first == "whats-new")
-        #expect(whatsNew.contains("mark") && whatsNew.contains("work") && !whatsNew.contains("undo"))
-        // v2 took the tour → v3 offers only the new steps.
-        let v3 = ThaliaTour.catalog.steps(newerThan: 2).map(\.id)
-        #expect(v3.contains("weekly-goals") && v3.contains("share") && !v3.contains("mark"))
-        let v4 = ThaliaTour.catalog.steps(newerThan: 3).map(\.id)
-        #expect(v4.contains("colours") && v4.contains("pdf") && !v4.contains("share"))
-        #expect(ThaliaTour.catalog.steps(newerThan: 4).map(\.id).contains("glance"))
-        #expect(ThaliaTour.catalog.steps(newerThan: 5).map(\.id).contains("described"))
+        #expect(whatsNew.contains("create") && whatsNew.contains("close") && !whatsNew.contains("undo"))
+        // The merged cards are gone.
+        let ids = Set(ThaliaTour.catalog.allSteps.map(\.id))
+        for removed in ["colours", "described", "weekly-goals", "share", "pdf"] {
+            #expect(!ids.contains(removed))
+        }
+    }
+
+    @Test func tourGlanceTicksOff() {
+        var page = ThaliaTourSnapshot()
+        var progress = TourProgress(steps: ThaliaTour.catalog.allSteps, start: page, startAt: "glance")
+        page.isGlanceOpen = true
+        let opened = progress.observe(page)
+        #expect(opened)
     }
 
     @Test func tourStepsTickOff() {

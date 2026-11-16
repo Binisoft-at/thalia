@@ -24,8 +24,8 @@ structure changes.
 
 | type | id | parent | title | description | other columns |
 |---|---|---|---|---|---|
-| `week` | `2026-W46` (also `KW46 2026`) | | motto | context, priorities, exceptions, assumptions | `value` = reported score (history), `flags` `alt` = before KW42 |
-| `day` | `2026-11-11` (or `Mi` inside a week) | | day type: Arbeitstag, Reisetag, Familientag, Erholungstag, Frei, Prüfungstag … | note ("Arbeit endet 15:00") | |
+| `week` | `2026-W46` (also `KW46 2026`) | | motto | context, priorities, exceptions, assumptions | `value` = reported score (history), `flags` `alt` = before KW42, `abgeschlossen` = week closed (backup) |
+| `day` | `2026-11-11` (or `Mi` inside a week) | | day type: Arbeitstag, Reisetag, Familientag, Erholungstag, Frei, Prüfungstag … | note ("Arbeit endet 15:00") | `flags` `abgeschlossen` = day closed (backup) |
 | `goal` | `1` … `10` | | annual goal | intent / outcome | |
 | `category` | `1.1` | goal id | category | note | |
 | `measure` | stable id (`protein`) | category id | name | hint | `unit`, `target`, `period`, `link` (source), `flags` (aggregation), `days` |
@@ -36,7 +36,7 @@ Results (export, backup, history) use `date`, `value`, `note`:
 | type | id | columns |
 |---|---|---|
 | `mark` | item id | `date`, `value` = `1` / `0.5` / `0` / `na` (✓ ½ ✗ X N/A also read), `note` |
-| `entry` | measure id | `date`, `value` (one value per measure and day), `flags` `schaetzung`, `unit` `text` for text values |
+| `entry` | measure id | `date`, `value` (one value per measure and day), `flags` `schaetzung`, `unit` `text` for text values; single entries: one row each with `flags` `einzeln` and the time in `title` (`12:30`) |
 | `work` | block id | `parent` category, `title` task, `description` result, `unit` `PH` / `h` / `ersatz`, `date`, `value` minutes, `note` next step |
 | `note` | note id | `date`, `title` kind (beobachtung, ausloeser, erfolg, kontakt, idee), `description` |
 | `review` | day or week | `title` question (verhalten, geholfen, gestoert, morgen · interpretation, wiederholen, reibung, ausserhalb, aendern, beibehalten), `description` |
@@ -78,3 +78,29 @@ Results (export, backup, history) use `date`, `value`, `note`:
 *Diese Woche als CSV* and *Alles als CSV (Sicherung)* write this format with results; editing the
 file and importing it again updates. *Wochenbericht kopieren* gives the Markdown report for the
 planning conversation (`WeekReport` in Core).
+
+### Backups since version 1.6.0
+
+A backup keeps everything needed to restore a day exactly:
+
+- **Closings:** `day` and `week` rows carry the flag `abgeschlossen` when the day or week was
+  closed. A closed day without type or note still gets its own `day` row (title and description
+  empty). Importing such a file closes those days again; closed weeks get their score as when
+  closing them by hand. The preview lists them: "Abschlüsse: 3 Tage, 1 Woche".
+- **Single entries:** when a measurement has several entries on one day – and always for spendings
+  (€) – each entry is its own `entry` row with the flag `einzeln` (plus `schaetzung` if estimated),
+  the time of day in `title` (`12:30`), its own `value` and `note` ("Wofür"):
+
+  ```csv
+  type,id,parent,title,description,days,schedule,unit,target,period,link,flags,date,value,note
+  entry,ausgaben,,08:10,,,,,,,,einzeln,2026-11-16,4.5,Kaffee
+  entry,ausgaben,,12:30,,,,,,,,einzeln,2026-11-16,12.9,Mittagessen
+  ```
+
+  Importing replaces the day's entries of that measurement with these rows, one by one at their time.
+- **Newest version:** where iCloud holds a record twice, the backup takes the most recently changed one.
+
+**Older app versions** (before 1.6.0) ignore the flag `abgeschlossen` and read only the **last**
+`einzeln` row of a measurement and day. Older backups and ChatGPT files without `einzeln` rows are
+compared by the day's total only: a file with the same total counts as unchanged and never merges
+single spendings into one row.

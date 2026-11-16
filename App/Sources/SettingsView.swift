@@ -2,18 +2,30 @@ import SwiftUI
 import SwiftData
 import BinisoftKit
 import ThaliaCore
+#if os(macOS)
+import AppKit
+#endif
 
-/// Einstellungen: appearance, reminders, Apple Health, goal year and structure, help, iCloud &
-/// data, import/export, trash, the app log, version.
+/// Einstellungen: appearance, reminders, Apple Health, goal year and structure, help, Siri, iCloud &
+/// data, import/export, trash, the app log, version. Import and trash open right here (R24).
 struct SettingsView: View {
+    /// The Mac's own settings window (not a sheet on the main window).
+    var inSettingsWindow = false
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(TodaySettings.askConditionalsKey) private var askConditionals = false
+    #if os(macOS)
+    @AppStorage(MenuBarSettings.enabledKey) private var menuBarEnabled = true
+    #endif
 
     var body: some View {
         Form {
             Section("Darstellung") {
                 GermanAppearancePicker()
+                #if os(macOS)
+                Toggle("Thalia in der Menüleiste", isOn: $menuBarEnabled)
+                #endif
             }
 
             Section {
@@ -21,7 +33,7 @@ struct SettingsView: View {
             } header: {
                 Text("Erfassen")
             } footer: {
-                Text("Statt jeden bedingten Punkt einzeln zu bewerten, fragt Thalia: „Gab es diese Situation heute?“ – nur was vorkam, trägst du ein, der Rest wird automatisch N/A.")
+                Text("Statt jeden bedingten Punkt einzeln zu bewerten, fragt Thalia: „Gab es diese Situation heute?“ – nur was vorkam, markierst du, der Rest zählt automatisch als „Entfällt“.")
             }
 
             Section {
@@ -47,10 +59,10 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("Thalia-Tour", systemImage: "graduationcap") { app.startTour() }
+                Button("Thalia-Tour", systemImage: "graduationcap") { startTour() }
                 NavigationLink { ExplainerView(explainer: .scoring) } label: { Label("Wie wird gerechnet?", systemImage: "function") }
                 NavigationLink { ExplainerView(explainer: .powerHours) } label: { Label("Power-Hours", systemImage: "bolt") }
-                NavigationLink { ExplainerView(explainer: .marks) } label: { Label("✓ ½ ✗ N/A und leer", systemImage: "checklist") }
+                NavigationLink { ExplainerView(explainer: .marks) } label: { Label("Erledigt, Teilweise, Nicht erledigt, Entfällt", systemImage: "checklist") }
                 NavigationLink { ExplainerView(explainer: .suggestions) } label: { Label("Was Thalia rechnet – und was du entscheidest", systemImage: "wand.and.stars") }
             } header: {
                 Text("Hilfe")
@@ -58,15 +70,23 @@ struct SettingsView: View {
                 Text("Die Tour läuft auf einer Übungsseite mit einer Beispielwoche – deine Einträge bleiben unberührt.")
             }
 
-            SyncStatusSection(
-                monitor: app.sync,
-                footer: "Thalia hat keine Server und keine Konten. Deine Daten synchronisieren über dein privates iCloud zwischen iPhone, iPad, Mac und Apple Watch."
-            ) {
-                DataLocationView(sections: ThaliaDataFacts.sections, monitor: app.sync)
+            Section {
+                Text("„Hey Siri, Power-Hour in Thalia erfassen“ – Siri fragt nach Bereich, Menge und Wofür. „Ausgabe in Thalia“ fragt nach Betrag und Wofür.")
+                    .font(.subheadline)
+                Text("Kartenzahlungen automatisch: Kurzbefehle → Automation → Transaktion → Aktion „Ausgabe in Thalia“, Betrag = Betrag, Wofür = Händler. Dann landet jede Kartenzahlung von selbst in Thalia; von Hand bleiben nur Barzahlungen.")
+                    .font(.subheadline)
+            } header: {
+                Text("Siri und Kurzbefehle")
             }
 
+            ThaliaSyncSection()
+
             Section("Deine Daten") {
-                Button("Wochenplan importieren & exportieren…", systemImage: "square.and.arrow.up.on.square") { app.sheet = .importPlan(prompt: true) }
+                NavigationLink {
+                    ImportView(showPrompt: true, embedded: true)
+                } label: {
+                    Label("Wochenplan importieren & exportieren…", systemImage: "square.and.arrow.up.on.square")
+                }
                 NavigationLink {
                     PlanChangesView(week: app.today.week)
                 } label: {
@@ -77,7 +97,11 @@ struct SettingsView: View {
                 } label: {
                     Label("Archiv ersetzter Wochen", systemImage: "archivebox")
                 }
-                Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
+                NavigationLink {
+                    TrashView(embedded: true)
+                } label: {
+                    Label("Zuletzt gelöscht", systemImage: "trash")
+                }
             }
 
             Section {
@@ -94,19 +118,142 @@ struct SettingsView: View {
 
             Section("Über") {
                 LabeledContent("Version", value: AppVersion.main.display)
-                LabeledContent("Speicher", value: app.mode.title)
-                LabeledContent("Bundle", value: Bundle.main.bundleIdentifier ?? "–")
+                LabeledContent("Speicher", value: SyncGerman.storage(app.mode))
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Einstellungen")
-        #if os(iOS)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Fertig") { dismiss() }
+            if !inSettingsWindow {
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
+                }
             }
         }
+    }
+
+    /// Mac settings window: the tour runs in the main window, so that comes to the front first and
+    /// the settings window closes (it is the key window right now) (R24).
+    private func startTour() {
+        #if os(macOS)
+        if inSettingsWindow {
+            openWindow(id: "main")
+            NSApp.activate()
+            NSApp.keyWindow?.close()
+        }
         #endif
+        app.startTour()
+    }
+}
+
+/// "iCloud & Daten" in German (R79), in place of the kit's English section.
+struct ThaliaSyncSection: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Section {
+            LabeledContent("iCloud-Abgleich") {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(dotColor)
+                        .frame(width: 8, height: 8)
+                    Text(ThaliaSyncText.summary(app.sync.state))
+                }
+            }
+            LabeledContent("Speicher", value: SyncGerman.storage(app.mode))
+            if app.sync.state.mode.isSynced {
+                LabeledContent("iCloud-Account", value: SyncGerman.account(app.sync.state.account))
+            }
+            if let error = app.sync.state.lastError {
+                Text(SyncGerman.error(error, appName: AppInfo.name))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            NavigationLink {
+                ThaliaDataLocationView()
+            } label: {
+                Label("Wo deine Daten liegen", systemImage: "lock.icloud")
+            }
+        } header: {
+            Text("iCloud & Daten")
+        } footer: {
+            Text("Thalia hat keine Server und keine Konten. Deine Daten synchronisieren über dein privates iCloud zwischen iPhone, iPad, Mac und Apple Watch.")
+        }
+        .task { await app.sync.refreshAccount() }
+    }
+
+    private var dotColor: Color {
+        app.sync.state.isHealthy ? Color.green : Color.orange
+    }
+}
+
+/// The sync wording with German relative dates ("vor 5 Minuten").
+enum ThaliaSyncText {
+    static func relative(_ date: Date) -> String {
+        Date.RelativeFormatStyle(presentation: .named, unitsStyle: .wide, locale: Locale(identifier: "de_DE")).format(date)
+    }
+
+    static func summary(_ state: SyncState) -> String {
+        SyncGerman.summary(state) { relative($0) }
+    }
+}
+
+/// "Wo deine Daten liegen" – Thalia's own page instead of the kit's English one (R79).
+struct ThaliaDataLocationView: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Form {
+            ForEach(ThaliaDataFacts.sections) { section in
+                Section(section.title) {
+                    ForEach(section.facts) { fact in
+                        ThaliaFactRow(fact: fact)
+                    }
+                }
+            }
+            Section("Status auf diesem Gerät") {
+                LabeledContent("Synchronisation", value: ThaliaSyncText.summary(app.sync.state))
+                LabeledContent("Speicher", value: SyncGerman.storage(app.mode))
+                if let container = app.sync.state.mode.containerID {
+                    LabeledContent("iCloud-Container", value: container)
+                }
+                if let reason = SyncGerman.reason(app.mode) {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = app.sync.state.lastError {
+                    Text(SyncGerman.error(error, appName: AppInfo.name))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Wo deine Daten liegen")
+        .inlineNavigationTitle()
+        .task { await app.sync.refreshAccount() }
+    }
+}
+
+private struct ThaliaFactRow: View {
+    let fact: DataFact
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: fact.symbol)
+                .font(.title3)
+                .foregroundStyle(Brand.accent)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(fact.title)
+                    .font(.headline)
+                Text(fact.text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -150,6 +297,7 @@ enum ThaliaDataFacts {
 // MARK: Reminders
 
 struct RemindersSettingsView: View {
+    @Environment(AppModel.self) private var app
     @State private var settings = ReminderScheduler.load()
     @State private var status = ""
 
@@ -172,7 +320,7 @@ struct RemindersSettingsView: View {
                     }
                 }
             } footer: {
-                Text("„Der erste geplante Block wartet.“ – pünktlich starten.")
+                Text("„Kurz in Thalia schauen: was heute ansteht – und ob gestern noch offen ist.“")
             }
             Section {
                 Toggle("Tagesabschluss", isOn: $settings.evening)
@@ -180,7 +328,7 @@ struct RemindersSettingsView: View {
                     DatePicker("Uhrzeit", selection: minutesBinding(\.eveningMinutes), displayedComponents: .hourAndMinute)
                 }
             } footer: {
-                Text("Abends Belege prüfen, Fehlendes ergänzen, reflektieren.")
+                Text("Abends Belege prüfen, Fehlendes ergänzen, reflektieren. Ist der Tag schon abgeschlossen, kommt keine Erinnerung; „In 30 Min.“ erinnert später noch einmal.")
             }
             Section {
                 Toggle("Wochenabschluss", isOn: $settings.weekly)
@@ -190,6 +338,10 @@ struct RemindersSettingsView: View {
                     }
                     DatePicker("Uhrzeit", selection: minutesBinding(\.weeklyMinutes), displayedComponents: .hourAndMinute)
                 }
+            } footer: {
+                #if os(macOS)
+                Text("Am Mac standardmäßig aus – das iPhone erinnert dich schon.")
+                #endif
             }
             if !status.isEmpty {
                 Section { Text(status).font(.caption).foregroundStyle(.secondary) }
@@ -199,9 +351,12 @@ struct RemindersSettingsView: View {
         .navigationTitle("Erinnerungen")
         .onChange(of: settings) { _, new in
             ReminderScheduler.save(new)
-            Task { status = await ReminderScheduler.apply(new) }
+            // Switching a reminder on here may ask for permission (R80).
+            Task { status = await ReminderScheduler.apply(new, authorize: true, isClosed: { app.isDayClosed($0) }) }
         }
-        .task { status = await ReminderScheduler.apply(settings) }
+        .task {
+            status = await ReminderScheduler.apply(settings, authorize: false, isClosed: { app.isDayClosed($0) })
+        }
     }
 
     private func minutesBinding(_ path: WritableKeyPath<ReminderSettings, Int>) -> Binding<Date> {
@@ -288,7 +443,7 @@ struct GoalYearSettingsView: View {
 
             Section {
                 if goals.isEmpty {
-                    Button("Meine Struktur anlegen (10 Ziele, 18 Kategorien)", systemImage: "plus") { app.store.seedStructure() }
+                    Button("Meine Struktur einrichten (10 Ziele, 18 Kategorien)", systemImage: "plus") { app.store.seedStructure() }
                 }
                 ForEach(sortedGoals) { goal in
                     NavigationLink {
@@ -379,122 +534,167 @@ struct CategoryEditor: View {
                 details = category.details
             }
         }
-        .sheetFrame(minWidth: 420, minHeight: 260)
+        .thaliaSheetFrame(width: 420, height: 380)
     }
 }
 
 // MARK: Trash
 
+/// Two lines of a row in "Zuletzt gelöscht".
+struct TrashLine {
+    let title: String
+    let subtitle: String
+}
+
+/// "Zuletzt gelöscht": readable rows, newest first; deleting for good always asks first and a full
+/// swipe never deletes (R19). Embedded in Settings without its own stack and close button (R24).
 struct TrashView: View {
+    let embedded: Bool
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var trash = TrackerStore.Trash()
+    @State private var categoryTitles: [String: String] = [:]
+    @State private var entryLines: [UUID: TrashLine] = [:]
+    @State private var pendingPurge: TrackerStore.Trash?
+    @State private var purgesAll = false
 
-    var body: some View {
-        NavigationStack {
-            List {
-                if !trash.work.isEmpty {
-                    Section("Power-Hours") {
-                        ForEach(trash.work) { block in
-                            row(title: block.task.isEmpty ? block.categoryKey : block.task, subtitle: "\(block.dayKey) · \(Format.powerHours(block.hours))",
-                                deletedAt: block.deletedAt) {
-                                app.store.restore([block])
-                            } purge: {
-                                app.store.purge(TrackerStore.Trash(work: [block]))
-                            }
-                        }
-                    }
-                }
-                if !trash.items.isEmpty {
-                    Section("Punkte") {
-                        ForEach(trash.items) { item in
-                            row(title: item.title, subtitle: "\(item.weekKey) · \(item.categoryKey)", deletedAt: item.deletedAt) {
-                                app.store.restore([item])
-                            } purge: {
-                                app.store.purge(TrackerStore.Trash(items: [item]))
-                            }
-                        }
-                    }
-                }
-                if !trash.measures.isEmpty {
-                    Section("Messwerte") {
-                        ForEach(trash.measures) { measure in
-                            row(title: measure.title, subtitle: "\(measure.weekKey) · \(measure.code)", deletedAt: measure.deletedAt) {
-                                app.store.restore([measure])
-                            } purge: {
-                                app.store.purge(TrackerStore.Trash(measures: [measure]))
-                            }
-                        }
-                    }
-                }
-                if !trash.notes.isEmpty {
-                    Section("Notizen") {
-                        ForEach(trash.notes) { note in
-                            row(title: note.text, subtitle: note.dayKey, deletedAt: note.deletedAt) {
-                                app.store.restore([note])
-                            } purge: {
-                                app.store.purge(TrackerStore.Trash(notes: [note]))
-                            }
-                        }
-                    }
-                }
-                if !trash.entries.isEmpty {
-                    Section("Messwert-Einträge") {
-                        ForEach(trash.entries) { entry in
-                            row(title: "\(entry.code): \(entry.value.map { Format.number($0) } ?? entry.text)", subtitle: entry.dayKey,
-                                deletedAt: entry.deletedAt) {
-                                app.store.restore([entry])
-                            } purge: {
-                                app.store.purge(TrackerStore.Trash(entries: [entry]))
-                            }
-                        }
-                    }
-                }
-            }
-            .overlay {
-                if trash.isEmpty {
-                    ContentUnavailableView("Nichts gelöscht", systemImage: "trash",
-                                           description: Text("Gelöschtes bleibt hier 30 Tage, dann ist es endgültig weg."))
-                }
-            }
-            .navigationTitle("Zuletzt gelöscht")
-            .inlineNavigationTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }
-                ToolbarItem(placement: .destructiveAction) {
-                    Button("Leeren", role: .destructive) {
-                        app.store.purge(trash)
-                        reload()
-                    }
-                    .disabled(trash.isEmpty)
-                }
-            }
-            .onAppear(perform: reload)
-        }
-        .sheetFrame(minWidth: 480, minHeight: 520)
+    init(embedded: Bool = false) {
+        self.embedded = embedded
     }
 
-    private func reload() { trash = app.store.trash() }
+    var body: some View {
+        if embedded {
+            trashList
+        } else {
+            NavigationStack {
+                trashList
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            SheetCloseButton { dismiss() }
+                        }
+                    }
+            }
+            .thaliaSheetFrame(width: 480, height: 640)
+        }
+    }
 
-    private func row(title: String, subtitle: String, deletedAt: Date?, restore: @escaping () -> Void, purge: @escaping () -> Void) -> some View {
+    private var trashList: some View {
+        List {
+            if !trash.work.isEmpty {
+                Section("Power-Hours") {
+                    ForEach(trash.work) { block in
+                        row(workLine(block), deletedAt: block.deletedAt, purge: TrackerStore.Trash(work: [block])) {
+                            app.store.restore([block])
+                        }
+                    }
+                }
+            }
+            if !trash.items.isEmpty {
+                Section("Punkte") {
+                    ForEach(trash.items) { item in
+                        row(planLine(item.title, week: item.weekKey, category: item.categoryKey), deletedAt: item.deletedAt,
+                            purge: TrackerStore.Trash(items: [item])) {
+                            app.store.restore([item])
+                        }
+                    }
+                }
+            }
+            if !trash.measures.isEmpty {
+                Section("Messwerte") {
+                    ForEach(trash.measures) { measure in
+                        row(planLine(measure.title, week: measure.weekKey, category: measure.categoryKey), deletedAt: measure.deletedAt,
+                            purge: TrackerStore.Trash(measures: [measure])) {
+                            app.store.restore([measure])
+                        }
+                    }
+                }
+            }
+            if !trash.notes.isEmpty {
+                Section("Notizen") {
+                    ForEach(trash.notes) { note in
+                        row(TrashLine(title: note.text, subtitle: Self.dayLabel(note.dayKey)), deletedAt: note.deletedAt,
+                            purge: TrackerStore.Trash(notes: [note])) {
+                            app.store.restore([note])
+                        }
+                    }
+                }
+            }
+            if !trash.entries.isEmpty {
+                Section("Messwert-Einträge") {
+                    ForEach(trash.entries) { entry in
+                        row(entryLine(entry), deletedAt: entry.deletedAt, purge: TrackerStore.Trash(entries: [entry])) {
+                            app.store.restore([entry])
+                        }
+                    }
+                }
+            }
+        }
+        .overlay {
+            if trash.isEmpty {
+                ContentUnavailableView("Nichts gelöscht", systemImage: "trash",
+                                       description: Text("Gelöschtes bleibt hier 30 Tage, dann ist es endgültig weg."))
+            }
+        }
+        .navigationTitle("Zuletzt gelöscht")
+        .inlineNavigationTitle()
+        .toolbar {
+            ToolbarItem(placement: .destructiveAction) {
+                Button("Leeren", role: .destructive) {
+                    purgesAll = true
+                    pendingPurge = trash
+                }
+                .disabled(trash.isEmpty)
+            }
+        }
+        .confirmationDialog(purgeTitle, isPresented: purgeIsPresented, titleVisibility: .visible, presenting: pendingPurge) { pending in
+            Button(purgeButtonTitle, role: .destructive) {
+                app.store.purge(pending)
+                pendingPurge = nil
+                reload()
+            }
+        } message: { _ in
+            Text("Das lässt sich nicht widerrufen.")
+        }
+        .onAppear(perform: reload)
+    }
+
+    // MARK: Asking before deleting for good
+
+    private var purgeTitle: String { purgesAll ? "Papierkorb leeren?" : "Endgültig löschen?" }
+    private var purgeButtonTitle: String { purgesAll ? "Leeren" : "Endgültig löschen" }
+
+    private var purgeIsPresented: Binding<Bool> {
+        Binding(get: { pendingPurge != nil }, set: { if !$0 { pendingPurge = nil } })
+    }
+
+    private func askPurge(_ selection: TrackerStore.Trash) {
+        purgesAll = false
+        pendingPurge = selection
+    }
+
+    // MARK: Rows
+
+    private func row(_ line: TrashLine, deletedAt: Date?, purge: TrackerStore.Trash, restore: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).lineLimit(2)
-            Text(subtitle + (deletedAt.map { " · noch \(TrashPolicy().daysLeft(deletedAt: $0)) Tage" } ?? ""))
+            Text(line.title)
+                .lineLimit(2)
+            Text(Self.subtitle(line.subtitle, deletedAt: deletedAt))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .swipeActions(edge: .leading) {
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
             Button("Wiederherstellen", systemImage: "arrow.uturn.backward") {
                 restore()
                 reload()
             }
-            .tint(Brand.accent)
+            .tint(Color.accentFill)
         }
-        .swipeActions(edge: .trailing) {
-            Button("Endgültig löschen", systemImage: "trash", role: .destructive) {
-                purge()
-                reload()
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            // No destructive role here: that would remove the row before the question is answered.
+            Button("Endgültig löschen", systemImage: "trash") {
+                askPurge(purge)
             }
+            .tint(.red)
         }
         .contextMenu {
             Button("Wiederherstellen", systemImage: "arrow.uturn.backward") {
@@ -502,10 +702,75 @@ struct TrashView: View {
                 reload()
             }
             Button("Endgültig löschen", systemImage: "trash", role: .destructive) {
-                purge()
-                reload()
+                askPurge(purge)
             }
         }
+    }
+
+    private static func subtitle(_ text: String, deletedAt: Date?) -> String {
+        var parts: [String] = []
+        if !text.isEmpty { parts.append(text) }
+        if let deletedAt { parts.append("noch \(TrashPolicy().daysLeft(deletedAt: deletedAt)) Tage") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "Mittagessen vorbereiten" / "Mo, 16. Nov. · Thema A · 2 PH"
+    private func workLine(_ block: WorkBlock) -> TrashLine {
+        let title: String = block.task.isEmpty ? "Power-Hours" : block.task
+        let area: String = categoryTitles[block.categoryKey] ?? block.categoryKey
+        let parts: [String] = [Self.dayLabel(block.dayKey), area, Format.powerHours(block.hours)]
+        return TrashLine(title: title, subtitle: parts.filter { !$0.isEmpty }.joined(separator: " · "))
+    }
+
+    /// Items and measurements: "KW47 · 1.1 Kategorie"
+    private func planLine(_ title: String, week: String, category: String) -> TrashLine {
+        let weekLabel: String = WeekKey(week)?.label ?? week
+        let categoryTitle: String = categoryTitles[category] ?? ""
+        let area: String = categoryTitle.isEmpty ? category : "\(category) \(categoryTitle)"
+        return TrashLine(title: title, subtitle: "\(weekLabel) · \(area)")
+    }
+
+    private func entryLine(_ entry: MeasureEntry) -> TrashLine {
+        entryLines[entry.uuid] ?? TrashLine(title: entry.code, subtitle: Self.dayLabel(entry.dayKey))
+    }
+
+    private static func dayLabel(_ key: String) -> String {
+        DayKey(key)?.shortLabel ?? key
+    }
+
+    /// "Ausgaben: 12,50 € · Mittagessen" (spending) or "Wasser: 0,5 l · Mo, 16. Nov.".
+    private static func entryLine(_ entry: MeasureEntry, measure: MeasureDefinition?) -> TrashLine {
+        let name: String = measure?.title ?? entry.code
+        let day: String = dayLabel(entry.dayKey)
+        if measure?.record?.isExpense ?? false {
+            let amount: String = Format.euro(entry.value ?? 0)
+            let what: String = entry.note.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title: String = what.isEmpty ? "\(name): \(amount)" : "\(name): \(amount) · \(what)"
+            return TrashLine(title: title, subtitle: day)
+        }
+        let unit: String = measure?.unit ?? ""
+        let value: String = entry.value.map { Format.measure($0, unit: unit) } ?? entry.text
+        return TrashLine(title: "\(name): \(value) · \(day)", subtitle: "")
+    }
+
+    private func reload() {
+        let store = app.store
+        let current = store.trash()
+        var titles: [String: String] = [:]
+        for category in store.liveCategories() { titles[category.key] = category.title }
+        var measuresByWeek: [WeekKey: [MeasureDefinition]] = [:]
+        var lines: [UUID: TrashLine] = [:]
+        for entry in current.entries {
+            var measure: MeasureDefinition?
+            if let day = DayKey(entry.dayKey) {
+                if measuresByWeek[day.week] == nil { measuresByWeek[day.week] = store.measures(day.week) }
+                measure = measuresByWeek[day.week]?.first { $0.code == entry.code }
+            }
+            lines[entry.uuid] = Self.entryLine(entry, measure: measure)
+        }
+        categoryTitles = titles
+        entryLines = lines
+        trash = current
     }
 }
 
@@ -514,6 +779,7 @@ struct ArchiveView: View {
     @Environment(AppModel.self) private var app
     @Query(sort: \WeekArchive.archivedAt, order: .reverse) private var archives: [WeekArchive]
     @State private var restoring: WeekArchive?
+    @State private var deleting: WeekArchive?
 
     var body: some View {
         List {
@@ -525,18 +791,29 @@ struct ArchiveView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .swipeActions(edge: .leading) {
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
                     Button("Wiederherstellen", systemImage: "arrow.uturn.backward") { restoring = archive }
-                        .tint(Brand.accent)
+                        .tint(Color.accentFill)
                 }
-                .swipeActions(edge: .trailing) {
-                    Button("Löschen", systemImage: "trash", role: .destructive) { app.store.delete(archive) }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    // Asks first (R19); no destructive role, so the row stays until the answer.
+                    Button("Löschen", systemImage: "trash") { deleting = archive }
+                        .tint(.red)
                 }
                 .contextMenu {
                     Button("Wiederherstellen", systemImage: "arrow.uturn.backward") { restoring = archive }
-                    Button("Endgültig löschen", systemImage: "trash", role: .destructive) { app.store.delete(archive) }
+                    Button("Endgültig löschen", systemImage: "trash", role: .destructive) { deleting = archive }
                 }
             }
+        }
+        .confirmationDialog("Endgültig löschen?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { archive in
+            Button("Löschen", role: .destructive) {
+                app.store.delete(archive)
+                deleting = nil
+            }
+        } message: { _ in
+            Text("Das lässt sich nicht widerrufen.")
         }
         .overlay {
             if archives.isEmpty {

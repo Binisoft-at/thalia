@@ -19,7 +19,19 @@ struct RootView: View {
                 PendingRoute.destination = nil
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { app.refreshToday() }
+                switch phase {
+                case .active:
+                    app.refreshToday()
+                    app.drainWidgetActions()
+                    app.scheduleReminders()
+                case .background, .inactive:
+                    app.publishWidgetNow()
+                @unknown default:
+                    break
+                }
+            }
+            .onChange(of: app.sync.state.lastSync) {
+                app.afterSync()
             }
             .task {
                 if let destination = PendingRoute.destination {
@@ -47,8 +59,7 @@ private struct PhoneRoot: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        @Bindable var app = app
-        TabView(selection: $app.tab) {
+        TabView(selection: tabSelection) {
             Tab("Heute", systemImage: "sun.max", value: AppTab.today) {
                 NavigationStack { TodayView() }
             }
@@ -68,41 +79,53 @@ private struct PhoneRoot: View {
             TodayAccessory()
         }
     }
+
+    /// Tapping "Heute" again while it is shown goes back to today (R7).
+    private var tabSelection: Binding<AppTab> {
+        Binding(
+            get: { app.tab },
+            set: { newTab in
+                if newTab == .today && app.tab == .today {
+                    app.goToToday()
+                } else {
+                    app.tab = newTab
+                }
+            }
+        )
+    }
 }
 
-/// The bottom accessory, right under the thumb (U10): today's fill, "+" to capture, closing the day.
+/// The bottom accessory, right under the thumb (U10): the selected day's fill (R7), "+" to capture,
+/// closing the day, and "Zu heute" when another day is shown.
 private struct TodayAccessory: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        WeekReader(week: app.today.week, today: app.today) { context in
-            let overall = context.score.days[app.today]
-            let closed = context.isClosed(app.today)
+        let day: DayKey = app.selectedDay
+        WeekReader(week: day.week, today: app.today) { context in
             HStack(spacing: 12) {
-                Button {
-                    app.sheet = .dayOverview(app.today)
-                } label: {
-                    HStack(spacing: 10) {
-                        FillRing(fill: overall?.coverage ?? 0, score: closed ? overall?.score : nil, size: 28, lineWidth: 3.5)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(closed ? "Tag abgeschlossen" : "Heute \(overall?.coverageText ?? "0 %")")
-                                .font(.subheadline.weight(.semibold))
-                                .monospacedDigit()
-                            Text(subtitle(context))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    .contentShape(.rect)
+                if context.hasPlan {
+                    statusButton(context, day: day)
+                } else {
+                    noPlanButton(day: day)
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Öffnet die Tagesübersicht")
                 Spacer(minLength: 4)
+                if day != app.today {
+                    Button {
+                        app.goToToday()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.title3)
+                            .frame(width: 40, height: 40)
+                            .foregroundStyle(Brand.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Zu heute")
+                }
                 Button {
-                    app.sheet = .closeDay(app.today)
+                    app.sheet = .closeDay(app.dayToClose(showing: app.selectedDay))
                 } label: {
-                    Image(systemName: closed ? "checkmark.seal.fill" : "moon.stars")
+                    Image(systemName: context.isClosed(day) ? "checkmark.seal.fill" : "moon.stars")
                         .font(.title3)
                         .frame(width: 40, height: 40)
                         .foregroundStyle(Brand.accent)
@@ -116,7 +139,7 @@ private struct TodayAccessory: View {
                         .font(.title3.weight(.bold))
                         .frame(width: 40, height: 40)
                         .foregroundStyle(.white)
-                        .background(Brand.accent, in: .circle)
+                        .background(Color.accentFill, in: .circle)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Erfassen")
@@ -126,12 +149,75 @@ private struct TodayAccessory: View {
         }
     }
 
-    private func subtitle(_ context: WeekContext) -> String {
-        let totals = context.workTotals(on: app.today)
+    /// Ring and status of the selected day; a tap opens "Heute im Blick".
+    private func statusButton(_ context: WeekContext, day: DayKey) -> some View {
+        let overall: DayOverall? = context.score.days[day]
+        let closed: Bool = context.isClosed(day)
+        let shownScore: Double? = closed ? overall?.score : nil
+        let detail: String = subtitle(context, day: day)
+        return Button {
+            app.sheet = .dayOverview(day)
+        } label: {
+            HStack(spacing: 10) {
+                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 28, lineWidth: 3.5)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title(context, day: day))
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                    if !detail.isEmpty {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Öffnet „Heute im Blick“")
+    }
+
+    /// Without a plan: straight to planning the week (R5). The bar follows the selected day (R7),
+    /// so it plans the week that has no plan – today's week whenever today is selected.
+    private func noPlanButton(day: DayKey) -> some View {
+        Button {
+            app.sheet = .planWeek(day.week)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.title3)
+                    .foregroundStyle(Brand.accent)
+                    .frame(width: 28, height: 28)
+                Text("Kein Plan – Wochenplan importieren")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// "Heute 73 %" · "So · 80 %" · "Tag abgeschlossen" · "Alles erfasst" (R5, R7).
+    private func title(_ context: WeekContext, day: DayKey) -> String {
+        let isToday: Bool = day == app.today
+        let prefix: String = isToday ? "" : "\(day.weekday.short) · "
+        if context.isClosed(day) { return isToday ? "Tag abgeschlossen" : prefix + "abgeschlossen" }
+        if context.openCount(on: day) == 0 { return isToday ? "Alles erfasst" : prefix + "alles erfasst" }
+        let coverage: String = context.score.days[day]?.coverageText ?? "0 %"
+        return isToday ? "Heute \(coverage)" : prefix + coverage
+    }
+
+    /// "11 offen · 4 PH" – the open count is the ring's (R5).
+    private func subtitle(_ context: WeekContext, day: DayKey) -> String {
+        let totals = context.workTotals(on: day)
+        let open: Int = context.openCount(on: day)
         var parts: [String] = []
-        if let overall = context.score.days[app.today], overall.blank > 0 { parts.append("\(overall.blank) offen") }
+        if open > 0 && !context.isClosed(day) { parts.append("\(open) offen") }
         if !totals.isEmpty { parts.append(totals.shortText) }
-        return parts.isEmpty ? "Noch nichts erfasst" : parts.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 }
 #endif
@@ -164,6 +250,13 @@ private struct MacRoot: View {
                 }
             }
         }
+        // One window with a minimum size; sheets are sized to fit into it (R15).
+        .frame(minWidth: 900, minHeight: 620)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            app.mainWindowHeight = height
+        }
     }
 }
 #endif
@@ -181,7 +274,7 @@ struct AppChrome: ViewModifier {
                     .environment(health)
                     .modelContainer(app.container)
             }
-            .toasts(app.toasts)
+            .toastHost(app)
             .undoableChanges(in: app.container.mainContext)
     }
 }
@@ -191,6 +284,12 @@ private struct SheetContent: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        content
+            .toastHost(app)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch sheet {
         case .create:
             ThaliaCreateSheet()
@@ -213,11 +312,11 @@ private struct SheetContent: View {
         case .editMeasure(let measure, let week, let category):
             MeasureDefinitionEditor(week: week, measure: measure, presetCategory: category)
         case .dayOverview(let day):
-            DayOverviewSheet(day: day)
+            GlanceSheet(day: day)
         case .conditionals(let day):
             ConditionalsSheet(day: day)
-        case .focus(let week):
-            FocusSheet(week: week)
+        case .focus(let day):
+            FocusSheet(day: day)
         case .expenses(let day):
             ExpensesSheet(day: day)
         case .pdf(let kind):
@@ -225,8 +324,15 @@ private struct SheetContent: View {
                 PDFPreviewSheet(kind: kind, context: context)
             }
         case .archive:
-            NavigationStack { ArchiveView() }
-                .sheetFrame(minWidth: 520, minHeight: 560)
+            NavigationStack {
+                ArchiveView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            SheetCloseButton { app.sheet = nil }
+                        }
+                    }
+            }
+            .thaliaSheetFrame(width: 520, height: 680)
         case .dayInfo(let day):
             DayInfoEditor(day: day)
         case .weekInfo(let week):
@@ -241,7 +347,17 @@ private struct SheetContent: View {
             NavigationStack {
                 SettingsView()
             }
-            .sheetFrame(minWidth: 540, minHeight: 640)
+            .thaliaSheetFrame(width: 540, height: 760)
+        case .weeklyGoals(let week):
+            WeeklyGoalsSheet(week: week)
+        case .planWeek(let week):
+            ImportView(showPrompt: true, week: week)
+        case .repeatPlan(let source, let target):
+            ImportView(showPrompt: false, week: target, repeatFrom: source)
+        case .editItem(let item):
+            ItemEditor(week: WeekKey(item.weekKey) ?? app.selectedWeek, item: item)
+        case .goalReview:
+            GoalReviewView()
         }
     }
 }
@@ -255,12 +371,14 @@ struct TourPresenter: ViewModifier {
         #if os(iOS)
         content.fullScreenCover(item: $app.tour) { request in
             TourView(steps: request.steps, host: app) { app.finishTour() }
+                .toastHost(app)
                 .appearanceFromSettings()
         }
         #else
         content.sheet(item: $app.tour) { request in
             TourView(steps: request.steps, host: app) { app.finishTour() }
-                .frame(minWidth: 760, idealWidth: 900, minHeight: 680, idealHeight: 800)
+                .toastHost(app)
+                .thaliaSheetFrame(width: 760, height: 800)
         }
         #endif
     }

@@ -98,11 +98,12 @@ public enum WeekReport {
         out.append("## Tage")
         out.append("| Tag | Typ | Wertung | Ausgefüllt | Abschluss | Journal | Notiz |")
         out.append("|---|---|---|---|---|---|---|")
+        let journalItem = input.items.first { ReflectionQuestion.isJournalTitle($0.title) }
         for day in week.days {
             let info = input.days.first { $0.day == day }
             let overall = score.days[day]
-            let journal = input.reviews.first { $0.scope == day.string && $0.field == ReflectionQuestion.journalField }?.text
-            out.append("| \(day.shortLabel) | \(info?.dayType ?? "") | \(Format.score(overall?.score, outOf: false)) | \(overall?.coverageText ?? "–") | \(input.closedDays.contains(day) ? "✓" : "–") | \(journal == "ja" ? "✓" : (journal == "nein" ? "✗" : "–")) | \(info?.note ?? "") |")
+            let journal = journalSymbol(input, data: data, item: journalItem, day: day)
+            out.append("| \(day.shortLabel) | \(info?.dayType ?? "") | \(Format.score(overall?.score, outOf: false)) | \(overall?.coverageText ?? "–") | \(input.closedDays.contains(day) ? "✓" : "–") | \(journal) | \(info?.note ?? "") |")
         }
         out.append("")
 
@@ -183,7 +184,7 @@ public enum WeekReport {
             out.append("")
         }
 
-        let dayNotes = input.reviews.filter { $0.field == "notiz" && !$0.text.isEmpty && $0.scope != week.string }
+        let dayNotes = input.reviews.filter { $0.field == ReflectionQuestion.dayNoteField && !$0.text.isEmpty && $0.scope != week.string }
         if !dayNotes.isEmpty {
             out.append("## Notizen zum Tag")
             for day in week.days {
@@ -202,6 +203,19 @@ public enum WeekReport {
             }
         }
         return out.joined(separator: "\n") + "\n"
+    }
+
+    /// The journal column (R58): the plan's journal item (✓/½ → ✓, ✗ → ✗), else the reflection "ja" / "nein".
+    static func journalSymbol(_ input: WeekReportInput, data: WeekData, item: ItemRecord?, day: DayKey) -> String {
+        if let item {
+            let mark = data.mark(item, on: day)
+            if mark == .done || mark == .partial { return "✓" }
+            if mark == .missed { return "✗" }
+        }
+        let answer = input.reviews.first { $0.scope == day.string && $0.field == ReflectionQuestion.journalField }?.text
+        if answer == "ja" { return "✓" }
+        if answer == "nein" { return "✗" }
+        return "–"
     }
 
     /// One line per category: "1.2 Training und Tennis: Krafttraining ✗ Fr · Zone 2 1 von 2/Woche".
@@ -236,11 +250,188 @@ public enum WeekReport {
     }
 }
 
+/// The goal review (R95): the goal year so far – each goal's average and trend, the most missed
+/// items, power-hours per area, measurements at the start and now, and every parked idea.
+public struct PeriodReport: Sendable {
+    public struct GoalLine: Equatable, Sendable {
+        public var key: String
+        public var title: String
+        public var average: Double?
+        public var firstFour: Double?
+        public var lastFour: Double?
+    }
+
+    public struct MissedItem: Equatable, Sendable {
+        public var title: String
+        public var categoryKey: String
+        public var count: Int
+    }
+
+    public struct WorkLine: Equatable, Sendable {
+        public var categoryKey: String
+        public var title: String
+        public var powerHours: Double
+    }
+
+    public struct MeasureChange: Equatable, Sendable {
+        public var code: String
+        public var title: String
+        public var unit: String
+        public var first: Double?
+        public var last: Double?
+    }
+
+    public var start: WeekKey
+    public var end: WeekKey
+    /// Average since the start and the trend (first vs. last four scored weeks).
+    public var goals: [GoalLine]
+    /// The ten most missed items (✗), counted by title.
+    public var missed: [MissedItem]
+    /// Power-hours per area, largest first.
+    public var work: [WorkLine]
+    /// First and last week value per measurement code.
+    public var measures: [MeasureChange]
+    /// All parked ideas, newest first.
+    public var ideas: [NoteRecord]
+
+    /// - Parameters:
+    ///   - weeks: the planned weeks of the period (any order).
+    ///   - goalScores: the stored goal scores of closed weeks (`WeekPlan.finalGoalScoreMap`).
+    public init(weeks: [WeekReportInput], goalScores: [WeekKey: [String: Double]], ideas: [NoteRecord]) {
+        let sorted = weeks.sorted { $0.week.week < $1.week.week }
+        let fallback = DayKey(ordinal: 0).week
+        start = sorted.first?.week.week ?? fallback
+        end = sorted.last?.week.week ?? fallback
+
+        let latestGoals = (sorted.last?.goals ?? []).sortedByNumber()
+        goals = latestGoals.map { goal in
+            let scores = sorted.compactMap { goalScores[$0.week.week]?[goal.key] }
+            return GoalLine(key: goal.key, title: goal.title, average: PeriodReport.mean(scores),
+                            firstFour: PeriodReport.mean(Array(scores.prefix(4))), lastFour: PeriodReport.mean(Array(scores.suffix(4))))
+        }
+
+        var missedCounts: [String: (categoryKey: String, count: Int)] = [:]
+        for input in sorted {
+            let items = Dictionary(input.items.map { ($0.code, $0) }, uniquingKeysWith: { first, _ in first })
+            for mark in input.marks where mark.mark == .missed {
+                guard let item = items[mark.itemCode] else { continue }
+                let current = missedCounts[item.title]?.count ?? 0
+                missedCounts[item.title] = (categoryKey: item.categoryKey, count: current + 1)
+            }
+        }
+        missed = missedCounts.map { MissedItem(title: $0.key, categoryKey: $0.value.categoryKey, count: $0.value.count) }
+            .sorted { ($0.count, $1.title) > ($1.count, $0.title) }
+            .prefix(10).map { $0 }
+
+        var titles: [String: String] = [:]
+        for input in sorted { for category in input.categories { titles[category.key] = category.title } }
+        var hours: [String: Double] = [:]
+        for input in sorted { for block in input.work { hours[block.categoryKey, default: 0] += block.powerHours } }
+        work = hours.map { WorkLine(categoryKey: $0.key, title: titles[$0.key] ?? $0.key, powerHours: $0.value) }
+            .sorted { ($0.powerHours, $1.categoryKey) > ($1.powerHours, $0.categoryKey) }
+
+        var changes: [String: MeasureChange] = [:]
+        var order: [String] = []
+        for input in sorted {
+            for measure in input.measures.sorted(by: { $0.position < $1.position }) {
+                let value = Measures.weekValue(measure, days: input.week.week.days, entries: input.entries, work: input.work)
+                var change = changes[measure.code] ?? MeasureChange(code: measure.code, title: measure.title, unit: measure.unit,
+                                                                     first: nil, last: nil)
+                if changes[measure.code] == nil { order.append(measure.code) }
+                change.title = measure.title
+                change.unit = measure.unit
+                if let value {
+                    if change.first == nil { change.first = value }
+                    change.last = value
+                }
+                changes[measure.code] = change
+            }
+        }
+        measures = order.compactMap { changes[$0] }
+
+        self.ideas = ideas.sorted { ($0.day, $0.id) > ($1.day, $1.id) }
+    }
+
+    static func mean(_ values: [Double]) -> Double? {
+        values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
+    }
+
+    /// "↑", "↓", "→" (first vs. last four weeks), "–" without both.
+    static func trend(_ line: GoalLine) -> String {
+        guard let first = line.firstFour, let last = line.lastFour else { return "–" }
+        if last - first > 0.25 { return "↑" }
+        if first - last > 0.25 { return "↓" }
+        return "→"
+    }
+
+    /// The review as Markdown to paste into ChatGPT.
+    public func markdown(period: GoalPeriod) -> String {
+        var out: [String] = []
+        let review = period.reviewWeek
+        out.append("# Zielüberprüfung \(review.label) (\(review.rangeLabel) \(review.year))")
+        out.append("Zieljahr seit \(period.start.longLabel) · ausgewertet \(start.longLabel) bis \(end.longLabel)")
+        if !period.motto.isEmpty { out.append("Motto: \(period.motto)") }
+        out.append("Hinweis: Die Wertungen messen Verhalten, nicht Ergebnisse (0–10, Jahresziele gleich gewichtet).")
+        out.append("")
+
+        out.append("## Jahresziele")
+        out.append("| Ziel | Ø seit Start | erste 4 Wochen | letzte 4 Wochen | Trend |")
+        out.append("|---|---|---|---|---|")
+        for line in goals {
+            out.append("| \(line.key) \(line.title) | \(Format.score(line.average)) | \(Format.score(line.firstFour)) | \(Format.score(line.lastFour)) | \(PeriodReport.trend(line)) |")
+        }
+        out.append("")
+
+        out.append("## Am häufigsten verpasst")
+        if missed.isEmpty {
+            out.append("Keine.")
+        } else {
+            out.append(contentsOf: missed.map { "- \($0.categoryKey) \($0.title): \($0.count)× ✗" })
+        }
+        out.append("")
+
+        out.append("## Power-Hours je Bereich")
+        if work.isEmpty {
+            out.append("Keine erfasst.")
+        } else {
+            out.append(contentsOf: work.map { "- \($0.categoryKey) \($0.title): \(Format.powerHours($0.powerHours))" })
+        }
+        out.append("")
+
+        if !measures.isEmpty {
+            out.append("## Messwerte (erste und letzte Woche mit Wert)")
+            for change in measures {
+                let first = change.first.map { Format.measure($0, unit: change.unit) } ?? "–"
+                let last = change.last.map { Format.measure($0, unit: change.unit) } ?? "–"
+                out.append("- \(change.title): \(first) → \(last)")
+            }
+            out.append("")
+        }
+
+        out.append("## Geparkte Ideen")
+        if ideas.isEmpty {
+            out.append("Keine.")
+        } else {
+            out.append(contentsOf: ideas.map { "- \($0.day.shortLabel) \($0.day.year): \($0.text)" })
+        }
+        out.append("")
+
+        out.append("## Bitte")
+        out.append("Hilf mir bei der Zielüberprüfung: Was behalte ich bei, was passe ich an, was lasse ich weg – und welche geparkten Ideen verdienen jetzt Platz? Wiederholen statt steigern, ohne unnötigen Druck.")
+        return out.joined(separator: "\n") + "\n"
+    }
+}
+
 /// The prompt for the Sunday planning conversation: it defines Thalia's CSV contract, lists the
 /// current structure (so ids stay stable), the plan changes made in the app, and last week's results.
 public enum PlanPrompt {
+    /// - Parameters:
+    ///   - currentPlan: the source week's plan as CSV (`PlanCSV.export(document.planOnly(week:))`) – ChatGPT
+    ///     takes it over and changes only what the message asks for (R91).
+    ///   - trend: a few lines "KW44: Wertung 7,1 · 22 von 28 PH".
     public static func text(for week: WeekKey, goals: [GoalRecord], categories: [CategoryRecord], measures: [MeasureRecord],
-                            lastWeekReport: String?, changes: [PlanChangeRecord] = []) -> String {
+                            lastWeekReport: String?, changes: [PlanChangeRecord] = [], currentPlan: String? = nil,
+                            currentPlanWeek: WeekKey? = nil, trend: [String] = []) -> String {
         var out: [String] = []
         out.append("Du hilfst mir, meinen Wochenplan für \(week.longLabel) (\(week.rangeLabel)) in meine Tracking-App „Thalia“ zu übertragen. Meine Nachricht mit Rückblick, Zusagen, Prioritäten, Zielen und Ausnahmen steht ganz unten.")
         out.append("")
@@ -326,6 +517,19 @@ public enum PlanPrompt {
         if let report = lastWeekReport, !report.isEmpty {
             out.append("## Ergebnisse der letzten Woche (aus Thalia)")
             out.append(report.trimmingCharacters(in: .newlines))
+            out.append("")
+        }
+        if let plan = currentPlan?.trimmingCharacters(in: .whitespacesAndNewlines), !plan.isEmpty {
+            out.append("## Plan von \(currentPlanWeek?.label ?? "letzter Woche") (Ausgangspunkt)")
+            out.append("```csv")
+            out.append(plan)
+            out.append("```")
+            out.append("Übernimm diese Zeilen für \(week.label) (Datum in die neue Woche verschieben), ändere nur, was ich unten verlange, und nenne jede Änderung unter dem Codeblock.")
+            out.append("")
+        }
+        if !trend.isEmpty {
+            out.append("## Tendenz der letzten 4 Wochen")
+            out.append(contentsOf: trend.map { "- \($0)" })
             out.append("")
         }
         out.append("## Mein Rückblick und Plan für \(week.label):")

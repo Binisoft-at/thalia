@@ -64,7 +64,7 @@ private struct PracticePage: View {
                                 .font(.title2.weight(.bold))
                                 .frame(width: 56, height: 56)
                                 .foregroundStyle(.white)
-                                .background(Brand.accent, in: .circle)
+                                .background(Color.accentFill, in: .circle)
                                 .shadow(radius: 4, y: 2)
                         }
                         .buttonStyle(.plain)
@@ -91,6 +91,11 @@ private struct PracticePage: View {
         snapshot.noteCount = notes.count
         if case .create = app.sheet { snapshot.isCreateOpen = true }
         if case .closeDay = app.sheet { snapshot.isCloseDayOpen = true }
+        // "Heute im Blick": the sheet, on the Mac also the right column (v7).
+        if case .dayOverview = app.sheet { snapshot.isGlanceOpen = true }
+        #if os(macOS)
+        if app.showsGlanceInspector { snapshot.isGlanceOpen = true }
+        #endif
         return snapshot
     }
 }
@@ -154,7 +159,7 @@ private struct ThaliaCoachCard: View {
                     if primaryIsProminent {
                         Button(action: onNext) { Text(primaryTitle).lineLimit(1).fixedSize().frame(minWidth: 64) }
                             .buttonStyle(.glassProminent)
-                            .tint(Brand.accent)
+                            .tint(Color.accentFill)
                     } else {
                         Button(action: onNext) { Text(primaryTitle).lineLimit(1).fixedSize().frame(minWidth: 52) }
                             .buttonStyle(.glass)

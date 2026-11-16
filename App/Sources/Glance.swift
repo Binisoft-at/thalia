@@ -4,367 +4,17 @@ import Charts
 import BinisoftKit
 import ThaliaCore
 
-// v5: look in once and see what's going on – power-hours and work (F1), spending (F1), what's
-// still to do (F4), and on the Mac a grey summary under the navigation (F4.1).
+// v5: look in once and see what's going on – what's still to do (F4), and on the Mac a grey
+// summary under the navigation (F4.1). v7: "Heute im Blick" as one sheet that pushes Fokus,
+// Ausgaben and the weekly targets (R50, R51). Fokus lives in Focus.swift, Ausgaben in Expenses.swift.
 
-// MARK: Fokus – power-hours and work
-
-/// Power-hours today and this week: totals against the target, Mo–So by area, every area against
-/// its weekly goal, and all entries with their descriptions.
-struct FocusSheet: View {
-    let week: WeekKey
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            WeekReader(week: week, today: app.today) { context in
-                FocusContent(context: context)
-            }
-            .navigationTitle("Fokus · \(week.label)")
-            .inlineNavigationTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        app.sheet = .work(WorkDraft(day: app.today))
-                    } label: {
-                        Label("Power-Hours erfassen", systemImage: "plus")
-                    }
-                }
-            }
-        }
-        .sheetFrame(minWidth: 560, minHeight: 680)
-    }
-}
-
-struct FocusContent: View {
-    let context: WeekContext
-    @Environment(AppModel.self) private var app
-
-    private struct DayBar: Identifiable {
-        let day: DayKey
-        let category: String
-        let hours: Double
-        var id: String { day.string + category }
-    }
-
-    var body: some View {
-        let today: DayKey = context.week.contains(app.today) ? app.today : context.week.monday
-        let week = context.workTotals()
-        let todayTotals = context.workTotals(on: today)
-        let target: Double? = context.workTarget
-        let bars: [DayBar] = dayBars
-        let areas: [MeasureDefinition] = context.measures.filter { $0.record?.isWork == true }
-        // One colour per area, the same in the chart and in the rows below.
-        let areaKeys: [String] = Array(Set(bars.map(\.category) + areas.map { workCategory($0) })).sorted()
-        List {
-            Section {
-                HeroCard(title: "Power-Hours", subtitle: week.isEmpty ? "Noch nichts erfasst" : week.explanation,
-                         value: Format.number(week.powerHours), caption: target.map { "von \(Format.number($0))" } ?? "PH",
-                         progress: target.map { $0 > 0 ? week.powerHours / $0 : 0 } ?? 0,
-                         facts: [("Heute", todayTotals.isEmpty ? "–" : todayTotals.shortText),
-                                 ("Ø pro Arbeitstag", average(week.powerHours)),
-                                 ("Einträge", "\(context.workRecords.count)")])
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
-            if !bars.isEmpty {
-                Section("Mo–So") {
-                    Chart(bars) { bar in
-                        BarMark(x: .value("Tag", bar.day.weekday.short), y: .value("PH", bar.hours))
-                            .foregroundStyle(by: .value("Bereich", bar.category))
-                            .cornerRadius(4)
-                    }
-                    .chartForegroundStyleScale(domain: areaKeys, range: areaKeys.map { FocusContent.areaColor($0, among: areaKeys) })
-                    .chartXScale(domain: context.week.days.map(\.weekday.short))
-                    .frame(height: 170)
-                }
-            }
-            if !areas.isEmpty {
-                Section("Bereiche · Woche gegen Ziel") {
-                    ForEach(areas) { measure in
-                        AreaRow(context: context, measure: measure, today: today,
-                                tint: FocusContent.areaColor(workCategory(measure), among: areaKeys))
-                    }
-                }
-            }
-            let entries: [WorkBlock] = context.work.sorted { ($0.dayKey, $0.createdAt) > ($1.dayKey, $1.createdAt) }
-            Section {
-                if entries.isEmpty {
-                    Text("Noch keine Power-Hours diese Woche.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(entries) { block in
-                    Button {
-                        app.sheet = .work(WorkDraft(block: block, day: DayKey(block.dayKey) ?? today, categoryKey: block.categoryKey))
-                    } label: {
-                        HStack(spacing: 12) {
-                            Text(Format.number(block.hours))
-                                .font(.system(.headline, design: .rounded))
-                                .monospacedDigit()
-                                .foregroundStyle(.white)
-                                .frame(width: 46, height: 32)
-                                .background(GoalPalette.color(category: block.categoryKey).gradient, in: .rect(cornerRadius: 9, style: .continuous))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(block.task.isEmpty ? (context.category(block.categoryKey)?.title ?? block.categoryKey) : block.task)
-                                    .foregroundStyle(.primary)
-                                Text("\(DayKey(block.dayKey)?.shortLabel ?? block.dayKey) · \(block.categoryKey) \(context.category(block.categoryKey)?.title ?? "")")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                            if !block.result.isEmpty {
-                                Image(systemName: "checkmark.circle")
-                                    .foregroundStyle(.secondary)
-                                    .help(block.result)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .trailing) {
-                        Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([block]) }
-                    }
-                }
-            } header: {
-                Text("Einträge")
-            } footer: {
-                Text("1 PH = 50 Minuten konzentrierte Arbeit, Nachhilfe inklusive. Tippen bearbeitet einen Eintrag.")
-            }
-        }
-        .compactListSections()
-    }
-
-    /// Areas side by side need different colours (several share goal 3's colour elsewhere).
-    static let areaPalette: [Color] = [
-        Color(red: 0.05, green: 0.55, blue: 0.60), Color(red: 0.95, green: 0.50, blue: 0.18), Color(red: 0.55, green: 0.38, blue: 0.86),
-        Color(red: 0.90, green: 0.36, blue: 0.58), Color(red: 0.20, green: 0.62, blue: 0.36), Color(red: 0.30, green: 0.36, blue: 0.80),
-    ]
-
-    static func areaColor(_ key: String, among keys: [String]) -> Color {
-        let index: Int = keys.firstIndex(of: key) ?? 0
-        return areaPalette[index % areaPalette.count]
-    }
-
-    private var dayBars: [DayBar] {
-        var sums: [String: DayBar] = [:]
-        for record in context.workRecords {
-            let key: String = record.day.string + record.categoryKey
-            let previous: Double = sums[key]?.hours ?? 0
-            sums[key] = DayBar(day: record.day, category: record.categoryKey, hours: previous + record.powerHours)
-        }
-        return sums.values.sorted { $0.id < $1.id }
-    }
-
-    private func workCategory(_ measure: MeasureDefinition) -> String {
-        if case .work(let category)? = measure.record?.source { return category }
-        return measure.categoryKey
-    }
-
-    private func average(_ total: Double) -> String {
-        let workdays: Int = context.week.days.filter { $0 <= app.today && !context.isFreeDay($0) && $0.weekday.rawValue <= Weekday.friday.rawValue }.count
-        guard workdays > 0, total > 0 else { return "–" }
-        return Format.powerHours(total / Double(workdays))
-    }
-}
-
-private struct AreaRow: View {
-    let context: WeekContext
-    let measure: MeasureDefinition
-    let today: DayKey
-    let tint: Color
-
-    var body: some View {
-        let value: Double = context.weekValue(measure) ?? 0
-        let target: Double = measure.record?.target?.scaleMax ?? 0
-        let todayValue: Double = context.dayValue(measure, on: today) ?? 0
-        let reached: Bool = target > 0 && value >= target - 1e-9
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(measure.title)
-                    .font(.body.weight(.semibold))
-                Spacer()
-                Text(target > 0 ? "\(Format.number(value)) von \(Format.number(target)) PH" : "\(Format.number(value)) PH")
-                    .font(.callout.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(reached ? .green : .primary)
-            }
-            if target > 0 {
-                GoalBar(fraction: min(1, value / target), reached: reached, tint: tint)
-            }
-            Text(todayValue > 0 ? "heute \(Format.powerHours(todayValue))" : "heute noch nichts")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 2)
-    }
-}
-
-// MARK: Ausgaben – spending
-
-/// Type the amount right away, optionally what for, add. Today and the week at a glance.
-struct ExpensesSheet: View {
-    let day: DayKey
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            WeekReader(week: day.week, today: app.today) { context in
-                ExpensesContent(context: context, day: day)
-            }
-            .navigationTitle("Ausgaben")
-            .inlineNavigationTitle()
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
-            }
-        }
-        .sheetFrame(minWidth: 520, minHeight: 640)
-    }
-}
-
-struct ExpensesContent: View {
-    let context: WeekContext
-    let day: DayKey
-    @Environment(AppModel.self) private var app
-    @State private var amount = ""
-    @State private var what = ""
-    @FocusState private var amountFocused: Bool
-
-    private struct DayAmount: Identifiable {
-        let day: DayKey
-        let value: Double
-        var id: String { day.string }
-    }
-
-    var body: some View {
-        if let measure = context.expenseMeasure {
-            content(measure)
-        } else {
-            ContentUnavailableView {
-                Label("Kein Ausgaben-Messwert", systemImage: "eurosign.circle")
-            } description: {
-                Text("Diese Woche hat keinen Messwert in €. Leg ihn an – er gilt dann auch für die nächsten Wochen.")
-            } actions: {
-                Button("„Ausgaben“ anlegen") {
-                    let category: String = context.categories.first { $0.goalKey == "8" }?.key ?? ""
-                    app.store.addMeasure(week: day.week, categoryKey: category, title: "Ausgaben", unit: "€", target: nil, period: .day)
-                }
-                .primaryActionStyle()
-            }
-        }
-    }
-
-    private func content(_ measure: MeasureDefinition) -> some View {
-        let todayValue: Double = context.dayValue(measure, on: day) ?? 0
-        let weekValue: Double = context.weekValue(measure) ?? 0
-        let entries: [MeasureEntry] = context.entries.filter { $0.code == measure.code && $0.dayKey == day.string }
-            .sorted { $0.recordedAt > $1.recordedAt }
-        let perDay: [DayAmount] = context.week.days.map { DayAmount(day: $0, value: context.dayValue(measure, on: $0) ?? 0) }
-        let suggestions: [String] = Array(Set(context.entries.filter { $0.code == measure.code && !$0.note.isEmpty }.map(\.note))).sorted().prefix(6).map { $0 }
-        return List {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        TextField("Betrag", text: $amount)
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .decimalKeyboard()
-                            .focused($amountFocused)
-                            .submitLabel(.done)
-                            .onSubmit { add(measure) }
-                        Text("€")
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                    TextField("Wofür? (Pflicht)", text: $what)
-                        .submitLabel(.done)
-                        .onSubmit { add(measure) }
-                    if !suggestions.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(suggestions, id: \.self) { suggestion in
-                                    ChipButton(title: suggestion, isSelected: what == suggestion) { what = suggestion }
-                                }
-                            }
-                        }
-                    }
-                    Button {
-                        add(measure)
-                    } label: {
-                        Label("Hinzufügen", systemImage: "plus.circle.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .primaryActionStyle()
-                    .disabled(Format.parse(amount) == nil || what.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Neue Ausgabe · \(day.shortLabel)")
-            }
-            Section {
-                HStack(spacing: 12) {
-                    SummaryTile(label: day == app.today ? "Heute" : day.shortLabel, value: Format.measure(todayValue, unit: "€"),
-                                tint: GoalPalette.color(goal: "8"))
-                    SummaryTile(label: context.week.label, value: Format.measure(weekValue, unit: "€"), tint: Brand.accent)
-                    if let target = measure.record?.target {
-                        SummaryTile(label: "Ziel", value: "\(target.label) €", tint: .orange)
-                    }
-                }
-                .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-                Chart(perDay) { entry in
-                    BarMark(x: .value("Tag", entry.day.weekday.short), y: .value("€", entry.value))
-                        .foregroundStyle(entry.day == day ? GoalPalette.color(goal: "8") : GoalPalette.color(goal: "8").opacity(0.35))
-                        .cornerRadius(4)
-                }
-                .frame(height: 140)
-            }
-            Section {
-                if entries.isEmpty {
-                    Text("Noch nichts an diesem Tag.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(entries) { entry in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.note.isEmpty ? "Ausgabe" : entry.note)
-                            Text(entry.recordedAt, format: .dateTime.hour().minute())
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(Format.measure(entry.value ?? 0, unit: "€"))
-                            .font(.body.weight(.semibold))
-                            .monospacedDigit()
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([entry]) }
-                    }
-                    .contextMenu {
-                        Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([entry]) }
-                    }
-                }
-            } header: {
-                Text("Einträge \(day.shortLabel)")
-            }
-        }
-        .compactListSections()
-        .onAppear { amountFocused = true }
-    }
-
-    private func add(_ measure: MeasureDefinition) {
-        guard let value = Format.parse(amount), !what.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        app.addExpense(value, what: what, measure: measure, day: day)
-        amount = ""
-        what = ""
-        amountFocused = true
-    }
-}
-
+/// A small tile: a value and what it is (Ausgaben). `valueColor` marks "noch 38 €" green or
+/// "+12 €" red (R45).
 struct SummaryTile: View {
     let label: String
     let value: String
     var tint: Color = Brand.accent
+    var valueColor: Color = .primary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -373,6 +23,7 @@ struct SummaryTile: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+                .foregroundStyle(valueColor)
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -384,9 +35,380 @@ struct SummaryTile: View {
     }
 }
 
-// MARK: Heute im Blick – tiles and what's left
+// MARK: Heute im Blick (R50, R51)
 
-/// Short texts shared by the tiles and the Mac sidebar (kept out of view expressions).
+/// Where a tile of "Heute im Blick" leads (R51).
+enum GlanceRoute: Hashable {
+    case focus, expenses, weeklyGoals
+
+    /// Pushed inside the "Heute im Blick" sheet; elsewhere (the Mac's right column) its own sheet.
+    @MainActor
+    func open(day: DayKey, app: AppModel, navigator: GlanceNavigator?) {
+        if let navigator {
+            navigator.path.append(self)
+            return
+        }
+        switch self {
+        case .focus: app.sheet = .focus(day)
+        case .expenses: app.sheet = .expenses(day)
+        case .weeklyGoals: app.sheet = .weeklyGoals(day.week)
+        }
+    }
+}
+
+/// The navigation path of the "Heute im Blick" sheet; its list finds it in the environment.
+@Observable
+final class GlanceNavigator {
+    var path: [GlanceRoute] = []
+}
+
+/// "Heute im Blick" for a day: a short header, what's still to do, the weekly targets. Fokus,
+/// Ausgaben and Wochenziele open inside with a back arrow – nothing closes the sheet unasked (R51).
+struct GlanceSheet: View {
+    let day: DayKey
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var navigator = GlanceNavigator()
+
+    init(day: DayKey) {
+        self.day = day
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigator.path) {
+            WeekReader(week: day.week, today: app.today) { context in
+                GlanceList(context: context, day: day, onOpen: { page in open(page) })
+            }
+            .navigationTitle("Heute im Blick")
+            .inlineNavigationTitle()
+            .navigationDestination(for: GlanceRoute.self) { route in
+                destination(route)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    WeekReader(week: day.week, today: app.today) { context in
+                        PDFButton(kind: .day(day), context: context, title: "PDF")
+                    }
+                }
+            }
+        }
+        .environment(navigator)
+        .thaliaSheetFrame(width: 460, height: 640)
+    }
+
+    @ViewBuilder
+    private func destination(_ route: GlanceRoute) -> some View {
+        switch route {
+        case .focus:
+            FocusPage(day: day)
+        case .expenses:
+            ExpensesPage(day: day)
+        case .weeklyGoals:
+            WeeklyGoalsPage(week: day.week)
+        }
+    }
+
+    /// A category or the day's last page: Today shows it and the sheet closes.
+    private func open(_ page: TodayPage) {
+        if app.selectedDay != day {
+            app.selectedDay = day
+            app.selectedWeek = day.week
+        }
+        app.todayPage = page
+        app.tab = .today
+        app.sidebar = .today
+        dismiss()
+    }
+}
+
+/// The content of "Heute im Blick" (sheet on iPhone/iPad, right column on the Mac): header,
+/// yesterday, tiles, "Noch zu tun", "Diese Woche noch", weekly targets, categories, values, notes –
+/// and "Tag abschließen" once everything is recorded. No hero card, no power-hour list (R50).
+struct GlanceList: View {
+    let context: WeekContext
+    let day: DayKey
+    let onOpen: (TodayPage) -> Void
+    @Environment(AppModel.self) private var app
+    @Environment(GlanceNavigator.self) private var navigator: GlanceNavigator?
+
+    init(context: WeekContext, day: DayKey, onOpen: @escaping (TodayPage) -> Void) {
+        self.context = context
+        self.day = day
+        self.onOpen = onOpen
+    }
+
+    var body: some View {
+        List {
+            Section {
+                GlanceHeader(context: context, day: day)
+            }
+            if day == app.today {
+                Section {
+                    YesterdayBanner(today: app.today)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+            }
+            Section {
+                GlanceTiles(context: context, day: day)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+            if context.hasPlan {
+                OpenToDoSection(context: context, day: day, onOpen: onOpen, onClose: closeAction)
+                WeeklyOpenSection(context: context, day: day, onOpen: onOpen)
+            } else {
+                Section {
+                    Button {
+                        app.sheet = .planWeek(day.week)
+                    } label: {
+                        Label("Kein Plan – Wochenplan importieren", systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
+            targetsSection
+            categoriesSection
+            measuresSection
+            notesSection
+        }
+        .compactListSections()
+    }
+
+    // MARK: Sections
+
+    @ViewBuilder
+    private var targetsSection: some View {
+        if !context.weeklyTargets.isEmpty {
+            Section {
+                WeeklyTargetsList(context: context, limit: 4)
+                Button {
+                    GlanceRoute.weeklyGoals.open(day: day, app: app, navigator: navigator)
+                } label: {
+                    HStack {
+                        Text("Alle Wochenziele")
+                        Spacer(minLength: 6)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
+                }
+            } header: {
+                Text("Wochenziele")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var categoriesSection: some View {
+        let categories: [TrackCategory] = dayCategories
+        if !categories.isEmpty {
+            Section("Kategorien") {
+                ForEach(categories) { category in
+                    GlanceCategoryRow(category: category, entry: context.score.category(category.key, on: day)) {
+                        onOpen(.category(category.key))
+                    }
+                }
+            }
+        }
+    }
+
+    /// H1: a Health value on a device without Health shows the hint instead of "fehlt".
+    @ViewBuilder
+    private var measuresSection: some View {
+        let lines: [GlanceValueLine] = valueLines
+        if !lines.isEmpty {
+            Section("Messwerte") {
+                ForEach(lines) { line in
+                    GlanceValueRow(line: line)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var notesSection: some View {
+        let notes: [DayNote] = context.notes(on: day)
+        if !notes.isEmpty {
+            Section("Notizen") {
+                ForEach(notes) { note in
+                    Label(note.text, systemImage: note.kind.symbol)
+                }
+            }
+        }
+    }
+
+    // MARK: Values
+
+    /// Everything required is recorded and the day is still open: "Tag abschließen" (R50).
+    private var closeAction: (() -> Void)? {
+        guard context.hasPlan, day <= app.today, !context.isClosed(day), context.openCount(on: day) == 0 else { return nil }
+        let model: AppModel = app
+        let target: DayKey = day
+        return { model.sheet = .closeDay(target) }
+    }
+
+    /// Categories with something to mark, enter or show that day, in plan order.
+    private var dayCategories: [TrackCategory] {
+        let work: [WorkBlock] = context.work(on: day)
+        return context.categories.filter { category in
+            hasItems(category.key) || hasMeasures(category.key) || work.contains { $0.categoryKey == category.key }
+        }
+    }
+
+    private func hasItems(_ key: String) -> Bool {
+        context.items.contains { $0.categoryKey == key && context.applies($0, on: day) }
+    }
+
+    private func hasMeasures(_ key: String) -> Bool {
+        context.measures.contains { $0.categoryKey == key && context.applies($0, on: day) }
+    }
+
+    /// The day's values (not work and spending – they have their tiles): measured, from Health on
+    /// the iPhone (H1), or still missing.
+    private var valueLines: [GlanceValueLine] {
+        context.measures.compactMap { measure -> GlanceValueLine? in
+            guard let record = measure.record, !record.isWork, !record.isExpense, !record.isText,
+                  context.applies(measure, on: day) else { return nil }
+            if let value = context.dayValue(measure, on: day) {
+                return GlanceValueLine(id: measure.code, title: measure.title,
+                                       value: Format.measure(value, unit: measure.unit), kind: .value)
+            }
+            if context.isHealthElsewhere(measure) {
+                return GlanceValueLine(id: measure.code, title: measure.title, value: WeekContext.healthElsewhereHint, kind: .health)
+            }
+            guard record.period == .day, day <= app.today, context.countsAsMissing(measure, on: day) else { return nil }
+            return GlanceValueLine(id: measure.code, title: measure.title, value: "fehlt", kind: .missing)
+        }
+    }
+}
+
+/// "Montag · Arbeitstag", "16. Nov. · KW47 · 73 % erfasst", the day's note and the work-free hint
+/// (R50, R78, R90) – the date only once.
+private struct GlanceHeader: View {
+    let context: WeekContext
+    let day: DayKey
+
+    private var fill: Double {
+        context.score.days[day]?.coverage ?? 0
+    }
+
+    private var shownScore: Double? {
+        guard context.isClosed(day) else { return nil }
+        return context.score.days[day]?.score
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(GlanceText.title(day: day, type: context.dayType(day)))
+                    .font(.title3.weight(.bold))
+                Text(GlanceText.dateLine(context, day: day))
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                DayNoteLabel(note: context.dayNote(day))
+                if context.isFreeDay(day) {
+                    Label(DayTypes.workFreeHint, systemImage: "sun.max")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            if context.hasPlan {
+                FillRing(fill: fill, score: shownScore, size: 44, lineWidth: 5)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A category of the day: fill and "3/5", or its score once complete; a tap opens it in Today.
+private struct GlanceCategoryRow: View {
+    let category: TrackCategory
+    let entry: CategoryDay
+    let onOpen: () -> Void
+
+    private var trailing: String {
+        if entry.isComplete { return Format.score(entry.score, outOf: false) }
+        return "\(entry.due - entry.blank)/\(entry.due)"
+    }
+
+    private var trailingStyle: Color {
+        entry.isComplete ? .primary : .secondary
+    }
+
+    private var fillTint: Color {
+        entry.isComplete ? .green : Brand.accent
+    }
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: 10) {
+                KeyBadge(key: category.key)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(category.title)
+                        .lineLimit(1)
+                    if entry.due > 0 {
+                        ProgressView(value: entry.fill)
+                            .tint(fillTint)
+                    }
+                }
+                Spacer(minLength: 8)
+                if entry.due > 0 {
+                    Text(trailing)
+                        .font(.callout)
+                        .monospacedDigit()
+                        .foregroundStyle(trailingStyle)
+                }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// One value of the day in "Messwerte".
+private struct GlanceValueLine: Identifiable {
+    enum Kind { case value, health, missing }
+    let id: String
+    let title: String
+    let value: String
+    let kind: Kind
+}
+
+private struct GlanceValueRow: View {
+    let line: GlanceValueLine
+
+    private var valueColor: Color {
+        switch line.kind {
+        case .value: return .primary
+        case .health: return .secondary
+        case .missing: return .orange
+        }
+    }
+
+    private var valueFont: Font {
+        line.kind == .health ? .caption : .body
+    }
+
+    var body: some View {
+        LabeledContent(line.title) {
+            Text(line.value)
+                .font(valueFont)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(valueColor)
+        }
+    }
+}
+
+/// Short texts shared by the tiles, the header, the Mac sidebar and the menu bar (kept out of view
+/// expressions).
 enum GlanceText {
     static func weekPowerHours(_ value: Double, target: Double?) -> String {
         guard let target else { return "Woche \(Format.powerHours(value))" }
@@ -394,12 +416,14 @@ enum GlanceText {
     }
 
     static func euro(_ value: Double?) -> String? {
-        value.map { Format.measure($0, unit: "€") }
+        value.map { Format.euro($0) }
     }
 
+    /// "73 % erfasst · 11 offen" – the open count is the ring's (R5); closed: the score.
     static func dayLine(_ overall: DayOverall?, closed: Bool, open: Int) -> String {
         if closed { return "Abgeschlossen · \(Format.score(overall?.score, outOf: true))" }
-        return "\(overall?.coverageText ?? "0 %") erfasst · \(open) offen"
+        let coverage: String = overall?.coverageText ?? "0 %"
+        return "\(coverage) erfasst · \(open) offen"
     }
 
     static func focusLine(today: WorkTotals, week: WorkTotals, target: Double?) -> String {
@@ -409,39 +433,108 @@ enum GlanceText {
     }
 
     static func expensesLine(today: Double?, week: Double?) -> String {
-        "Ausgaben \(Format.measure(today ?? 0, unit: "€")) heute · \(Format.measure(week ?? 0, unit: "€")) Woche"
+        "Ausgaben \(Format.euro(today ?? 0)) heute · \(Format.euro(week ?? 0)) Woche"
+    }
+
+    /// "Wertung 7,1 · 6/10 Ziele bewertet" (R16).
+    static func weekLine(_ score: WeekScore) -> String {
+        "Wertung \(Format.score(score.overall)) · \(score.goalsScored)/\(score.goalsTotal) Ziele bewertet"
+    }
+
+    /// "Montag · Arbeitstag" (R50).
+    static func title(day: DayKey, type: String) -> String {
+        let trimmed: String = type.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? day.weekday.name : "\(day.weekday.name) · \(trimmed)"
+    }
+
+    /// "16. Nov." – the date without the weekday.
+    static func date(_ day: DayKey) -> String {
+        let parts = day.shortLabel.split(separator: ",", maxSplits: 1)
+        guard parts.count == 2, let last = parts.last else { return day.shortLabel }
+        return last.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// "16. Nov. · KW47 · 73 % erfasst"; closed: "… · Wertung 7,5" (R50).
+    static func dateLine(_ context: WeekContext, day: DayKey) -> String {
+        var parts: [String] = [date(day), day.week.label]
+        if context.hasPlan {
+            if context.isClosed(day) {
+                parts.append("Wertung \(Format.score(context.score.days[day]?.score))")
+            } else if day <= context.today {
+                let coverage: String = context.score.days[day]?.coverageText ?? "0 %"
+                parts.append("\(coverage) erfasst")
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "Lesen 120/150 Seiten", "Ausgaben 32,50 €/50 €" (R17).
+    static func targetLine(_ target: WeeklyTarget) -> String {
+        let title: String = target.item?.title ?? target.measure.title
+        if target.unit != "PH" && Units.normalized(target.measure.unit) == "€" {
+            return "\(title) \(Format.euro(target.value))/\(Format.euro(target.target.scaleMax))"
+        }
+        let unit: String = target.unit.isEmpty ? "" : " \(target.unit)"
+        return "\(title) \(Format.number(target.value))/\(Format.number(target.target.scaleMax))\(unit)"
     }
 }
 
-/// Three tiles at the top of the day overview: focus, spending, weekly goals – each opens its view.
+/// Three tiles at the top of "Heute im Blick": Fokus, Ausgaben, Wochenziele – each opens its view
+/// (pushed inside the sheet, a sheet of its own from the Mac's column).
 struct GlanceTiles: View {
     let context: WeekContext
     let day: DayKey
     @Environment(AppModel.self) private var app
+    @Environment(GlanceNavigator.self) private var navigator: GlanceNavigator?
 
     var body: some View {
-        let totals = context.workTotals(on: day)
-        let week = context.workTotals()
-        let expenses: MeasureDefinition? = context.expenseMeasure
-        let goals: [TodaySummary.GoalLine] = context.weeklyLines
-        let reached: Int = goals.filter { $0.value >= $0.target - 1e-9 }.count
         HStack(spacing: 10) {
-            GlanceTile(symbol: "bolt.fill", title: "Fokus", value: totals.isEmpty ? "0 PH" : totals.shortText,
-                       detail: GlanceText.weekPowerHours(week.powerHours, target: context.workTarget),
+            GlanceTile(symbol: "bolt.fill", title: "Fokus", value: focusValue, detail: focusDetail,
                        tint: GoalPalette.color(goal: "3")) {
-                app.sheet = .focus(day.week)
+                open(.focus)
             }
-            GlanceTile(symbol: "eurosign.circle.fill", title: "Ausgaben",
-                       value: GlanceText.euro(expenses.flatMap { context.dayValue($0, on: day) }) ?? "0 €",
-                       detail: GlanceText.euro(expenses.flatMap { context.weekValue($0) }).map { "Woche \($0)" } ?? "erfassen",
+            GlanceTile(symbol: "eurosign.circle.fill", title: "Ausgaben", value: expensesValue, detail: expensesDetail,
                        tint: GoalPalette.color(goal: "8")) {
-                app.sheet = .expenses(day)
+                open(.expenses)
             }
-            GlanceTile(symbol: "chart.bar.fill", title: "Ziele", value: goals.isEmpty ? "–" : "\(reached)/\(goals.count)",
-                       detail: goals.isEmpty ? "keine Wochenziele" : "Wochenziele erreicht", tint: GoalPalette.color(goal: "2")) {
-                app.sheet = .focus(day.week)
+            GlanceTile(symbol: "chart.bar.fill", title: "Wochenziele", value: targetsValue, detail: targetsDetail,
+                       tint: GoalPalette.color(goal: "2")) {
+                open(.weeklyGoals)
             }
         }
+    }
+
+    private func open(_ route: GlanceRoute) {
+        route.open(day: day, app: app, navigator: navigator)
+    }
+
+    private var focusValue: String {
+        let totals: WorkTotals = context.workTotals(on: day)
+        return totals.isEmpty ? "0 PH" : totals.shortText
+    }
+
+    private var focusDetail: String {
+        GlanceText.weekPowerHours(context.workTotals().powerHours, target: context.workTarget)
+    }
+
+    private var expensesValue: String {
+        guard let measure = context.expenseMeasure else { return Format.euro(0) }
+        return Format.euro(context.dayValue(measure, on: day) ?? 0)
+    }
+
+    private var expensesDetail: String {
+        guard let measure = context.expenseMeasure, let week = context.weekValue(measure) else { return "erfassen" }
+        return "Woche \(Format.euro(week))"
+    }
+
+    /// "6/10" weekly targets met – counted like the PDF and the report (R16).
+    private var targetsValue: String {
+        let count: Int = context.weeklyTargets.count
+        return count == 0 ? "–" : "\(context.weeklyTargetsMet)/\(count)"
+    }
+
+    private var targetsDetail: String {
+        context.weeklyTargets.isEmpty ? "keine Wochenziele" : "erreicht"
     }
 }
 
@@ -483,11 +576,13 @@ private struct GlanceTile: View {
     }
 }
 
-/// "Noch zu tun": the open required items by category – tap jumps there.
+/// "Noch zu tun": the blank required items by category (R5 – as many as the ring counts); a tap
+/// jumps there. With nothing open, `onClose` offers "Tag abschließen" (R50).
 struct OpenToDoSection: View {
     let context: WeekContext
     let day: DayKey
     let onOpen: (TodayPage) -> Void
+    var onClose: (() -> Void)? = nil
 
     var body: some View {
         let open: [PlanItem] = context.openToDo(on: day)
@@ -497,6 +592,13 @@ struct OpenToDoSection: View {
             if open.isEmpty {
                 Label("Alles Wichtige ist erfasst.", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
+                if let onClose {
+                    Button(action: onClose) {
+                        Label("Tag abschließen", systemImage: "moon.stars")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .thaliaPrimaryAction()
+                }
             }
             ForEach(keys, id: \.self) { key in
                 Button {
@@ -521,15 +623,231 @@ struct OpenToDoSection: View {
                 .buttonStyle(.plain)
             }
         } header: {
-            Text(open.isEmpty ? "Noch zu tun" : "Noch zu tun · \(open.count)")
+            Text(OpenToDoSection.heading(count: open.count))
         }
+    }
+
+    /// "Noch zu tun" · "Noch zu tun · 3".
+    static func heading(count: Int) -> String {
+        count == 0 ? "Noch zu tun" : "Noch zu tun · \(count)"
+    }
+}
+
+/// "Diese Woche noch · n": n×-per-week items due today whose quota isn't reached yet, with
+/// "2 von 3 diese Woche" (R5); a tap jumps to the category.
+struct WeeklyOpenSection: View {
+    let context: WeekContext
+    let day: DayKey
+    let onOpen: (TodayPage) -> Void
+
+    var body: some View {
+        let open: [PlanItem] = context.openWeeklyToDo(on: day)
+        if !open.isEmpty {
+            Section {
+                ForEach(open) { item in
+                    Button {
+                        onOpen(.category(item.categoryKey))
+                    } label: {
+                        HStack(spacing: 10) {
+                            KeyBadge(key: item.categoryKey)
+                            Text(item.title)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 6)
+                            Text(quotaText(item))
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("Diese Woche noch · \(open.count)")
+            }
+        }
+    }
+
+    private func quotaText(_ item: PlanItem) -> String {
+        guard let quota = context.quotaProgress(item) else { return "" }
+        return "\(quota.done) von \(quota.target) diese Woche"
+    }
+}
+
+// MARK: Yesterday (R94)
+
+/// "So, 15. Nov. · 3 offen": yesterday had a plan and isn't closed – catch up or close it. Hidden
+/// per day with ×; gone once the day is closed.
+struct YesterdayBanner: View {
+    enum Style {
+        case card, sidebar
+    }
+
+    let today: DayKey
+    let style: Style
+    @Environment(AppModel.self) private var app
+    @AppStorage("yesterday.dismissed") private var dismissed = ""
+
+    init(today: DayKey, style: Style = .card) {
+        self.today = today
+        self.style = style
+    }
+
+    private var yesterday: DayKey { today.adding(days: -1) }
+
+    var body: some View {
+        WeekReader(week: yesterday.week, today: today) { context in
+            if isVisible(context) {
+                switch style {
+                case .card:
+                    card(summary(context))
+                case .sidebar:
+                    sidebar(summary(context))
+                }
+            }
+        }
+    }
+
+    private func isVisible(_ context: WeekContext) -> Bool {
+        guard dismissed != yesterday.string, context.hasPlan, !context.isClosed(yesterday) else { return false }
+        return !context.items(on: yesterday).isEmpty
+    }
+
+    /// "So, 15. Nov. · 3 offen" / "So, 15. Nov. · nicht abgeschlossen".
+    private func summary(_ context: WeekContext) -> String {
+        let open: Int = context.openCount(on: yesterday)
+        if open > 0 { return "\(yesterday.shortLabel) · \(open) offen" }
+        return "\(yesterday.shortLabel) · nicht abgeschlossen"
+    }
+
+    private func card(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "moon.zzz.fill")
+                .font(.title3)
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(text)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                HStack(spacing: 8) {
+                    Button("Nachtragen", action: catchUp)
+                        .buttonStyle(.bordered)
+                    Button("Abschließen", action: close)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.accentFill)
+                }
+                .controlSize(.small)
+            }
+            Spacer(minLength: 4)
+            Button(action: hide) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Ausblenden")
+            .help("Ausblenden")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.12), in: .rect(cornerRadius: 14, style: .continuous))
+    }
+
+    /// Mac sidebar: two grey lines, the second with links.
+    private func sidebar(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Label(text, systemImage: "moon.zzz.fill")
+                .monospacedDigit()
+            HStack(spacing: 10) {
+                Button("Nachtragen", action: catchUp)
+                Button("Abschließen", action: close)
+                Spacer(minLength: 0)
+                Button(action: hide) {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Ausblenden")
+                .help("Ausblenden")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Brand.accent)
+        }
+        .padding(.horizontal, 6)
+    }
+
+    /// Today on yesterday, to fill in what's missing.
+    private func catchUp() {
+        if case .dayOverview(_)? = app.sheet { app.sheet = nil }
+        app.selectedDay = yesterday
+        app.selectedWeek = yesterday.week
+        app.todayPage = nil
+        app.tab = .today
+        app.sidebar = .today
+    }
+
+    private func close() {
+        app.sheet = .closeDay(yesterday)
+    }
+
+    private func hide() {
+        dismissed = yesterday.string
+    }
+}
+
+// MARK: Wochenziele (R16)
+
+/// All weekly targets of a week with their pace – the same list as Week and "Heute im Blick".
+struct WeeklyGoalsSheet: View {
+    let week: WeekKey
+    @Environment(\.dismiss) private var dismiss
+
+    init(week: WeekKey) {
+        self.week = week
+    }
+
+    var body: some View {
+        NavigationStack {
+            WeeklyGoalsPage(week: week)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        SheetCloseButton { dismiss() }
+                    }
+                }
+        }
+        .thaliaSheetFrame(width: 480, height: 560)
+    }
+}
+
+/// "Wochenziele · KW47" – its own sheet or pushed inside "Heute im Blick" (R51).
+struct WeeklyGoalsPage: View {
+    let week: WeekKey
+    @Environment(AppModel.self) private var app
+
+    init(week: WeekKey) {
+        self.week = week
+    }
+
+    var body: some View {
+        WeekReader(week: week, today: app.today) { context in
+            List {
+                Section {
+                    WeeklyTargetsList(context: context)
+                }
+            }
+            .compactListSections()
+        }
+        .navigationTitle("Wochenziele · \(week.label)")
+        .inlineNavigationTitle()
     }
 }
 
 // MARK: Mac sidebar (F4.1)
 
-/// Grey, always visible under the navigation: today and the week in a few lines. Click opens the
-/// matching view.
+/// Grey, always visible under the navigation: today and the week in a few lines. "HEUTE" shows
+/// "Heute im Blick" as the right column (R59), the other lines open their view.
 struct SidebarGlance: View {
     @Environment(AppModel.self) private var app
 
@@ -545,60 +863,121 @@ private struct SidebarGlanceText: View {
     let day: DayKey
     @Environment(AppModel.self) private var app
 
+    /// "73 % erfasst · 11 offen" – the ring's count (R5).
+    private var dayLine: String {
+        guard context.hasPlan else { return "Kein Plan" }
+        return GlanceText.dayLine(context.score.days[day], closed: context.isClosed(day), open: context.openCount(on: day))
+    }
+
+    /// The plan's note for today (R90).
+    private var dayNote: String {
+        context.dayNote(day).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var focusLine: String {
+        GlanceText.focusLine(today: context.workTotals(on: day), week: context.workTotals(), target: context.workTarget)
+    }
+
+    private func expensesLine(_ measure: MeasureDefinition) -> String {
+        GlanceText.expensesLine(today: context.dayValue(measure, on: day), week: context.weekValue(measure))
+    }
+
+    /// The right column is showing next to Today.
+    private var isGlanceShown: Bool {
+        (app.sidebar ?? .today) == .today && app.showsGlanceInspector
+    }
+
+    private var glanceHelp: String {
+        isGlanceShown ? "Heute im Blick ausblenden" : "Heute im Blick einblenden"
+    }
+
+    /// Like ⌘0 and the ring (R59): shows the column next to Today, or hides it when it shows.
+    private func toggleGlance() {
+        let shown: Bool = isGlanceShown
+        app.sidebar = .today
+        app.showsGlanceInspector = !shown
+    }
+
     var body: some View {
-        let overall: DayOverall? = context.score.days[day]
-        let closed: Bool = context.isClosed(day)
-        let todayWork = context.workTotals(on: day)
-        let weekWork = context.workTotals()
-        let expenses: MeasureDefinition? = context.expenseMeasure
-        let open: Int = context.openToDo(on: day).count
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                app.sheet = .dayOverview(day)
-            } label: {
+        VStack(alignment: .leading, spacing: 6) {
+            SidebarLink(help: glanceHelp, action: toggleGlance) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("HEUTE · \(day.shortLabel.uppercased())")
                         .font(.system(size: 9.5, weight: .bold))
                         .tracking(0.6)
-                    Text(GlanceText.dayLine(overall, closed: closed, open: open))
+                    Text(dayLine)
+                        .monospacedDigit()
+                    if !dayNote.isEmpty {
+                        Text("Besonderheit: \(dayNote)")
+                            .lineLimit(2)
+                    }
                 }
             }
-            .buttonStyle(.plain)
-            Button {
-                app.sheet = .focus(day.week)
-            } label: {
-                Text(GlanceText.focusLine(today: todayWork, week: weekWork, target: context.workTarget))
+            YesterdayBanner(today: day, style: .sidebar)
+            SidebarLink(help: "Fokus öffnen") {
+                app.sheet = .focus(day)
+            } content: {
+                Text(focusLine)
             }
-            .buttonStyle(.plain)
-            if let expenses {
-                Button {
+            if let expenses = context.expenseMeasure {
+                SidebarLink(help: "Ausgaben öffnen") {
                     app.sheet = .expenses(day)
-                } label: {
-                    Text(GlanceText.expensesLine(today: context.dayValue(expenses, on: day), week: context.weekValue(expenses)))
+                } content: {
+                    Text(expensesLine(expenses))
                 }
-                .buttonStyle(.plain)
             }
-            Button {
+            SidebarLink(help: "Woche öffnen") {
                 app.sidebar = .week
                 app.selectedWeek = day.week
-            } label: {
+            } content: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("WOCHE · \(context.week.label)")
                         .font(.system(size: 9.5, weight: .bold))
                         .tracking(0.6)
-                    Text("Wertung \(Format.score(context.score.overall, outOf: true)) · \(context.score.goalsScored)/\(context.score.goalsTotal) Ziele")
-                    ForEach(context.weeklyLines.prefix(3), id: \.title) { line in
-                        Text("\(line.title) \(Format.number(line.value))/\(Format.number(line.target)) \(line.unit)")
+                    Text(GlanceText.weekLine(context.score))
+                    ForEach(context.weeklyTargets.prefix(3)) { target in
+                        Text(GlanceText.targetLine(target))
                             .lineLimit(1)
                     }
                 }
             }
-            .buttonStyle(.plain)
         }
         .font(.system(size: 11))
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+    }
+}
+
+/// A grey sidebar line that shows on hover that it can be clicked, with a tooltip (R59).
+private struct SidebarLink<Content: View>: View {
+    let help: String
+    let action: () -> Void
+    let content: Content
+    @State private var hovering = false
+
+    init(help: String, action: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.help = help
+        self.action = action
+        self.content = content()
+    }
+
+    private var hoverFill: Color {
+        hovering ? Color.primary.opacity(0.07) : Color.clear
+    }
+
+    var body: some View {
+        Button(action: action) {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(hoverFill, in: .rect(cornerRadius: 6, style: .continuous))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
     }
 }

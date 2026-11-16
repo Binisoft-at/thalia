@@ -70,6 +70,9 @@ public enum PlanCSV {
         public var plannedWeeks: Set<WeekKey> = []
         /// Weeks whose measurement list is in the file.
         public var measuredWeeks: Set<WeekKey> = []
+        /// Closed days and weeks (flag `abgeschlossen` on day and week rows, R27).
+        public var closedDays: Set<DayKey> = []
+        public var closedWeeks: Set<WeekKey> = []
 
         public init() {}
 
@@ -159,6 +162,7 @@ public enum PlanCSV {
                                         recordedScore: Format.parse(col("value")), scoringModel: model)
                 doc.weeks.removeAll { $0.week == week }
                 doc.weeks.append(record)
+                if flagSet(col("flags")).contains(closedFlag) { doc.closedWeeks.insert(week) }
 
             case .day:
                 guard let key = day(from: id) ?? day(from: dateText) else {
@@ -166,6 +170,10 @@ public enum PlanCSV {
                     continue
                 }
                 warnDuplicate("day:\(key.string)", line: line)
+                let isClosed = flagSet(col("flags")).contains(closedFlag)
+                if isClosed { doc.closedDays.insert(key) }
+                // A row that only says "closed" leaves the day's type and note alone.
+                if isClosed, col("title").isEmpty, col("description").isEmpty { continue }
                 doc.days.removeAll { $0.day == key }
                 doc.days.append(DayRecord(day: key, dayType: col("title"), note: col("description")))
 
@@ -292,9 +300,23 @@ public enum PlanCSV {
                     continue
                 }
                 let flags = flagSet(col("flags"))
+                let estimate = flags.contains { ["schaetzung", "schätzung", "geschätzt", "geschaetzt", "estimate", "~"].contains($0) }
+                if flags.contains(singleFlag), !isText {
+                    // One of several single entries of the day (R27): time in `title`.
+                    let minutes = Format.parse(col("title"), isTime: true).map { Int($0) } ?? 0
+                    let part = EntryPart(value: value, note: col("note"), minutes: minutes, estimate: estimate)
+                    if let index = doc.entries.firstIndex(where: { $0.code == id && $0.day == key }), !doc.entries[index].parts.isEmpty {
+                        doc.entries[index].parts.append(part)
+                        doc.entries[index] = combined(doc.entries[index])
+                    } else {
+                        doc.entries.removeAll { $0.code == id && $0.day == key }
+                        doc.entries.append(combined(EntryRecord(code: id, day: key, value: nil, parts: [part])))
+                    }
+                    continue
+                }
                 doc.entries.removeAll { $0.code == id && $0.day == key }
                 doc.entries.append(EntryRecord(code: id, day: key, value: value, text: isText ? valueText : "", note: col("note"),
-                                               estimate: flags.contains { ["schaetzung", "schätzung", "geschätzt", "geschaetzt", "estimate", "~"].contains($0) }))
+                                               estimate: estimate))
 
             case .work:
                 guard let key = day(from: dateText) else {
@@ -388,6 +410,23 @@ public enum PlanCSV {
         }
     }
 
+    /// Flag on day and week rows: the day / week is closed (R27).
+    public static let closedFlag = "abgeschlossen"
+    /// Flag on entry rows: one of several single entries of the day, its time in `title` (R27).
+    public static let singleFlag = "einzeln"
+
+    /// The day's value from its single entries: sum, notes joined with "; ", estimated if any part is.
+    static func combined(_ entry: EntryRecord) -> EntryRecord {
+        var result = entry
+        let values = entry.parts.compactMap(\.value)
+        result.value = values.isEmpty ? nil : values.reduce(0, +)
+        result.note = entry.parts.map(\.note).filter { !$0.isEmpty }.joined(separator: "; ")
+        result.estimate = entry.parts.contains { $0.estimate }
+        result.text = ""
+        result.order = 0
+        return result
+    }
+
     static func flagSet(_ text: String) -> [String] {
         text.lowercased().split(whereSeparator: { " ,;|+".contains($0) }).map(String.init)
     }
@@ -425,8 +464,9 @@ public enum PlanCSV {
             row(["type": "category", "id": category.key, "parent": category.goalKey, "title": category.title, "description": category.details])
         }
 
-        var weeks = Set(doc.weeks.map(\.week))
-        for day in doc.days.map(\.day) + doc.marks.map(\.day) + doc.entries.map(\.day) + doc.work.map(\.day) + doc.notes.map(\.day) + doc.scores.map(\.day) {
+        var weeks = Set(doc.weeks.map(\.week)).union(doc.closedWeeks)
+        for day in doc.days.map(\.day) + doc.marks.map(\.day) + doc.entries.map(\.day) + doc.work.map(\.day) + doc.notes.map(\.day)
+            + doc.scores.map(\.day) + Array(doc.closedDays) {
             weeks.insert(day.week)
         }
         for item in doc.items { weeks.insert(item.week) }
@@ -434,11 +474,17 @@ public enum PlanCSV {
 
         for week in weeks.sorted() {
             let record = doc.weeks.first { $0.week == week } ?? WeekRecord(week: week)
+            var weekFlags: [String] = record.isOldScoring ? ["alt"] : []
+            if doc.closedWeeks.contains(week) { weekFlags.append(closedFlag) }
             row(["type": "week", "id": week.string, "title": record.title, "description": record.details,
-                 "flags": record.isOldScoring ? "alt" : "", "value": record.recordedScore.map(Format.plain) ?? "",
+                 "flags": weekFlags.joined(separator: ","), "value": record.recordedScore.map(Format.plain) ?? "",
                  "date": week.monday.string])
-            for day in doc.days.filter({ week.contains($0.day) }).sorted(by: { $0.day < $1.day }) {
-                row(["type": "day", "id": day.day.string, "title": day.dayType, "description": day.note])
+            for day in week.days {
+                let info = doc.days.first { $0.day == day }
+                let isClosed = doc.closedDays.contains(day)
+                guard info != nil || isClosed else { continue }
+                row(["type": "day", "id": day.string, "title": info?.dayType ?? "", "description": info?.note ?? "",
+                     "flags": isClosed ? closedFlag : ""])
             }
             for measure in doc.measures.filter({ $0.week == week }).sorted(by: { ($0.position, $0.code) < ($1.position, $1.code) }) {
                 row(["type": "measure", "id": measure.code, "parent": measure.categoryKey, "title": measure.title,
@@ -457,6 +503,15 @@ public enum PlanCSV {
                 row(["type": "mark", "id": mark.itemCode, "date": mark.day.string, "value": mark.mark?.rawValue ?? "", "note": mark.note])
             }
             for entry in doc.entries.filter({ week.contains($0.day) }).sorted(by: { ($0.day, $0.code) < ($1.day, $1.code) }) {
+                if !entry.parts.isEmpty {
+                    // Every single entry with its time (R27); older versions read only the last row.
+                    for part in entry.parts.sorted(by: { $0.minutes < $1.minutes }) {
+                        let flags = [singleFlag] + (part.estimate ? ["schaetzung"] : [])
+                        row(["type": "entry", "id": entry.code, "date": entry.day.string, "title": Format.clock(Double(part.minutes)),
+                             "value": part.value.map(Format.plain) ?? "", "flags": flags.joined(separator: ","), "note": part.note])
+                    }
+                    continue
+                }
                 let unitIsText = entry.value == nil && !entry.text.isEmpty
                 row(["type": "entry", "id": entry.code, "date": entry.day.string,
                      "value": unitIsText ? entry.text : (entry.value.map(Format.plain) ?? ""),
@@ -478,5 +533,50 @@ public enum PlanCSV {
             }
         }
         return CSV.write(table)
+    }
+}
+
+extension PlanCSV.Document {
+    /// Only one week's plan (R91): its week row, day rows, measurements and items – no results.
+    public func planOnly(week: WeekKey) -> PlanCSV.Document {
+        var doc = PlanCSV.Document()
+        doc.weeks = weeks.filter { $0.week == week }.map { record in
+            var plan = record
+            plan.recordedScore = nil
+            return plan
+        }
+        doc.days = days.filter { week.contains($0.day) }
+        doc.measures = measures.filter { $0.week == week }
+        doc.items = items.filter { $0.week == week }
+        if !doc.items.isEmpty { doc.plannedWeeks = [week] }
+        if !doc.measures.isEmpty { doc.measuredWeeks = [week] }
+        return doc
+    }
+
+    /// The plan of `source` as the plan for `target` (R92): title and context of the source week,
+    /// days moved by whole weeks (type and note stay), measurements and items with the same codes.
+    /// No results, no closings, no reported score.
+    public func repeated(from source: WeekKey, to target: WeekKey) -> PlanCSV.Document {
+        let shift = target.monday.ordinal - source.monday.ordinal
+        var doc = PlanCSV.Document()
+        let sourceRecord = weeks.first { $0.week == source }
+        doc.weeks = [WeekRecord(week: target, title: sourceRecord?.title ?? "", details: sourceRecord?.details ?? "",
+                                recordedScore: nil, scoringModel: target < WeekRecord.scoringChange ? "alt" : "")]
+        doc.days = days.filter { source.contains($0.day) }.map { day in
+            DayRecord(day: day.day.adding(days: shift), dayType: day.dayType, note: day.note)
+        }
+        doc.measures = measures.filter { $0.week == source }.map { measure in
+            var copy = measure
+            copy.week = target
+            return copy
+        }
+        doc.items = items.filter { $0.week == source }.map { item in
+            var copy = item
+            copy.week = target
+            return copy
+        }
+        if !doc.items.isEmpty { doc.plannedWeeks = [target] }
+        if !doc.measures.isEmpty { doc.measuredWeeks = [target] }
+        return doc
     }
 }

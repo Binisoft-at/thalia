@@ -73,9 +73,21 @@ public enum Format {
         number(value, decimals: 2) + " PH"
     }
 
-    /// A measured value with its unit: "150 g", "2,5 l", "23:10", "7,5 h".
+    /// To the cent (R17): 12.99 → "12,99 €", 2.5 → "2,50 €", 13 → "13 €", 1234.5 → "1.234,50 €",
+    /// -3.5 → "-3,50 €".
+    public static func euro(_ value: Double) -> String {
+        guard value.isFinite else { return "– €" }
+        let cents = Int((abs(value) * 100).rounded())
+        let negative = value < 0 && cents > 0
+        var text = grouped(cents / 100)
+        if cents % 100 > 0 { text += "," + String(format: "%02d", cents % 100) }
+        return (negative ? "-" : "") + text + " €"
+    }
+
+    /// A measured value with its unit: "150 g", "2,5 l", "23:10", "7,5 h", "12,99 €".
     public static func measure(_ value: Double, unit: String) -> String {
         if Units.isTime(unit) { return clock(value) }
+        if Units.normalized(unit) == "€" { return euro(value) }
         let shown = Units.display(unit)
         let decimals = Units.normalized(unit) == "l" ? 2 : 1
         return shown.isEmpty ? number(value, decimals: decimals) : "\(number(value, decimals: decimals)) \(shown)"

@@ -31,4 +31,23 @@ extension View {
         self
         #endif
     }
+
+    /// iPhone: a bar above the number pad with one button ("Fertig" or "Weiter"), only while
+    /// `isActive` (R31). The Mac has Return.
+    @ViewBuilder
+    func keypadButton(_ title: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        #if os(iOS)
+        self.toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                if isActive {
+                    Spacer()
+                    Button(title, action: action)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        #else
+        self
+        #endif
+    }
 }

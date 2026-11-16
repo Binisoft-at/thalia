@@ -9,13 +9,23 @@ import HealthKit
 
 // MARK: Reminders
 
-/// Local notifications from `ReminderSettings` (Core): morning start, evening review, weekly
-/// review. Tapping one opens the right screen.
+/// Local notifications from `ReminderSettings` (Core): morning start, the evening review (one per
+/// day for the next 7 days, closed days left out) and the weekly review. Tapping one opens the
+/// right screen; "In 30 Min." on the evening one brings it back later (R80).
 enum ReminderScheduler {
+    /// The stored settings; the Mac starts with every reminder off (the iPhone already reminds).
     static func load() -> ReminderSettings {
         guard let data = UserDefaults.standard.data(forKey: ReminderSettings.storageKey),
-              let settings = try? JSONDecoder().decode(ReminderSettings.self, from: data) else { return ReminderSettings() }
+              let settings = try? JSONDecoder().decode(ReminderSettings.self, from: data) else { return defaults }
         return settings
+    }
+
+    static var defaults: ReminderSettings {
+        #if os(macOS)
+        return .macDefault
+        #else
+        return ReminderSettings()
+        #endif
     }
 
     static func save(_ settings: ReminderSettings) {
@@ -24,20 +34,59 @@ enum ReminderScheduler {
         }
     }
 
-    /// Replaces the repeating reminders. Returns a short status line for Settings.
+    /// Suffix of a snoozed evening reminder ("thalia.evening.2026-11-16.snooze").
+    static let snoozeSuffix = ".snooze"
+
+    /// The "In 30 Min." action on the evening reminder.
+    static func registerCategories() {
+        let snooze = UNNotificationAction(identifier: ReminderSettings.snoozeActionID, title: "In 30 Min.", options: [])
+        let evening = UNNotificationCategory(identifier: ReminderSettings.eveningCategoryID, actions: [snooze],
+                                             intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([evening])
+    }
+
+    /// Replaces the planned reminders. Asks for permission only with `authorize` (after the tour,
+    /// in Settings); otherwise plans only when notifications are already allowed. Returns a short
+    /// status line for Settings.
     @MainActor
-    static func apply(_ settings: ReminderSettings) async -> String {
+    static func apply(_ settings: ReminderSettings, authorize: Bool,
+                      isClosed: @escaping (DayKey) -> Bool = { _ in false }) async -> String {
         let center = UNUserNotificationCenter.current()
         let requests = settings.requests()
-        let old = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix("thalia.") }
+        let evenings = settings.eveningRequests(from: DayKey.today(), isClosed: isClosed)
+        let old = await center.pendingNotificationRequests().map(\.identifier)
+            .filter { $0.hasPrefix("thalia.") && !$0.hasSuffix(snoozeSuffix) }
         center.removePendingNotificationRequests(withIdentifiers: old)
-        guard !requests.isEmpty else { return "Keine Erinnerungen geplant." }
-        do {
-            let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
-            guard granted else { return "Mitteilungen sind für Thalia ausgeschaltet (Systemeinstellungen → Mitteilungen)." }
-        } catch {
-            AppLog.warning("Notification permission failed: \(error.localizedDescription)", category: "reminders")
-            return "Mitteilungen konnten nicht erlaubt werden."
+        guard !requests.isEmpty || !evenings.isEmpty else { return "Keine Erinnerungen geplant." }
+        let status = await center.notificationSettings().authorizationStatus
+        if status != .authorized {
+            guard authorize else { return "Mitteilungen sind für Thalia noch nicht erlaubt." }
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                guard granted else { return "Mitteilungen sind für Thalia ausgeschaltet (Systemeinstellungen → Mitteilungen)." }
+            } catch {
+                AppLog.warning("Notification permission failed: \(error.localizedDescription)", category: "reminders")
+                return "Mitteilungen konnten nicht erlaubt werden."
+            }
+        }
+        registerCategories()
+        let now = Date()
+        var planned = 0
+        for evening in evenings {
+            let fireDate = evening.day.date(minutes: Double(evening.hour * 60 + evening.minute))
+            guard fireDate > now else { continue }
+            let content = UNMutableNotificationContent()
+            content.title = evening.title
+            content.body = evening.body
+            content.sound = .default
+            content.categoryIdentifier = ReminderSettings.eveningCategoryID
+            content.userInfo = ["destination": evening.destination]
+            var components = Calendar.current.dateComponents([.year, .month, .day], from: evening.day.startDate())
+            components.hour = evening.hour
+            components.minute = evening.minute
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            try? await center.add(UNNotificationRequest(identifier: evening.id, content: content, trigger: trigger))
+            planned += 1
         }
         for request in requests {
             let content = UNMutableNotificationContent()
@@ -51,20 +100,53 @@ enum ReminderScheduler {
             components.weekday = request.gregorianWeekday
             let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
             try? await center.add(UNNotificationRequest(identifier: request.id, content: content, trigger: trigger))
+            planned += 1
         }
-        AppLog.info("Reminders scheduled: \(requests.count)", category: "reminders")
-        return "\(requests.count) Erinnerungen geplant."
+        AppLog.info("Reminders scheduled: \(planned)", category: "reminders")
+        return "\(Format.count(planned, "Erinnerung", "Erinnerungen")) geplant."
+    }
+
+    /// The day is closed: its evening reminder (pending, shown or snoozed) goes away (R80).
+    static func dayClosed(_ day: DayKey) {
+        let id = ReminderSettings.eveningID(day)
+        let ids = [id, id + snoozeSuffix]
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
+    /// The day is open again: plan the evenings anew (no permission prompt).
+    @MainActor
+    static func dayReopened(_ day: DayKey, isClosed: @escaping (DayKey) -> Bool) async {
+        _ = await apply(load(), authorize: false, isClosed: isClosed)
     }
 }
 
 /// Opens the screen a notification or a Shortcut points to.
 final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationRouter()
-    /// Set by `ThaliaApp`; receives "today", "close-day", "week" …
+    /// Set by `ThaliaApp`; receives "today", "close-day:2026-11-16", "close-week", "week" …
     var route: (@MainActor (String) -> Void)?
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let destination = response.notification.request.content.userInfo["destination"] as? String ?? "today"
+        let request = response.notification.request
+        let destination = request.content.userInfo["destination"] as? String ?? "today"
+        if response.actionIdentifier == ReminderSettings.snoozeActionID {
+            // "In 30 Min.": the same reminder once more, half an hour later (R80).
+            let content = UNMutableNotificationContent()
+            content.title = request.content.title
+            content.body = request.content.body
+            content.sound = .default
+            content.categoryIdentifier = ReminderSettings.eveningCategoryID
+            content.userInfo = ["destination": destination]
+            let base = request.identifier.hasSuffix(ReminderScheduler.snoozeSuffix)
+                ? String(request.identifier.dropLast(ReminderScheduler.snoozeSuffix.count)) : request.identifier
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(ReminderSettings.snoozeMinutes * 60), repeats: false)
+            try? await center.add(UNNotificationRequest(identifier: base + ReminderScheduler.snoozeSuffix, content: content, trigger: trigger))
+            AppLog.info("Evening reminder snoozed", category: "reminders")
+            return
+        }
+        guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
         let route = self.route
         await MainActor.run { route?(destination) }
     }

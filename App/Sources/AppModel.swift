@@ -2,6 +2,11 @@ import SwiftUI
 import SwiftData
 import BinisoftKit
 import ThaliaCore
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 enum AppTab: Hashable {
     case today, week, goals, review
@@ -44,7 +49,8 @@ enum AppSheet: Identifiable {
     case conditionals(DayKey)
     case archive
     case pdf(PDFKind)
-    case focus(WeekKey)
+    /// Focus for a day (R22).
+    case focus(DayKey)
     case expenses(DayKey)
     case dayInfo(DayKey)
     case weekInfo(WeekKey)
@@ -52,6 +58,16 @@ enum AppSheet: Identifiable {
     case explainer(Explainer)
     case trash
     case settings
+    /// All weekly targets with their pace (R16).
+    case weeklyGoals(WeekKey)
+    /// Plan exactly this week: import with the prompt (R56).
+    case planWeek(WeekKey)
+    /// Repeat a week's plan for another one, through the normal preview (R92).
+    case repeatPlan(from: WeekKey, to: WeekKey)
+    /// The item editor straight away (R63).
+    case editItem(PlanItem)
+    /// Prepare the goal review (R95).
+    case goalReview
 
     var id: String {
         switch self {
@@ -69,7 +85,7 @@ enum AppSheet: Identifiable {
         case .conditionals(let day): "conditionals-" + day.string
         case .archive: "archive"
         case .pdf(let kind): "pdf-" + kind.id
-        case .focus(let week): "focus-" + week.string
+        case .focus(let day): "focus-" + day.string
         case .expenses(let day): "expenses-" + day.string
         case .dayInfo(let day): "day-" + day.string
         case .weekInfo(let week): "week-" + week.string
@@ -77,6 +93,11 @@ enum AppSheet: Identifiable {
         case .explainer(let explainer): "explainer-" + explainer.rawValue
         case .trash: "trash"
         case .settings: "settings"
+        case .weeklyGoals(let week): "weekly-goals-" + week.string
+        case .planWeek(let week): "plan-" + week.string
+        case .repeatPlan(let from, let to): "repeat-\(from.string)-\(to.string)"
+        case .editItem(let item): "edit-item-" + item.uuid.uuidString
+        case .goalReview: "goal-review"
         }
     }
 }
@@ -112,8 +133,27 @@ final class AppModel {
     var tourModel: AppModel?
     /// A CSV opened from Files / "Open in" – the import sheet picks it up.
     var pendingImport: URL?
-    /// Today's date, refreshed when the app becomes active (midnight passes).
+    /// Today's date; follows the system day (midnight, time zone change, back in the app) (R1).
     var today: DayKey = .today()
+    /// Today's pages in order, set by the Today pager; ⌥⌘↓ / ⌥⌘↑ move through them (R35).
+    var todayPageOrder: [TodayPage] = []
+    /// An open sheet holds typed input that isn't saved yet (R14), set by `unsavedInput(_:in:)`.
+    var hasUnsavedInput = false
+    /// +1 for ⌘↩ / ⇧⌘↩ while the matching closing sheet is open: it closes instead of reopening (R39).
+    var closeRequest = 0
+    /// Number of toast layers (main window, sheets on top) – only the topmost shows the toast (R13).
+    var toastLevel = 0
+    /// The toast layers in the order they appeared; the last one is on top (R13).
+    private(set) var toastHosts: [UUID] = []
+    /// Height of the Mac main window, so sheets fit into it (R15).
+    var mainWindowHeight: CGFloat = 800
+    /// Mac menu bar label: "73 %", "7,5" once closed, "" without a plan (R96).
+    var menuBarTitle = ""
+
+    static let inspectorKey = "today.inspector"
+    private var inspectorStorage: Bool = UserDefaults.standard.bool(forKey: AppModel.inspectorKey)
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var widgetPublisher: WidgetPublisher?
 
     init(container: ModelContainer, mode: StorageMode, launch: LaunchOptions = .current, isSandbox: Bool = false) {
         self.container = container
@@ -124,7 +164,15 @@ final class AppModel {
         self.toasts = ToastCenter()
         guard !isSandbox else { return }
         applyLaunchOptions()
-        if !launch.isDemo { store.purgeExpired() }
+        startDayWatch()
+        if !launch.isDemo {
+            store.purgeExpired()
+            store.mergeDuplicates()
+            let publisher = WidgetPublisher(container: container)
+            publisher.start()
+            widgetPublisher = publisher
+        }
+        updateMenuBarTitle()
     }
 
     var store: TrackerStore { TrackerStore(context: container.mainContext) }
@@ -132,12 +180,164 @@ final class AppModel {
     /// Where menu commands act: the practice page during the tour, otherwise this model.
     var commandTarget: AppModel { tourModel ?? self }
 
+    /// The day every capture sheet starts with (R41).
+    var captureDay: DayKey { selectedDay }
+
+    /// Menu commands that open a sheet do nothing while a sheet holds unsaved input (R14).
+    var blocksSheetCommands: Bool { sheet != nil && hasUnsavedInput }
+
+    /// Mac: "Heute im Blick" as the right column next to Today; the choice survives a restart (R59).
+    var showsGlanceInspector: Bool {
+        get { inspectorStorage }
+        set {
+            inspectorStorage = newValue
+            if !isSandbox { UserDefaults.standard.set(newValue, forKey: AppModel.inspectorKey) }
+        }
+    }
+
+    // MARK: The day (R1, R6, R7, R18)
+
+    /// Watches the system day: midnight, time changes (iPhone) and the app becoming active (Mac).
+    private func startDayWatch() {
+        let center = NotificationCenter.default
+        var names: [Notification.Name] = [.NSCalendarDayChanged]
+        #if os(iOS)
+        names.append(UIApplication.significantTimeChangeNotification)
+        #elseif os(macOS)
+        names.append(NSApplication.didBecomeActiveNotification)
+        #endif
+        for name in names {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshToday() }
+            })
+        }
+        #if os(macOS)
+        observers.append(center.addObserver(forName: ModelContext.didSave, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateMenuBarTitle() }
+        })
+        #endif
+    }
+
+    /// A new day: the selected day and week move along when they were "today" (a day picked on
+    /// purpose stays), Today picks its start page anew, the widget gets the new day.
     func refreshToday() {
         let now = DayKey.today()
-        guard now != today else { return }
-        if selectedDay == today { selectedDay = now }
-        if selectedWeek == today.week { selectedWeek = now.week }
-        today = now
+        if now != today {
+            let previous = today
+            if selectedDay == previous {
+                selectedDay = now
+                todayPage = nil
+            }
+            if selectedWeek == previous.week { selectedWeek = now.week }
+            today = now
+            widgetPublisher?.publishNow()
+            AppLog.info("New day", category: "app")
+        }
+        updateMenuBarTitle()
+    }
+
+    /// Back to today: Today tab / sidebar, today's day and week (R7).
+    func goToToday() {
+        refreshToday()
+        selectedDay = today
+        selectedWeek = today.week
+        tab = .today
+        sidebar = .today
+    }
+
+    func isDayClosed(_ day: DayKey) -> Bool {
+        store.planDay(day)?.isClosed ?? false
+    }
+
+    /// The day "Tag abschließen" is about (R18): a day other than today that is on screen, else
+    /// before 4:00 the day before while it is still open, else today.
+    func dayToClose(showing day: DayKey? = nil) -> DayKey {
+        if let day, day != today { return day }
+        let store = self.store
+        return DayKey.closingDay(isClosed: { store.planDay($0)?.isClosed ?? false })
+    }
+
+    /// The next / previous page of Today (R35).
+    func moveTodayPage(by offset: Int) {
+        let order = todayPageOrder
+        guard !order.isEmpty, offset != 0 else { return }
+        let current: Int? = todayPage.flatMap { order.firstIndex(of: $0) }
+        let start: Int = current ?? (offset > 0 ? -1 : order.count)
+        let next: Int = min(max(start + offset, 0), order.count - 1)
+        todayPage = order[next]
+    }
+
+    // MARK: Widget, sync, menu bar (R4, R28, R87, R96)
+
+    /// Writes the widget snapshot now (leaving the app). The Mac and in-memory stores never write.
+    func publishWidgetNow() {
+        widgetPublisher?.publishNow()
+    }
+
+    /// After an iCloud sync: merge duplicated days/weeks, refresh the widget and the menu bar.
+    func afterSync() {
+        guard !isSandbox, !launch.isDemo else { return }
+        store.mergeDuplicates()
+        widgetPublisher?.publishNow()
+        updateMenuBarTitle()
+    }
+
+    /// ✓ from the widget (R87): only when the item is still open on that day.
+    func applyWidgetAction(_ action: WidgetMarkAction) {
+        guard let week = WeekKey(action.weekKey), let day = DayKey(action.dayKey) else { return }
+        let store = self.store
+        guard let item = store.items(week).first(where: { $0.code == action.itemCode }) else { return }
+        let context = store.weekContext(for: week, today: today)
+        guard context.mark(item, on: day) == nil else { return }
+        store.setMark(.done, item: item, day: day)
+        widgetPublisher?.publishNow()
+        AppLog.info("Widget tick applied", category: "widget")
+    }
+
+    /// Ticks the widget queued while the app wasn't reachable (R87).
+    func drainWidgetActions() {
+        #if os(iOS)
+        guard !isSandbox, !launch.isDemo else { return }
+        for action in WidgetBridge.drainPending() { applyWidgetAction(action) }
+        #endif
+    }
+
+    private func updateMenuBarTitle() {
+        #if os(macOS)
+        guard !isSandbox else { return }
+        let context = store.weekContext(for: today.week, today: today)
+        let title: String = context.hasPlan ? context.dayStatusText(today) : ""
+        if title != menuBarTitle { menuBarTitle = title }
+        #endif
+    }
+
+    // MARK: Toast layers (R13)
+
+    func registerToastHost(_ id: UUID) {
+        toastHosts.removeAll { $0 == id }
+        toastHosts.append(id)
+        toastLevel = toastHosts.count
+    }
+
+    func unregisterToastHost(_ id: UUID) {
+        toastHosts.removeAll { $0 == id }
+        toastLevel = toastHosts.count
+    }
+
+    /// 1 for the first layer (the window), 2 for a sheet on it …; 0 when not registered.
+    func toastLayer(of id: UUID) -> Int {
+        (toastHosts.firstIndex(of: id) ?? -1) + 1
+    }
+
+    // MARK: Reminders (R80)
+
+    /// Plans the reminders again (every time the app becomes active, 7 evenings ahead).
+    func scheduleReminders(authorize: Bool = false) {
+        guard !isSandbox, !launch.isDemo else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await ReminderScheduler.apply(ReminderScheduler.load(), authorize: authorize, isClosed: { self.isDayClosed($0) })
+        }
     }
 
     // MARK: Actions with Undo and feedback
@@ -150,11 +350,14 @@ final class AppModel {
         setMark(Mark.cycle(current), item: item, day: day)
     }
 
-    /// Power-hours always with an area and what they were for (K1).
-    func addPowerHours(_ powerHours: Double, categoryKey: String, task: String, day: DayKey) {
+    /// Power-hours always with an area and what they were for (K1); a toast with Undo (R13).
+    func addPowerHours(_ powerHours: Double, categoryKey: String, task: String, day: DayKey,
+                       result: String = "", nextStep: String = "") {
         let what: String = task.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !categoryKey.isEmpty, !what.isEmpty else { return }
-        let block = store.addWork(day: day, categoryKey: categoryKey, task: what, powerHours: powerHours)
+        let block = store.addWork(day: day, categoryKey: categoryKey, task: what, powerHours: powerHours,
+                                  result: result.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  nextStep: nextStep.trimmingCharacters(in: .whitespacesAndNewlines))
         toasts.show("\(Format.powerHours(powerHours)) · \(what)", symbol: "bolt.fill") { [weak self] in
             self?.store.trash([block])
         }
@@ -220,17 +423,61 @@ final class AppModel {
         }
     }
 
-    /// Sets a measurement's day value (typed into the tile); Undo sets the old value again.
+    /// Sets a measurement's day value (typed into the tile). Existing entries are changed, what
+    /// falls away goes to the trash; Undo puts every entry back exactly (R2).
     func setValue(_ value: Double?, for measure: MeasureDefinition, day: DayKey, toast: Bool = true) {
-        let aggregation = measure.record?.aggregation ?? .sum
-        let old = aggregation.apply(store.entries(code: measure.code, day: day).sorted { $0.recordedAt < $1.recordedAt }.compactMap(\.value))
-        guard old != value else { return }
-        store.setDayValue(code: measure.code, day: day, value: value)
-        guard toast else { return }
-        let shown = value.map { Format.measure($0, unit: measure.unit) } ?? "geleert"
+        let change = store.setDayValue(code: measure.code, day: day, value: value)
+        guard toast, !change.isEmpty else { return }
+        let shown: String = value.map { Format.measure($0, unit: measure.unit) } ?? "geleert"
         toasts.show("\(measure.title): \(shown)", symbol: "checkmark.circle.fill") { [weak self] in
-            self?.store.setDayValue(code: measure.code, day: day, value: old)
+            self?.store.undo(change)
         }
+    }
+
+    /// Takes over suggestions from measurements (R12), with Undo.
+    func applySuggestions(_ suggestions: [MarkSuggestion], day: DayKey) {
+        guard !suggestions.isEmpty else { return }
+        let previous = store.apply(suggestions: suggestions.map { ($0.item, $0.mark) }, day: day)
+        let count: String = Format.count(suggestions.count, "Vorschlag", "Vorschläge")
+        toasts.show("\(count) übernommen", symbol: "wand.and.stars") { [weak self] in
+            self?.store.restoreMarks(previous, day: day)
+        }
+    }
+
+    /// Changes a spending (R46): amount, what for, day; Undo restores it exactly.
+    func updateExpense(_ entry: MeasureEntry, amount: Double, what: String, day: DayKey) {
+        guard amount > 0, amount.isFinite else { return }
+        let before = store.editExpense(entry, amount: amount, what: what, day: day)
+        toasts.show("Ausgabe geändert", symbol: "eurosign.circle.fill") { [weak self] in
+            self?.store.restore(before)
+        }
+    }
+
+    /// Closes the day; its evening reminder is no longer needed (R80).
+    func closeDay(_ day: DayKey) {
+        store.closeDay(day)
+        if !isSandbox, !launch.isDemo { ReminderScheduler.dayClosed(day) }
+        widgetPublisher?.publishNow()
+        updateMenuBarTitle()
+    }
+
+    /// Opens the day again; its evening reminder is planned again (R80).
+    func reopenDay(_ day: DayKey) {
+        store.reopenDay(day)
+        if !isSandbox, !launch.isDemo {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await ReminderScheduler.dayReopened(day, isClosed: { self.isDayClosed($0) })
+            }
+        }
+        widgetPublisher?.publishNow()
+        updateMenuBarTitle()
+    }
+
+    /// Closes the week (its score is kept) with a short confirmation.
+    func closeWeek(_ week: WeekKey) {
+        store.closeWeek(week)
+        toasts.show("\(week.label) abgeschlossen", symbol: "checkmark.seal.fill")
     }
 
     /// Adds `step` to a measurement (the + on a tile). Undo removes the entry again.
@@ -270,10 +517,12 @@ final class AppModel {
         }
     }
 
+    /// After the tour Thalia asks for permission to send reminders (R80).
     func finishTour() {
         TourSchedule().markSeen(ThaliaTour.catalog)
         tour = nil
         tourModel = nil
+        scheduleReminders(authorize: true)
     }
 
     // MARK: Opening things
@@ -289,15 +538,27 @@ final class AppModel {
         sheet = .importPlan(prompt: false)
     }
 
-    /// Widget, notification and Shortcut destinations.
+    /// Widget, notification and Shortcut destinations. "close-day:2026-11-16" and
+    /// "close-week:2026-W47" carry their day / week (R18, R40).
     func route(_ destination: String) {
         refreshToday()
-        switch destination {
+        let parts: [String] = destination.split(separator: ":", maxSplits: 1).map(String.init)
+        let name: String = parts.first ?? destination
+        let argument: String? = parts.count > 1 ? parts[1] : nil
+        switch name {
         case "close-day":
+            let day: DayKey = argument.flatMap { DayKey($0) } ?? dayToClose()
             tab = .today
             sidebar = .today
-            selectedDay = today
-            sheet = .closeDay(today)
+            selectedDay = day
+            selectedWeek = day.week
+            sheet = .closeDay(day)
+        case "close-week":
+            let week: WeekKey = argument.flatMap { WeekKey($0) } ?? dayToClose().week
+            tab = .week
+            sidebar = .week
+            selectedWeek = week
+            sheet = .closeWeek(week)
         case "week":
             tab = .week
             sidebar = .week
@@ -318,9 +579,20 @@ final class AppModel {
         case "expense":
             sheet = .expenses(today)
         case "focus":
-            sheet = .focus(today.week)
+            sheet = .focus(today)
         case "glance":
+            #if os(macOS)
+            // The Mac shows "Heute im Blick" as the right column next to Today (R59).
+            tab = .today
+            sidebar = .today
+            showsGlanceInspector = true
+            #else
             sheet = .dayOverview(today)
+            #endif
+        case "goal-review":
+            sheet = .goalReview
+        case "weekly-goals":
+            sheet = .weeklyGoals(today.week)
         default:
             tab = .today
             sidebar = .today
@@ -359,9 +631,15 @@ final class AppModel {
         case "overview":
             sheet = .dayOverview(today)
         case "focus":
-            sheet = .focus(today.week)
+            sheet = .focus(today)
         case "expenses":
             sheet = .expenses(today)
+        case "weekly-goals":
+            sheet = .weeklyGoals(today.week)
+        case "goal-review":
+            sheet = .goalReview
+        case "trash":
+            sheet = .trash
         case "pdf-week":
             sheet = .pdf(.week(today.week.adding(weeks: -1)))
         case "pdf-day":

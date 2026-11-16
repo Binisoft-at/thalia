@@ -13,6 +13,8 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
     public var noteCount = 0
     public var isCreateOpen = false
     public var isCloseDayOpen = false
+    /// "Heute im Blick" is open: the sheet on iPhone/iPad, the right column on the Mac (v7).
+    public var isGlanceOpen = false
 
     public init() {}
 }
@@ -20,8 +22,10 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 6
+    public static let version = 7
 
+    /// v7: 13 cards in the full tour (welcome, 11 steps, finish); the 8 steps with `since: 7` make up
+    /// "Neu in Thalia". Colours, the "Wofür" rule, weekly goals, sharing and PDF moved into other cards.
     public static let catalog = TourCatalog<ThaliaTourSnapshot>(
         version: version,
         welcome: TourStep(
@@ -34,79 +38,69 @@ public enum ThaliaTour {
         ),
         finish: TourStep(
             id: "finish", symbol: "checkmark.seal", title: "Bereit",
-            body: "Die Tour findest du jederzeit wieder unter Einstellungen → Tour (am Mac: Hilfe → Thalia-Tour). Neue Funktionen erscheinen hier als kurzes „Neu in Thalia“."
+            body: "Die Tour findest du jederzeit wieder unter Einstellungen → Thalia-Tour (am Mac: Hilfe → Thalia-Tour). Neue Funktionen erscheinen hier als kurzes „Neu in Thalia“."
         ),
         steps: [
             TourStep(
                 id: "create", since: 2, symbol: "plus.circle", title: "Alles beginnt unten bei +",
-                body: "Tippe unten auf +. Von dort erfasst du Power-Hours, Messwerte und Notizen – mit dem Daumen erreichbar.",
-                macBody: "Klicke in der Symbolleiste auf + oder drücke ⇧⌘N. Von dort erfasst du Power-Hours, Messwerte und Notizen.",
+                body: "Tippe unten auf +. Von dort erfasst du Power-Hours, Ausgaben und Notizen – jedes Fenster zeigt oben, für welchen Tag es zählt.",
+                macBody: "Klicke in der Symbolleiste auf „Erfassen“ oder drücke ⇧⌘N. Jedes Fenster zeigt oben, für welchen Tag es zählt.",
                 goal: .isTrue(\.isCreateOpen)
             ),
             TourStep(
-                id: "mark", since: 2, symbol: "checkmark.circle", title: "Punkte mit einem Tipp",
-                body: "Schließe das Fenster und tippe bei einem Punkt direkt auf ✓, ½, ✗ oder –. Kein Halten nötig. Wische zur nächsten Kategorie.",
-                macBody: "Klicke bei einem Punkt direkt auf ✓, ½, ✗ oder –. Links wählst du die Kategorie.",
+                id: "day", since: 7, symbol: "calendar", title: "Welcher Tag gerade gilt",
+                body: "Oben stehen Datum, Tagestyp und die Besonderheit aus dem Plan. Um Mitternacht springt Thalia selbst auf den neuen Tag. Blätterst du zurück, zeigt die Leiste unten „Zu heute“. Ist gestern noch offen, erinnert dich morgens ein Hinweis mit „Nachtragen“ und „Abschließen“.",
+                macBody: "Oben stehen Datum, Tagestyp und die Besonderheit aus dem Plan. Um Mitternacht springt Thalia selbst auf den neuen Tag, ⇧⌘T führt zu heute. Ist gestern noch offen, steht links unten „Nachtragen“ und „Abschließen“."
+            ),
+            TourStep(
+                id: "mark", since: 7, symbol: "checkmark.circle", title: "Punkte mit einem Tipp",
+                body: "Tippe bei einem Punkt auf Erledigt, Teilweise, Nicht erledigt oder Entfällt. Beantwortete Zeilen werden ruhig, offene bleiben bunt. Wische zur nächsten Kategorie oder tippe unten auf „Weiter“.",
+                macBody: "Klicke auf Erledigt, Teilweise, Nicht erledigt oder Entfällt – oder drücke 1, 2, 3, 4. Die Auswahl springt zum nächsten offenen Punkt, ⌥⌘↓ wechselt die Kategorie.",
                 goal: .changed(\.markSummary)
             ),
             TourStep(
-                id: "work", since: 2, symbol: "briefcase", title: "Power-Hours erfassen",
-                body: "+ → Power-Hours: Kategorie wählen, Anzahl (0,25 bis 2 PH) tippen, wofür – fertig. Nachhilfe zählt auch in PH.",
-                macBody: "⌘N: Kategorie, Anzahl (0,25 bis 2 PH), wofür – fertig. Nachhilfe zählt auch in PH.",
+                id: "work", since: 7, symbol: "bolt.fill", title: "Power-Hours mit „Wofür“",
+                body: "+ → Power-Hours: oben stehen deine letzten drei Einträge zum Antippen. Sonst Bereich, Menge und Wofür – Return sichert. In den Arbeits-Kategorien steht die Zeile „Menge · Wofür · +“ direkt unter dem Wochenziel, das von selbst mitzählt.",
+                macBody: "⌘N: oben die letzten drei Einträge zum Anklicken, sonst Bereich, Menge und Wofür – Return sichert. Das Wochenziel zählt von selbst mit.",
                 goal: .increased(\.workCount)
             ),
             TourStep(
-                id: "measure", since: 2, symbol: "plus.forwardslash.minus", title: "Messwert eintragen",
-                body: "Bei einem Messwert direkt die Zahl eintippen oder + drücken. Messwerte sind keine Punkte – sie schlagen nur einen Haken vor.",
-                macBody: "Bei einem Messwert direkt die Zahl eintippen oder + klicken.",
+                id: "measure", since: 7, symbol: "plus.forwardslash.minus", title: "Werte und Ausgaben eintragen",
+                body: "Bei einem Messwert die Zahl eintippen – „Fertig“ über dem Ziffernblock speichert sofort. Ausgaben: Betrag, „Weiter“, Wofür – Vorschläge kommen aus den letzten Monaten. Ein Tipp auf eine Ausgabe ändert sie.",
+                macBody: "Bei einem Messwert die Zahl eintippen, Return speichert. Ausgaben: Betrag und Wofür – Vorschläge aus den letzten Monaten; ein Klick auf eine Ausgabe ändert sie.",
                 goal: .changed(\.entrySummary)
             ),
             TourStep(
                 id: "undo", symbol: "arrow.uturn.backward", title: "Fehler sind kein Problem",
-                body: "Einen Power-Hour-Eintrag (bei seiner Kategorie) nach links wischen und löschen – dann im Hinweis auf Widerrufen.",
-                macBody: "Rechtsklick auf einen Power-Hour-Eintrag → Löschen, dann im Hinweis auf Widerrufen – oder ⌘Z.",
+                body: "Einen Power-Hour-Eintrag nach links wischen und löschen – dann im Hinweis auf „Widerrufen“. Der Hinweis erscheint immer im obersten Fenster.",
+                macBody: "Rechtsklick auf einen Power-Hour-Eintrag → Löschen, dann im Hinweis auf „Widerrufen“ – oder ⌘Z.",
                 goal: .undone(\.trashedWorkCount)
             ),
             TourStep(
                 id: "close", since: 2, symbol: "moon.stars", title: "Den Tag abschließen",
-                body: "Abends: „Tag abschließen“. Erst dann rechnet Thalia die Tageswertung – wenn alles ausgefüllt ist. Bewusst, nicht automatisch.",
-                macBody: "Abends: „Tag abschließen“ (⌘↩). Erst dann rechnet Thalia die Tageswertung.",
+                body: "Abends: „Tag abschließen“. Erst dann rechnet Thalia die Tageswertung. Danach kannst du den Tag als Bild teilen oder als PDF ansehen.",
+                macBody: "Abends: „Tag abschließen“ (⌘↩, zum Bestätigen nochmal ⌘↩). Danach als Bild teilen oder als PDF sichern (⌘S) und drucken (⌘P).",
                 goal: .isTrue(\.isCloseDayOpen)
             ),
             TourStep(
-                id: "weekly-goals", since: 3, symbol: "chart.bar.fill", title: "Wochenziele zählen von selbst",
-                body: "Oben in einer Kategorie stehen ihre Wochenziele als Balken: Woche, „heute +x“ und die Tempo-Marke. Trag einfach die Power-Hours oder den Wert ein – „daran gearbeitet“ hakt Thalia selbst ab und bewertet am Wochenende rückwirkend. Nebensachen liegen eingeklappt unter „Weitere“, mit dem Listen-Symbol setzt du alles Offene auf einmal.",
-                macBody: "Oben in einer Kategorie stehen ihre Wochenziele als Balken. Trag den Wert ein – „daran gearbeitet“ hakt Thalia selbst ab. Nebensachen liegen unter „Weitere“, das Listen-Symbol setzt alles Offene auf einmal."
+                id: "glance", since: 7, symbol: "eye", title: "Heute im Blick",
+                body: "Tippe oben auf den Ring: was noch zu tun ist, „Diese Woche noch“, die Wochenziele mit Tempo und – sobald alles erfasst ist – „Tag abschließen“. Fokus und Ausgaben öffnen sich darin; Fokus blättert durch die Wochen und zeigt die letzten 8.",
+                macBody: "⌘0 blendet „Heute im Blick“ rechts ein, während du weiterarbeitest. Fokus (⌘5) blättert durch die Wochen und zeigt die letzten 8, Ausgaben (⌘6) die ganze Woche nach Zweck.",
+                goal: .isTrue(\.isGlanceOpen)
             ),
             TourStep(
-                id: "described", since: 6, symbol: "text.badge.checkmark", title: "Immer mit „wofür“",
-                body: "Power-Hours gibt es nur noch mit Bereich und Beschreibung: in der Kategorie „Menge · Wofür · +“, die Menge eines Eintrags änderst du über „PH ▾“. Ausgaben trägst du direkt in der Kategorie ein – Betrag, wofür, +; jede Ausgabe steht einzeln darunter."
+                id: "week", since: 7, symbol: "calendar.badge.plus", title: "Sonntag: Woche abschließen und planen",
+                body: "Nach dem Tagesabschluss am Sonntag führt „Weiter: Woche abschließen“ direkt dorthin. Dann „1 · Prompt kopieren“ – er enthält den Plan der letzten Woche – und „2 · CSV einfügen“. Fällt die Planung aus: „Wie KW … wiederholen“. Eine ersetzte Woche kommt ins Archiv und lässt sich widerrufen.",
+                macBody: "Nach dem Tagesabschluss am Sonntag führt „Weiter: Woche abschließen“ dorthin, ⇧⌘↩ schließt sie ab. Dann „1 · Prompt kopieren“ und „2 · CSV einfügen“; fällt die Planung aus: „Wie KW … wiederholen“."
             ),
             TourStep(
-                id: "glance", since: 5, symbol: "eye", title: "Heute im Blick",
-                body: "Tippe oben auf den Ring (oder unten auf „Heute“): was noch zu tun ist, Fokus, Ausgaben und Wochenziele auf einen Blick. Fokus zeigt alle Power-Hours der Woche je Bereich, bei Ausgaben tippst du nur den Betrag ein. Im Kontrollzentrum gibt es jetzt auch „Thalia erfassen“ und „Ausgabe“.",
-                macBody: "Unten links in der Seitenleiste steht immer, wie der Tag und die Woche laufen – klicken öffnet Heute im Blick, Fokus oder Ausgaben. Kurz: ⌘0, ⌘5, ⌘6."
+                id: "review", since: 7, symbol: "flag", title: "Ziele über Monate",
+                body: "Im Ziel-Detail zeigt der Verlauf 12 Wochen, ein Halbjahr oder das ganze Zieljahr – mit Messwerten und Ziellinie. Drei Wochen vor der Zielüberprüfung hilft „Zielüberprüfung vorbereiten“, samt aller geparkten Ideen."
             ),
             TourStep(
-                id: "colours", since: 4, symbol: "paintpalette", title: "Farben, Namen, klare Knöpfe",
-                body: "Jedes Jahresziel hat jetzt seine Farbe. Oben siehst du die Kategorien mit Namen – das Raster-Symbol zeigt alle auf einmal. Die Knöpfe sagen, was sie tun: Erledigt, Teilweise, Nicht, Entfällt; bei Zahlen steht der Schritt drauf (− 0,5 / + 0,5), unter „…“ gibt es mehr.",
-                macBody: "Jedes Jahresziel hat jetzt seine Farbe. Die Knöpfe sagen, was sie tun: Erledigt, Teilweise, Nicht, Entfällt; bei Zahlen steht der Schritt drauf, unter „…“ gibt es mehr."
-            ),
-            TourStep(
-                id: "pdf", since: 4, symbol: "doc.richtext", title: "Berichte als PDF",
-                body: "Woche und Tag gibt es als PDF mit Titelseite, Zielen in Farbe und allen Punkten – erst ansehen, dann teilen. Zu finden im Tages- und Wochenabschluss und in der Tagesübersicht."
-            ),
-            TourStep(
-                id: "share", since: 3, symbol: "square.and.arrow.up", title: "Teilen und PDF",
-                body: "Nach „Tag abschließen“ oder „Woche abschließen“: als Bild teilen (Vorlagen Aurora, Klar, Nacht) – oder die Woche als PDF mit allen Kategorien."
-            ),
-            TourStep(
-                id: "week", since: 2, symbol: "calendar.badge.plus", title: "Sonntag: die neue Woche",
-                body: "Woche → Woche abschließen → Planungs-Prompt kopieren → ChatGPT → die CSV unter + → Wochenplan importieren einfügen. Eine ersetzte Woche landet im Archiv."
-            ),
-            TourStep(
-                id: "everywhere", since: 2, symbol: "applewatch", title: "Überall dabei",
-                body: "Thalia synchronisiert über dein iCloud mit Mac und Apple Watch. Widgets und das Kontrollzentrum bringen dich mit einem Tipp zum Erfassen."
+                id: "everywhere", since: 7, symbol: "applewatch", title: "Überall dabei",
+                body: "Auf der Watch stehen Offenes und Zähler auf der ersten Seite, Werte stellst du mit der Krone ein; die Komplikation zeigt Ring, Offenes und PH. Im Widget hakst du offene Punkte direkt ab. Siri fragt bei Power-Hours nach dem Bereich, „Ausgabe in Thalia“ bucht Betrag und Wofür – auf Wunsch automatisch nach jeder Kartenzahlung.",
+                macBody: "Oben in der Menüleiste zeigt Thalia den Tag und erfasst Power-Hours und Ausgaben, ohne das Fenster zu öffnen. Auf iPhone und Watch: Widgets zum Abhaken, Komplikation, Siri."
             ),
         ]
     )
@@ -178,6 +172,25 @@ public struct TodaySummary: Codable, Equatable, Sendable {
     public var expensesToday: Double?
     public var expensesWeek: Double?
 
+    // v7 – all optional, so snapshots of older app versions stay readable.
+    /// The ISO day ("2026-11-16") this snapshot is about (R4).
+    public var dayKey: String? = nil
+    /// 0…1 element: the snapshot written ahead for tomorrow (R4).
+    public var nextDay: [TodaySummary]? = nil
+    /// Neutral "Neuer Tag" state: the app hasn't written today yet (R4).
+    public var isNewDay: Bool? = nil
+    /// Item keys ("2026-W47|1.1-03"), parallel to `open` (R87).
+    public var openKeys: [String]? = nil
+    /// Required items due today, for the optimistic fill after a tick in the widget (R87).
+    public var dueCount: Int? = nil
+    /// Day type and the plan's note for the day ("Besonderheit", R90).
+    public var dayType: String? = nil
+    public var dayNote: String? = nil
+    /// false: no plan for this week (R5).
+    public var hasPlan: Bool? = nil
+    /// n×-per-week items still missing this week (R5).
+    public var weeklyOpenCount: Int? = nil
+
     public init(day: String, weekLabel: String, dayScore: Double?, weekScore: Double?, fill: Double, powerHours: Double,
                 isClosed: Bool, nextCategory: String?, measures: [MeasureLine], goalScores: [Double?], goalTitles: [String],
                 updatedAt: Date) {
@@ -236,6 +249,96 @@ public struct TodaySummary: Codable, Equatable, Sendable {
     public var fillText: String { "\(Int((fill * 100).rounded())) %" }
     /// "62 % ausgefüllt" / "abgeschlossen"
     public var statusText: String { isClosed ? "abgeschlossen" : "\(fillText) ausgefüllt" }
+
+    /// The snapshot to show on `today` (R4): this one when it is about today, the one written ahead
+    /// for tomorrow once that has come, a snapshot of an older app version (no `dayKey`) when it was
+    /// written today – otherwise a neutral "Neuer Tag".
+    public func resolved(for today: DayKey) -> TodaySummary {
+        if let dayKey {
+            if dayKey == today.string { return self }
+            if let next = nextDay?.first, next.dayKey == today.string { return next }
+            return newDay(today)
+        }
+        return DayKey(date: updatedAt) == today ? self : newDay(today)
+    }
+
+    /// Neutral state for a day the app hasn't written yet: nothing filled in, nothing open, no score.
+    /// The week's figures stay while `today` is in the same week.
+    public func newDay(_ today: DayKey) -> TodaySummary {
+        let shownDay = dayKey.flatMap { DayKey($0) } ?? DayKey(date: updatedAt)
+        let sameWeek = shownDay.week == today.week
+        var copy = self
+        copy.day = today.shortLabel
+        copy.dayKey = today.string
+        copy.dayScore = nil
+        copy.fill = 0
+        copy.powerHours = 0
+        copy.isClosed = false
+        copy.nextCategory = nil
+        copy.measures = measures.map { MeasureLine(title: $0.title, value: "–", target: $0.target, met: nil) }
+        copy.open = []
+        copy.openKeys = []
+        copy.openCount = 0
+        copy.dueCount = 0
+        copy.expensesToday = nil
+        copy.dayType = nil
+        copy.dayNote = nil
+        copy.nextDay = nil
+        copy.isNewDay = true
+        if !sameWeek {
+            copy.weekLabel = today.week.label
+            copy.weekScore = nil
+            copy.goalScores = goalScores.map { _ in nil }
+            copy.weekly = weekly.map { GoalLine(title: $0.title, value: 0, target: $0.target, unit: $0.unit, categoryKey: $0.categoryKey) }
+            copy.powerHoursWeek = 0
+            copy.expensesWeek = nil
+            copy.weeklyOpenCount = nil
+            copy.hasPlan = nil
+        }
+        return copy
+    }
+
+    /// Optimistic state right after ✓ in the widget (R87): the row leaves the open list, one less is
+    /// open and the fill moves up by one due item. Unknown keys change nothing.
+    public func markingDone(itemKey: String) -> TodaySummary {
+        guard var keys = openKeys, let index = keys.firstIndex(of: itemKey) else { return self }
+        var copy = self
+        keys.remove(at: index)
+        copy.openKeys = keys
+        if index < open.count { copy.open.remove(at: index) }
+        copy.openCount = max(0, openCount - 1)
+        if let due = dueCount, due > 0 {
+            copy.fill = min(1, fill + 1 / Double(due))
+        }
+        return copy
+    }
+}
+
+/// A tick from the widget (R87), queued in the App Group until the app applies it.
+public struct WidgetMarkAction: Codable, Equatable, Sendable {
+    /// "2026-W47|1.1-03"
+    public var itemKey: String
+    /// "2026-11-16"
+    public var dayKey: String
+    public var createdAt: Date
+
+    public init(itemKey: String, dayKey: String, createdAt: Date = Date()) {
+        self.itemKey = itemKey
+        self.dayKey = dayKey
+        self.createdAt = createdAt
+    }
+
+    /// "2026-W47"
+    public var weekKey: String {
+        guard let bar = itemKey.firstIndex(of: "|") else { return "" }
+        return String(itemKey[..<bar])
+    }
+
+    /// "1.1-03"
+    public var itemCode: String {
+        guard let bar = itemKey.firstIndex(of: "|") else { return itemKey }
+        return String(itemKey[itemKey.index(after: bar)...])
+    }
 }
 
 /// Reminders (local notifications): a prompt start in the morning, the evening review and the
@@ -252,7 +355,65 @@ public struct ReminderSettings: Codable, Equatable, Sendable {
 
     public init() {}
 
+    enum CodingKeys: String, CodingKey {
+        case morning, morningMinutes, morningDays, evening, eveningMinutes, weekly, weeklyDay, weeklyMinutes
+    }
+
+    /// Every field optional, so settings stored by older versions stay readable.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = ReminderSettings()
+        morning = try container.decodeIfPresent(Bool.self, forKey: .morning) ?? defaults.morning
+        morningMinutes = try container.decodeIfPresent(Int.self, forKey: .morningMinutes) ?? defaults.morningMinutes
+        morningDays = try container.decodeIfPresent(Int.self, forKey: .morningDays) ?? defaults.morningDays
+        evening = try container.decodeIfPresent(Bool.self, forKey: .evening) ?? defaults.evening
+        eveningMinutes = try container.decodeIfPresent(Int.self, forKey: .eveningMinutes) ?? defaults.eveningMinutes
+        weekly = try container.decodeIfPresent(Bool.self, forKey: .weekly) ?? defaults.weekly
+        weeklyDay = try container.decodeIfPresent(Int.self, forKey: .weeklyDay) ?? defaults.weeklyDay
+        weeklyMinutes = try container.decodeIfPresent(Int.self, forKey: .weeklyMinutes) ?? defaults.weeklyMinutes
+    }
+
     public static let storageKey = "thalia.reminders"
+
+    /// The Mac starts with every reminder off (R80).
+    public static let macDefault: ReminderSettings = {
+        var settings = ReminderSettings()
+        settings.morning = false
+        settings.evening = false
+        settings.weekly = false
+        return settings
+    }()
+
+    /// Notification action "In 30 Min." and the category that carries it (R80).
+    public static let snoozeActionID = "thalia.snooze"
+    public static let eveningCategoryID = "thalia.evening"
+    public static let snoozeMinutes = 30
+
+    /// "thalia.evening.2026-11-16"
+    public static func eveningID(_ day: DayKey) -> String { "thalia.evening.\(day.string)" }
+
+    /// A one-off notification on a given day (the evening reminder, R80).
+    public struct DatedRequest: Equatable, Sendable {
+        public let id: String
+        public let day: DayKey
+        public let hour: Int
+        public let minute: Int
+        public let title: String
+        public let body: String
+        /// "close-day:2026-11-16"
+        public let destination: String
+    }
+
+    /// The evening reminder as one notification per day from `start` for `count` days, closed days
+    /// left out; empty when the evening reminder is off (R80).
+    public func eveningRequests(from start: DayKey, count: Int = 7, isClosed: (DayKey) -> Bool) -> [DatedRequest] {
+        guard evening, count > 0 else { return [] }
+        return (0..<count).map { start.adding(days: $0) }.filter { !isClosed($0) }.map { day in
+            DatedRequest(id: ReminderSettings.eveningID(day), day: day, hour: eveningMinutes / 60, minute: eveningMinutes % 60,
+                         title: "Tagesabschluss", body: "Belege prüfen, Fehlendes ergänzen, kurz reflektieren.",
+                         destination: "close-day:\(day.string)")
+        }
+    }
 
     public struct Request: Equatable, Sendable {
         public let id: String
@@ -266,26 +427,22 @@ public struct ReminderSettings: Codable, Equatable, Sendable {
         public let destination: String
     }
 
-    /// The repeating notifications to schedule (block-end reminders are scheduled when a block starts).
+    /// The repeating notifications to schedule: the mornings and the weekly review. The evening is
+    /// planned per day (`eveningRequests`), so a closed day gets none (R80).
     public func requests() -> [Request] {
         var result: [Request] = []
         if morning {
             for day in DayMask(rawValue: morningDays).days {
                 result.append(Request(id: "thalia.morning.\(day.rawValue)", gregorianWeekday: day.gregorianWeekday,
                                       hour: morningMinutes / 60, minute: morningMinutes % 60,
-                                      title: "Guten Morgen", body: "Der erste geplante Block wartet. Pünktlich starten – der Rest ergibt sich.",
+                                      title: "Guten Morgen", body: "Kurz in Thalia schauen: was heute ansteht – und ob gestern noch offen ist.",
                                       destination: "today"))
             }
-        }
-        if evening {
-            result.append(Request(id: "thalia.evening", gregorianWeekday: nil, hour: eveningMinutes / 60, minute: eveningMinutes % 60,
-                                  title: "Tagesabschluss", body: "Belege prüfen, Fehlendes ergänzen, kurz reflektieren.",
-                                  destination: "close-day"))
         }
         if weekly, let day = Weekday(rawValue: weeklyDay) {
             result.append(Request(id: "thalia.weekly", gregorianWeekday: day.gregorianWeekday, hour: weeklyMinutes / 60, minute: weeklyMinutes % 60,
                                   title: "Wochenabschluss", body: "Woche abschließen und die nächste planen – wiederholen statt steigern.",
-                                  destination: "week"))
+                                  destination: "close-week"))
         }
         return result
     }

@@ -2,7 +2,7 @@
 
 The account steps for this app, from the Binisoft handbook's
 [SETUP_CHECKLIST.md](https://github.com/Binisoft-at/binisoft-handbook/blob/main/SETUP_CHECKLIST.md)
-with Thalia's values. Claude turns it into a numbered claude.ai checklist and ticks steps off.
+with Thalia's values – a numbered checklist whose steps are ticked off one by one.
 
 | | |
 |---|---|
@@ -11,6 +11,7 @@ with Thalia's values. Claude turns it into a numbered claude.ai checklist and ti
 | GitHub repo | `Binisoft-at/thalia` (private) |
 | Bundle ID (iOS + macOS) = SKU | `at.binisoft.thalia` |
 | Watch app | `at.binisoft.thalia.watchkitapp` (ships inside the iOS app) |
+| Watch complication | `at.binisoft.thalia.watchkitapp.widgets` (inside the watch app; App Groups, since v7 / 1.6.0) |
 | Widgets | `at.binisoft.thalia.widgets` |
 | Own iCloud container | `iCloud.at.binisoft.thalia` |
 | Shared iCloud container / App Group | `iCloud.at.binisoft.shared` / `group.at.binisoft.shared` (exist – only tick them) |
@@ -26,7 +27,10 @@ All identifiers are defined in [`Config/Base.xcconfig`](../Config/Base.xcconfig)
 1. **GitHub** – private repo `Binisoft-at/thalia`, attached to the session.
 2. **Portal** – iCloud container `iCloud.at.binisoft.thalia`; App IDs `at.binisoft.thalia`
    (App Groups, iCloud with CloudKit, Push Notifications, **HealthKit**; groups/containers configured),
-   `at.binisoft.thalia.watchkitapp` (same), `at.binisoft.thalia.widgets` (App Groups).
+   `at.binisoft.thalia.watchkitapp` (same), `at.binisoft.thalia.widgets` (App Groups),
+   `at.binisoft.thalia.watchkitapp.widgets` (App Groups – the watch complication). For each App
+   Groups capability click "Configure" and assign `group.at.binisoft.shared`: automatic signing
+   often creates the App ID itself, but not the group assignment, and the archive fails without it.
 3. **App Store Connect** – New App (iOS + macOS) "Thalia - Your Tracker Buddy", bundle ID and SKU
    `at.binisoft.thalia`; TestFlight → Internal Testing → `Binisoft Team`, automatic distribution.
 4. **Repository secrets** – `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`,

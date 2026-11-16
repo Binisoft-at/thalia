@@ -3,6 +3,53 @@ import SwiftData
 import BinisoftKit
 import ThaliaCore
 
+/// Whether Thalia reads Apple Health on this device (H1): iPhone and iPad yes, Mac and Watch no.
+enum HealthDevice {
+    static var readsHealth: Bool {
+        #if os(iOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+}
+
+/// A weekly measurement with a target (R16, R47): the one list of weekly targets.
+struct WeeklyTarget: Identifiable {
+    let measure: MeasureDefinition
+    /// The progress item that hangs on it, if any.
+    let item: PlanItem?
+    /// The week's value so far (0 without entries).
+    let value: Double
+    let target: Target
+    let pace: Pace
+    /// "PH" for work, else `Units.display(unit)`.
+    let unit: String
+    var id: String { measure.code }
+    /// Limits: while below; targets: reached.
+    var isMet: Bool { target.isMet(value) }
+}
+
+/// R12: a suggestion from a measurement. A struct instead of a named tuple: `[(item:, mark:)]`
+/// doesn't convert to `[(PlanItem, Mark)]` implicitly, and ForEach needs an id.
+struct MarkSuggestion: Identifiable {
+    let item: PlanItem
+    /// The suggested mark.
+    let mark: Mark
+    /// What is recorded (nil for `suggestionsToFill`).
+    let current: Mark?
+    var id: String { item.code }
+}
+
+/// The week's spending for one purpose (R54).
+struct ExpensePurpose: Identifiable {
+    /// The note, trimmed; empty → "ohne Angabe".
+    let purpose: String
+    let total: Double
+    let count: Int
+    var id: String { purpose }
+}
+
 /// Everything about one week, read once and scored once: the screens (through `WeekReader`), the
 /// widget snapshot, the report and the watch all use this, so every place counts the same way.
 struct WeekContext {
@@ -256,6 +303,7 @@ struct WeekContext {
         let closed = isClosed(today)
         let next = categories.first { score.category($0.key, on: today).blank > 0 }
         let open = openToDo(on: today)
+        let shown = Array(open.prefix(5))
         let expenses = expenseMeasure
         return TodaySummary(
             day: today.shortLabel, weekLabel: week.label, dayScore: closed ? overall?.score : nil, weekScore: score.overall,
@@ -263,28 +311,71 @@ struct WeekContext {
             nextCategory: next.map { "\($0.key) \($0.title)" }, measures: lines,
             goalScores: goals.map { score.goalWeek[$0.key]?.score }, goalTitles: goals.map(\.title), updatedAt: Date()
         ).with { summary in
-            summary.open = open.prefix(5).map { "\($0.categoryKey) \($0.title)" }
+            summary.open = shown.map { "\($0.categoryKey) \($0.title)" }
+            summary.openKeys = shown.map(\.key)
             summary.openCount = open.count
-            summary.weekly = weeklyLines.prefix(4).map { $0 }
+            summary.dueCount = overall?.due ?? 0
+            summary.weekly = weeklyTargets.prefix(4).map { target in
+                TodaySummary.GoalLine(title: target.measure.title, value: target.value, target: target.target.scaleMax,
+                                      unit: target.unit, categoryKey: target.measure.categoryKey)
+            }
             summary.powerHoursWeek = workTotals().powerHours
             summary.powerHoursTarget = workTarget
             summary.expensesToday = expenses.flatMap { dayValue($0, on: today) }
             summary.expensesWeek = expenses.flatMap { weekValue($0) }
+            summary.dayKey = today.string
+            summary.isNewDay = false
+            summary.dayType = dayType(today)
+            summary.dayNote = dayNote(today)
+            summary.hasPlan = hasPlan
+            summary.weeklyOpenCount = openWeeklyToDo(on: today).count
         }
     }
 
     // MARK: At a glance (v5)
 
-    /// Required items still blank today, in plan order (what "noch zu tun" means).
+    /// R5: exactly the blank required items of a day (`WeekData.isOpenRequired`), in plan order –
+    /// as many as the ring counts (`score.days[day]?.blank`).
     func openToDo(on day: DayKey) -> [PlanItem] {
-        items.filter { item in
-            guard applies(item, on: day), !item.isSecondary, !isDerived(item), mark(item, on: day) == nil else { return false }
-            switch item.schedule {
-            case .fixed: return true
-            case .weekly: return !isQuotaMetElsewhere(item, on: day)
-            default: return false
-            }
+        let scored = Set(categories.map(\.key))
+        return items.filter { item in
+            guard scored.contains(item.categoryKey), let record = item.record else { return false }
+            return data.isOpenRequired(record, on: day)
         }
+    }
+
+    /// R5: n×-per-week items (no "Nebensache") due and blank on `day` whose quota isn't reached yet.
+    func openWeeklyToDo(on day: DayKey) -> [PlanItem] {
+        items.filter { item in
+            guard item.schedule.weeklyTarget != nil, !item.isSecondary, applies(item, on: day), mark(item, on: day) == nil,
+                  let quota = quotaProgress(item) else { return false }
+            return quota.done < quota.target
+        }
+    }
+
+    /// R5: the number of blank required items (the ring's count).
+    func openCount(on day: DayKey) -> Int {
+        score.days[day]?.blank ?? 0
+    }
+
+    /// R8: "–" without a plan or for days still to come; the score once closed ("7,5"); else "62 %".
+    func dayStatusText(_ day: DayKey) -> String {
+        guard hasPlan, day <= today else { return "–" }
+        if isClosed(day) { return Format.score(score.days[day]?.score) }
+        return score.days[day]?.coverageText ?? "–"
+    }
+
+    /// R8/R66: "Mittwoch, abgeschlossen, Wertung 7,5" · "Mittwoch, 62 Prozent erfasst" · "Mittwoch, kommt noch".
+    func dayStatusAccessibility(_ day: DayKey) -> String {
+        let name = day.weekday.name
+        guard hasPlan else { return "\(name), kein Plan" }
+        guard day <= today else { return "\(name), kommt noch" }
+        if isClosed(day) {
+            guard let value = score.days[day]?.score else { return "\(name), abgeschlossen" }
+            return "\(name), abgeschlossen, Wertung \(Format.score(value))"
+        }
+        let percent = Int(((score.days[day]?.coverage ?? 0) * 100).rounded())
+        return "\(name), \(percent) Prozent erfasst"
     }
 
     /// The week's € measurement ("Ausgaben"), if the plan has one.
@@ -294,7 +385,7 @@ struct WeekContext {
 
     /// A spending measurement: every entry is one spending with what it was for (K2).
     func isExpense(_ measure: MeasureDefinition) -> Bool {
-        Units.normalized(measure.unit) == "€" || measure.code.lowercased().contains("ausgabe")
+        measure.record?.isExpense ?? false
     }
 
     /// The day's spendings, newest first.
@@ -325,5 +416,130 @@ struct WeekContext {
             return TodaySummary.GoalLine(title: measure.title, value: weekValue(measure) ?? 0, target: target.scaleMax,
                                          unit: record.isWork ? "PH" : measure.unit, categoryKey: measure.categoryKey)
         }
+    }
+}
+
+// MARK: v7
+
+extension WeekContext {
+    /// H1: shown instead of "fehlt" where the value comes from Apple Health on another device.
+    static let healthElsewhereHint = "Wert aus Health auf dem iPhone"
+
+    /// R16: every weekly measurement with a target, in plan order.
+    var weeklyTargets: [WeeklyTarget] {
+        measures.compactMap { measure -> WeeklyTarget? in
+            guard let record = measure.record, record.period == .week, let target = record.target else { return nil }
+            let value = weekValue(measure) ?? 0
+            let tempo: Pace = pace(for: measure)
+                ?? Pace(done: value, target: target.scaleMax, days: measure.days, week: week, today: today)
+            let linked = items.first { $0.measureCode == measure.code && $0.schedule == .progress }
+            return WeeklyTarget(measure: measure, item: linked, value: value, target: target, pace: tempo,
+                                unit: record.isWork ? "PH" : Units.display(measure.unit))
+        }
+    }
+
+    /// R16: how many weekly targets are met (also PDF and report).
+    var weeklyTargetsMet: Int { weeklyTargets.filter(\.isMet).count }
+
+    /// R47: the weekly measurement's pace; work measurements don't plan on work-free days.
+    func pace(for measure: MeasureDefinition) -> Pace? {
+        guard let record = measure.record, record.period == .week, let target = record.target else { return nil }
+        let isWorkMeasure = record.isWork || record.dayRule == .workOnly
+            || (record.dayRule == .auto && data.workCategories.contains(record.categoryKey))
+        let excluded: Set<DayKey> = isWorkMeasure ? data.workFreeDays : []
+        return Pace(done: weekValue(measure) ?? 0, target: target.scaleMax, days: measure.days, week: week, today: today,
+                    excluding: excluded)
+    }
+
+    /// R64: short label for how an item counts; nil for a plain fixed item.
+    func kindLabel(_ item: PlanItem) -> String? {
+        if item.isSecondary { return "Nebensache" }
+        switch item.schedule {
+        case .fixed: return nil
+        case .optional: return "optional"
+        case .conditional: return "bedingt"
+        case .weekly(let count): return "\(count)× pro Woche"
+        case .progress: return isDerived(item) ? "automatisch" : "Wochenfortschritt"
+        }
+    }
+
+    /// R90: the plan's note for the day ("Besonderheit").
+    func dayNote(_ day: DayKey) -> String {
+        info(day)?.note ?? ""
+    }
+
+    /// H1: a Health measurement on a device that doesn't read Health (Mac, Watch).
+    func isHealthElsewhere(_ measure: MeasureDefinition) -> Bool {
+        (measure.record?.isHealth ?? false) && !HealthDevice.readsHealth
+    }
+
+    /// H1: due that day, no value – and not a value that only Health on the iPhone can give.
+    func countsAsMissing(_ measure: MeasureDefinition, on day: DayKey) -> Bool {
+        applies(measure, on: day) && dayValue(measure, on: day) == nil && !isHealthElsewhere(measure)
+    }
+
+    /// The mark a linked measurement suggests, whatever is recorded.
+    private func measuredSuggestion(_ item: PlanItem, on day: DayKey) -> Mark? {
+        guard !item.measureCode.isEmpty, applies(item, on: day), let record = item.record,
+              let linked = measure(code: item.measureCode) else { return nil }
+        return Measures.suggestion(for: record, dayValue: dayValue(linked, on: day))
+    }
+
+    /// R12: blank items a measurement has a suggestion for.
+    func suggestionsToFill(on day: DayKey) -> [MarkSuggestion] {
+        items.compactMap { item -> MarkSuggestion? in
+            guard recordedMark(item, on: day) == nil, let mark = measuredSuggestion(item, on: day) else { return nil }
+            return MarkSuggestion(item: item, mark: mark, current: nil)
+        }
+    }
+
+    /// R12: items whose recorded mark differs from the suggestion (`current` = recorded).
+    func suggestionsDiffering(on day: DayKey) -> [MarkSuggestion] {
+        items.compactMap { item -> MarkSuggestion? in
+            guard let current = recordedMark(item, on: day), let mark = measuredSuggestion(item, on: day), mark != current else {
+                return nil
+            }
+            return MarkSuggestion(item: item, mark: mark, current: current)
+        }
+    }
+
+    /// R58: the plan's journal item ("Ins Journal eingetragen").
+    var journalItem: PlanItem? {
+        items.first { ReflectionQuestion.isJournalTitle($0.title) }
+    }
+
+    /// R58: the journal item's mark (✓/½ → true, ✗ → false), else the reflection "ja" / "nein".
+    func journalDone(on day: DayKey) -> Bool? {
+        if let item = journalItem {
+            let marked: Mark? = mark(item, on: day)
+            if marked == .done || marked == .partial { return true }
+            if marked == .missed { return false }
+        }
+        switch reflection(scope: day.string, field: ReflectionQuestion.journalField) {
+        case "ja": return true
+        case "nein": return false
+        default: return nil
+        }
+    }
+
+    /// R54: the week's spending grouped by what it was for (case-insensitive, the most used spelling
+    /// shown), largest first.
+    func expensesByPurpose(_ measure: MeasureDefinition, limit: Int = 5) -> [ExpensePurpose] {
+        var groups: [String: (total: Double, count: Int, spellings: [String: Int])] = [:]
+        for entry in entries where entry.code == measure.code {
+            let trimmed = entry.note.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = trimmed.lowercased()
+            var group = groups[key] ?? (total: 0, count: 0, spellings: [:])
+            group.total += entry.value ?? 0
+            group.count += 1
+            group.spellings[trimmed, default: 0] += 1
+            groups[key] = group
+        }
+        let purposes: [ExpensePurpose] = groups.map { element -> ExpensePurpose in
+            let group = element.value
+            let spelling = group.spellings.max { ($0.value, $1.key) < ($1.value, $0.key) }?.key ?? element.key
+            return ExpensePurpose(purpose: spelling.isEmpty ? "ohne Angabe" : spelling, total: group.total, count: group.count)
+        }
+        return Array(purposes.sorted { ($0.total, $1.purpose) > ($1.total, $0.purpose) }.prefix(limit))
     }
 }

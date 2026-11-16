@@ -191,7 +191,8 @@ struct MeasureTests {
         let totals = WorkTotals(blocks)
         #expect(totals.powerHours == 28)
         #expect(totals.netMinutes == 1400)
-        #expect(totals.explanation == "28 PH × 50 min = 23,33 h netto")
+        #expect(totals.explanation == "28 PH × 50 min = 23 h 20 min netto")
+        #expect(totals.netText == "23 h 20 min")
         #expect(WorkTotals.byCategory(blocks)["3.3"]?.shortText == "16 PH")
         #expect(PowerHour.quick == [0.25, 0.5, 0.75, 1, 2])
     }
