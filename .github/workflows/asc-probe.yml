@@ -1,0 +1,34 @@
+name: App Store Connect probe
+
+# Thalia's own read-only check (not synced from the handbook): which App Store Connect requests
+# answer and which fail. Results go to ci-output/asc-probe/probe.txt.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe App Store Connect
+        run: |
+          mkdir -p ci-logs/asc-probe
+          python3 .github/scripts/asc-probe.py 2>&1 | tee ci-logs/asc-probe/probe.txt
+      - name: Publish to ci-output/asc-probe
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/publish-output.sh ci-logs/asc-probe "asc probe run ${{ github.run_number }}" ci-output asc-probe
