@@ -43,7 +43,7 @@ Wo die Durchsicht Optionen offen ließ (je eine Zeile mit Grund):
 14. **R35** Tastenkürzel am Mac und am iPad mit Tastatur (`onKeyPress`); ⌥⌘↓/↑ als Menübefehle „Nächste/Vorige Kategorie“.
 15. **R43 Wortschatz:** Erledigt · Teilweise · Nicht erledigt · Entfällt; Fortschritt: Gearbeitet · Nicht heute; leer = „nicht erfasst“. Überall (Knöpfe, Menüs, Watch, PDF, Hilfe, VoiceOver).
 16. **R60** ziehbare Spalte nur am Mac (`HSplitView`, 220–400 pt); iPad bleibt 270 pt.
-17. **R62 optional „anpassbare Leiste“: ja**, am Mac auf „Heute“ (`toolbar(id:)`).
+17. **R62 optional „anpassbare Leiste“: ja**, am Mac auf „Heute“ (`toolbar(id:)`). *Zurückgenommen in 1.6.0 (48+):* `toolbar(id:)` ließ die Mac-App in AppKit abstürzen (NSToolbarItemViewer minSize „nan“); die Leiste ist wieder eine normale `.toolbar`.
 18. **R71** Drucken über PDFKit-Druckvorgang, Sichern über `fileExporter`; zusätzlich „Bild sichern…“ im Teilen-Fenster am Mac (die Option aus R71).
 19. **R73** Schließen-Knopf als eigenes `SheetCloseButton` (Symbol `xmark`, VoiceOver „Schließen“) – keine neue Button-Rolle, sichere API.
 20. **R75 Namen:** „erfassen“ = Power-Hours, Ausgabe, Notiz und das „+“-Fenster („Erfassen“, Menü „Erfassen…“); „eintragen“ = Wert eines Messwerts; „anlegen“ = neuer Messwert oder neuer Punkt; letzte Heute-Seite „Abschluss & Notizen“; Kürzel-Hinweise nur am Mac/iPad, vollständig.

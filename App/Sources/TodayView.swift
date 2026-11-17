@@ -165,7 +165,7 @@ struct TodayContent: View {
         .navigationTitle(title)
         .inlineNavigationTitle()
         .todayTitleMenu(context: context, day: day)
-        .toolbar(id: "today") { TodayToolbar(context: context, day: day, usesSplit: usesSplit) }
+        .toolbar { TodayToolbar(context: context, day: day, usesSplit: usesSplit) }
         .onChange(of: day) { _, _ in app.todayPage = nil }
         .onChange(of: pages.map(\.key)) { _, _ in choosePage() }
         .task(id: day) {
@@ -2829,11 +2829,12 @@ struct NoPlanView: View {
     }
 }
 
-/// Toolbar of Today, customizable on the Mac (R62) – every item has an id, so one type serves both
-/// platforms. iPhone: the date as a title menu and the ring (R38); "+" sits at the bottom
-/// (accessory). iPad: the title, "Heute im Blick" and the menu. Mac: day navigation, closing the
-/// day (with its name), "Erfassen" and the "Heute im Blick" column.
-struct TodayToolbar: CustomizableToolbarContent {
+/// Toolbar of Today (R62). iPhone: the date as a title menu and the ring (R38); "+" sits at the
+/// bottom (accessory). iPad: the title, "Heute im Blick" and the menu. Mac: day navigation, closing
+/// the day (with its name), "Erfassen" and the "Heute im Blick" column.
+/// A plain toolbar on purpose: the customizable one (`.toolbar(id:)`) crashed the Mac app inside
+/// AppKit's toolbar layout (NSToolbarItemViewer minSize, 1.6.0 build 47).
+struct TodayToolbar: ToolbarContent {
     let context: WeekContext
     let day: DayKey
     /// iPad (wide) and Mac: list and page side by side.
@@ -2843,22 +2844,22 @@ struct TodayToolbar: CustomizableToolbarContent {
     private var closeTitle: String { context.isClosed(day) ? "Abgeschlossen" : "Tag abschließen" }
     private var closeSymbol: String { context.isClosed(day) ? "checkmark.seal.fill" : "moon.stars" }
 
-    var body: some CustomizableToolbarContent {
+    var body: some ToolbarContent {
         #if os(macOS)
-        ToolbarItem(id: "previous-day", placement: .navigation) {
+        ToolbarItem(placement: .navigation) {
             Button { app.selectedDay = day.adding(days: -1) } label: { Label("Vorheriger Tag", systemImage: "chevron.left") }
                 .help("Vorheriger Tag (⌘[)")
         }
-        ToolbarItem(id: "today", placement: .navigation) {
+        ToolbarItem(placement: .navigation) {
             Button("Zu heute") { app.goToToday() }
                 .disabled(day == app.today)
                 .help("Zu heute (⇧⌘T)")
         }
-        ToolbarItem(id: "next-day", placement: .navigation) {
+        ToolbarItem(placement: .navigation) {
             Button { app.selectedDay = day.adding(days: 1) } label: { Label("Nächster Tag", systemImage: "chevron.right") }
                 .help("Nächster Tag (⌘])")
         }
-        ToolbarItem(id: "close-day", placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 app.sheet = .closeDay(app.dayToClose(showing: day))
             } label: {
@@ -2867,7 +2868,7 @@ struct TodayToolbar: CustomizableToolbarContent {
             .labelStyle(.titleAndIcon)
             .help("Tag abschließen (⌘↩)")
         }
-        ToolbarItem(id: "create", placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 app.sheet = .create
             } label: {
@@ -2875,7 +2876,7 @@ struct TodayToolbar: CustomizableToolbarContent {
             }
             .help("Erfassen (⇧⌘N)")
         }
-        ToolbarItem(id: "glance", placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 app.showsGlanceInspector.toggle()
             } label: {
@@ -2884,7 +2885,7 @@ struct TodayToolbar: CustomizableToolbarContent {
             .help("Heute im Blick ein- oder ausblenden (⌘0)")
         }
         #else
-        ToolbarItem(id: "title", placement: .principal) {
+        ToolbarItem(placement: .principal) {
             if usesSplit {
                 Text(day == app.today ? "Heute" : day.weekday.name)
                     .font(.headline)
@@ -2892,7 +2893,7 @@ struct TodayToolbar: CustomizableToolbarContent {
                 TodayTitleMenu(context: context, day: day)
             }
         }
-        ToolbarItem(id: "glance", placement: .topBarTrailing) {
+        ToolbarItem(placement: .topBarTrailing) {
             if usesSplit {
                 Button {
                     app.showsGlanceInspector.toggle()
@@ -2903,7 +2904,7 @@ struct TodayToolbar: CustomizableToolbarContent {
                 TodayRingButton(context: context, day: day)
             }
         }
-        ToolbarItem(id: "more", placement: .topBarTrailing) {
+        ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button("Heute im Blick", systemImage: "info.circle") { app.sheet = .dayOverview(day) }
                 Button("Fokus (Power-Hours)", systemImage: "bolt") { app.sheet = .focus(day) }

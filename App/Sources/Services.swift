@@ -128,7 +128,12 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     /// Set by `ThaliaApp`; receives "today", "close-day:2026-11-16", "close-week", "week" …
     var route: (@MainActor (String) -> Void)?
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    // The completion-handler variants on purpose: with the `async` ones the system's completion
+    // ran off the main thread, and tapping a reminder crashed the iPhone app (1.5.0). Everything
+    // here hands over to the main queue and calls the completion handler there.
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
         let request = response.notification.request
         let destination = request.content.userInfo["destination"] as? String ?? "today"
         if response.actionIdentifier == ReminderSettings.snoozeActionID {
@@ -142,17 +147,28 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
             let base = request.identifier.hasSuffix(ReminderScheduler.snoozeSuffix)
                 ? String(request.identifier.dropLast(ReminderScheduler.snoozeSuffix.count)) : request.identifier
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(ReminderSettings.snoozeMinutes * 60), repeats: false)
-            try? await center.add(UNNotificationRequest(identifier: base + ReminderScheduler.snoozeSuffix, content: content, trigger: trigger))
-            AppLog.info("Evening reminder snoozed", category: "reminders")
+            center.add(UNNotificationRequest(identifier: base + ReminderScheduler.snoozeSuffix, content: content, trigger: trigger)) { _ in
+                DispatchQueue.main.async {
+                    AppLog.info("Evening reminder snoozed", category: "reminders")
+                    completionHandler()
+                }
+            }
             return
         }
-        guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
+        guard response.actionIdentifier != UNNotificationDismissActionIdentifier else {
+            DispatchQueue.main.async(execute: completionHandler)
+            return
+        }
         let route = self.route
-        await MainActor.run { route?(destination) }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { route?(destination) }
+            completionHandler()
+        }
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        DispatchQueue.main.async { completionHandler([.banner, .sound]) }
     }
 }
 
