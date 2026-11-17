@@ -1,0 +1,140 @@
+name: TestFlight (diagnose export)
+
+# Thalia's own workflow (not synced from the handbook; see docs/HANDBOOK_PROPOSALS.md 30).
+# Same steps as TestFlight, but a failing export does not stop the run, and Apple's real reason
+# from Xcode's distribution log (*.xcdistributionlogs) is written to the ci-testflight branch
+# (distribution-<platform>.txt). xcodebuild itself only prints "Error Downloading App Information".
+# The build number is an input, so it can't collide with a TestFlight run number already used.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Platforms to upload
+        type: choice
+        options: [both, ios, macos]
+        default: both
+      build:
+        description: Build number (higher than every build of this version on App Store Connect)
+        required: true
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prune-certificates:
+    name: 1. Revoke old CI certificates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Revoke "Created via API" development certificates older than 2 h
+        continue-on-error: true
+        run: |
+          mkdir -p ci-logs
+          python3 scripts/ci/certificates.py prune 2>&1 | tee ci-logs/certificates-prune.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prune
+          path: ci-logs/
+          if-no-files-found: ignore
+
+  upload:
+    name: 2–5. Archive, check, upload (with distribution log)
+    needs: prune-certificates
+    runs-on: macos-26
+    timeout-minutes: 90
+    concurrency:
+      group: testflight-upload
+      cancel-in-progress: false
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      BUILD_NUMBER: ${{ inputs.build }}
+      PLATFORMS: ${{ inputs.platforms }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check secrets
+        id: secrets
+        run: scripts/ci/secrets-report.sh testflight
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh
+      - name: Generate the Xcode project
+        run: scripts/ci/xcodegen.sh generate
+      - name: watchOS platform
+        if: env.PLATFORMS != 'macos'
+        run: scripts/ci/ensure-watchos.sh
+      - name: API key
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_P8" | sed 's/\\n/\n/g' > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+      - name: Snapshot signing identities
+        if: steps.secrets.outputs.ready == 'true'
+        run: python3 scripts/ci/certificates.py snapshot "$RUNNER_TEMP/identities-before.txt"
+      - name: iOS (+ watch app, widgets) – archive, check entitlements, upload
+        id: ios
+        if: steps.secrets.outputs.ready == 'true' && env.PLATFORMS != 'macos'
+        continue-on-error: true
+        run: scripts/ci/archive-upload.sh ios
+      - name: iOS distribution log
+        if: always() && steps.ios.outcome == 'failure'
+        run: .github/scripts/distribution-log.sh ios
+      - name: macOS – archive, check entitlements, upload
+        id: macos
+        if: always() && steps.secrets.outputs.ready == 'true' && env.PLATFORMS != 'ios'
+        continue-on-error: true
+        run: scripts/ci/archive-upload.sh macos
+      - name: macOS distribution log
+        if: always() && steps.macos.outcome == 'failure'
+        run: .github/scripts/distribution-log.sh macos
+      - name: 5. Revoke this run's development certificate
+        if: always() && steps.secrets.outputs.ready == 'true'
+        continue-on-error: true
+        run: |
+          mkdir -p ci-logs
+          python3 scripts/ci/certificates.py revoke-new "$RUNNER_TEMP/identities-before.txt" 2>&1 | tee ci-logs/certificates-revoke.log
+      - name: Remove the API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
+      - name: Fail when an upload failed
+        if: always() && (steps.ios.outcome == 'failure' || steps.macos.outcome == 'failure')
+        run: exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upload
+          path: ci-logs/
+          if-no-files-found: ignore
+
+  report:
+    name: Publish to ci-testflight
+    needs: [prune-certificates, upload]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS: prune=${{ needs.prune-certificates.result }} upload=${{ needs.upload.result }} build=${{ inputs.build }} (diagnose run ${{ github.run_number }})
+          BRANCH: ci-testflight
+          SUBDIR: "."
+        run: scripts/ci/ci-report.sh artifacts
