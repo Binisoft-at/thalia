@@ -15,9 +15,13 @@ Letzte Aktualisierung: 2026-11-16 · Arbeitsliste: [TASKS-v7.md](TASKS-v7.md) ·
   Behoben in Lauf 25 (Schalter im AppModel). Dazu: Datum/Uhrzeit-Picker immer deutsch, Kategorie-Kopf einzeilig.
 - Mac-Layout nur am CI-Bildschirm (1024 × 768) gesehen: dort wird die Seitenleiste schmal und rechts abgeschnitten;
   auf normalen Mac-Bildschirmen (Fenster 1180 pt) prüfen.
-- TestFlight: **macOS 1.6.0 (47)** hochgeladen (Run 47, `platforms=macos`). iOS + Watch folgen nach der App-ID
-  `at.binisoft.thalia.watchkitapp.widgets` (Owner) mit `platforms=ios`.
-- Nächste Schritte: iOS-TestFlight → asc-status → Bini testet nach TESTING.md „v7“.
+- TestFlight: macOS 1.6.0 (47) stürzte am Mac ab (AppKit-Toolbar bei `.toolbar(id:)`); iPhone 1.5.0 stürzte beim Tippen
+  auf eine Mitteilung ab (async-Delegate). Beides behoben → **iOS + Watch + macOS 1.6.0 (52)** hochgeladen über
+  `testflight-diagnose.yml` (Build-Nr. als Eingabe). Der reguläre TestFlight-Workflow hat als nächste Run-Nr. 52: für
+  1.6.0 nicht mehr verwenden (Build 52 existiert), sonst neue Version oder Diagnose-Workflow mit Nummer > 52.
+- iOS-Export scheiterte dreimal mit „Error Downloading App Information“: laut Distribution-Log HTTP 500 von
+  `GET /v1/apps?…include=appStoreVersions` (Apple-Serverfehler, kam und ging). `asc-probe.yml` prüft diese Anfragen.
+- Nächste Schritte: Bini testet nach TESTING.md „v7“.
 - Bekannte Risiken mit Ausweichweg: [TASKS-v7.md](TASKS-v7.md) Abschnitt 7 (Widget-Abhaken aus der Erweiterung, `#Index`
   mit CloudKit, Transaktion-Betrag, Ziffernblock-Leiste).
 
