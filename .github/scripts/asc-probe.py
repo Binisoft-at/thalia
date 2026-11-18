@@ -49,7 +49,26 @@ def main():
         probe(f"appStoreVersions filter platform={platform}", f"/apps/{app_id}/appStoreVersions",
               {"filter[platform]": platform, "limit": "10"})
     probe("preReleaseVersions of the app", "/preReleaseVersions", {"filter[app]": app_id, "limit": "20"})
-    probe("builds of the app", "/builds", {"filter[app]": app_id, "limit": "5"})
+    builds = probe("builds of the app", "/builds", {"filter[app]": app_id, "limit": "6", "sort": "-uploadedDate",
+                                                    "include": "preReleaseVersion"})
+    if not builds:
+        return
+    platforms = {i["id"]: i["attributes"] for i in builds.get("included", []) if i["type"] == "preReleaseVersions"}
+    for build in builds.get("data", []):
+        attrs = build["attributes"]
+        version_id = (build.get("relationships", {}).get("preReleaseVersion", {}).get("data") or {}).get("id")
+        version = platforms.get(version_id, {})
+        label = f"{version.get('platform', '?')} {version.get('version', '?')} ({attrs.get('version')})"
+        print(f"      build {label}: processing {attrs.get('processingState')} · encryption "
+              f"{attrs.get('usesNonExemptEncryption')} · audience {attrs.get('buildAudienceType')} · expired {attrs.get('expired')}")
+        detail = probe(f"  buildBetaDetail {label}", f"/builds/{build['id']}/buildBetaDetail")
+        if detail and detail.get("data"):
+            d = detail["data"]["attributes"]
+            print(f"      → internal {d.get('internalBuildState')} · external {d.get('externalBuildState')} · auto-notify {d.get('autoNotifyEnabled')}")
+        groups = probe(f"  betaGroups {label}", f"/builds/{build['id']}/betaGroups")
+        if groups:
+            names = [f"{g['attributes'].get('name')} (internal={g['attributes'].get('isInternalGroup')})" for g in groups.get("data", [])]
+            print(f"      → groups: {', '.join(names) or 'none'}")
 
 
 if __name__ == "__main__":
