@@ -65,10 +65,6 @@ def main():
         if detail and detail.get("data"):
             d = detail["data"]["attributes"]
             print(f"      → internal {d.get('internalBuildState')} · external {d.get('externalBuildState')} · auto-notify {d.get('autoNotifyEnabled')}")
-        groups = probe(f"  betaGroups {label}", f"/builds/{build['id']}/betaGroups")
-        if groups:
-            names = [f"{g['attributes'].get('name')} (internal={g['attributes'].get('isInternalGroup')})" for g in groups.get("data", [])]
-            print(f"      → groups: {', '.join(names) or 'none'}")
 
 
 if __name__ == "__main__":
