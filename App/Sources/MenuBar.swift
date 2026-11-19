@@ -69,6 +69,8 @@ struct MenuBarContent: View {
         .padding(14)
         .frame(width: 330)
         .onAppear(perform: reload)
+        // Areas and "recent" combos from other devices (R96).
+        .onChange(of: app.syncTick) { _, _ in reload() }
     }
 
     // MARK: Power-hours

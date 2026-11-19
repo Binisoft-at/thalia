@@ -180,10 +180,66 @@ struct ThaliaSyncSection: View {
             Text("Thalia hat keine Server und keine Konten. Deine Daten synchronisieren über dein privates iCloud zwischen iPhone, iPad, Mac und Apple Watch.")
         }
         .task { await app.sync.refreshAccount() }
+        if app.sync.state.mode.isSynced {
+            SyncDevicesSection()
+        }
     }
 
     private var dotColor: Color {
         app.sync.state.isHealthy ? Color.green : Color.orange
+    }
+}
+
+/// "Geräte im Abgleich": when each device last opened Thalia, as this device knows it from iCloud.
+/// A recent time for another device means its data arrives here.
+private struct SyncDevicesSection: View {
+    @Environment(AppModel.self) private var app
+    @State private var devices: [SyncDevice] = []
+
+    var body: some View {
+        Section {
+            if devices.isEmpty {
+                Text("Noch kein Gerät gemeldet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(rows) { row in
+                    LabeledContent {
+                        Text(SyncDevice.seenText(row.device.seenAt))
+                            .monospacedDigit()
+                    } label: {
+                        Label(row.label, systemImage: symbol(row.device.kind))
+                    }
+                }
+            }
+        } header: {
+            Text("Geräte im Abgleich")
+        } footer: {
+            Text("Jedes Gerät meldet sich, wenn Thalia geöffnet wird (höchstens alle 10 Minuten). Steht hier bei einem anderen Gerät eine aktuelle Zeit, kommen seine Daten an. Die Apple Watch meldet sich, wenn ihre Thalia-App offen war.")
+        }
+        .task(id: app.syncTick) { devices = app.store.syncDevices() }
+    }
+
+    private struct Row: Identifiable {
+        let device: SyncDevice
+        let label: String
+        var id: String { device.installID }
+    }
+
+    private var rows: [Row] {
+        let me: String = TrackerStore.installID
+        return SyncDevice.labelled(devices).map { entry in
+            let label: String = entry.device.installID == me ? "\(entry.label) (dieses Gerät)" : entry.label
+            return Row(device: entry.device, label: label)
+        }
+    }
+
+    private func symbol(_ kind: String) -> String {
+        switch kind {
+        case "Mac": return "laptopcomputer"
+        case "iPad": return "ipad"
+        case "Apple Watch": return "applewatch"
+        default: return "iphone"
+        }
     }
 }
 

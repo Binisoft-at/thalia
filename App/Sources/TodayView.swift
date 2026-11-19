@@ -172,6 +172,11 @@ struct TodayContent: View {
             choosePage()
             await health.load(day: day, measures: context.measures.compactMap(\.record))
         }
+        // Apple Health again whenever Thalia comes to the front: steps, water and sleep change
+        // during the day, and a suggestion read at 7:00 must not be adopted at 21:00.
+        .onChange(of: app.activationTick) { _, _ in
+            Task { await health.load(day: day, measures: context.measures.compactMap(\.record)) }
+        }
     }
 
     /// R6: the start page once per day – the first category with something open, else "Abschluss &

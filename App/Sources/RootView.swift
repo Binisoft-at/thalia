@@ -25,14 +25,13 @@ struct RootView: View {
                     app.refreshToday()
                     app.drainWidgetActions()
                     app.scheduleReminders()
+                    app.clearRemindersOfClosedDays()
+                    app.recordDeviceSeen()
                 case .background, .inactive:
                     app.publishWidgetNow()
                 @unknown default:
                     break
                 }
-            }
-            .onChange(of: app.sync.state.lastSync) {
-                app.afterSync()
             }
             .task {
                 if let destination = PendingRoute.destination {

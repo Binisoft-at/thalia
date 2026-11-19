@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CoreData
 import BinisoftKit
 import ThaliaCore
 #if os(iOS)
@@ -149,6 +150,11 @@ final class AppModel {
     var mainWindowHeight: CGFloat = 800
     /// Mac menu bar label: "73 %", "7,5" once closed, "" without a plan (R96).
     var menuBarTitle = ""
+    /// +1 whenever Thalia comes to the front (and at midnight): Apple Health values are read again.
+    private(set) var activationTick = 0
+    /// +1 after every import from iCloud: lists loaded once (menu bar panel, devices) reload.
+    private(set) var syncTick = 0
+    @ObservationIgnored private var pendingSync: Task<Void, Never>?
     /// Mac: Thalia in the menu bar (R96). Kept here and written to UserDefaults only on a real
     /// change – an `@AppStorage` on the App struct bound to `MenuBarExtra(isInserted:)` left the
     /// main thread hanging at launch, before the main window was built (CI runs 21–23).
@@ -231,6 +237,26 @@ final class AppModel {
             Task { @MainActor in self?.updateMenuBarTitle() }
         })
         #endif
+        // Changes from other devices: a finished import from iCloud. Here and not in a view, so it
+        // also works on the Mac with only the menu bar open (no main window).
+        observers.append(center.addObserver(
+            forName: NSPersistentCloudKitContainer.eventChangedNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
+                    as? NSPersistentCloudKitContainer.Event,
+                  event.type == .import, event.endDate != nil else { return }
+            Task { @MainActor in self?.afterSyncSoon() }
+        })
+    }
+
+    /// After an import: give the main context a moment to merge, then `afterSync`.
+    private func afterSyncSoon() {
+        pendingSync?.cancel()
+        pendingSync = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.afterSync()
+        }
     }
 
     /// A new day: the selected day and week move along when they were "today" (a day picked on
@@ -248,6 +274,7 @@ final class AppModel {
             widgetPublisher?.publishNow()
             AppLog.info("New day", category: "app")
         }
+        activationTick += 1
         updateMenuBarTitle()
     }
 
@@ -292,9 +319,29 @@ final class AppModel {
     /// After an iCloud sync: merge duplicated days/weeks, refresh the widget and the menu bar.
     func afterSync() {
         guard !isSandbox, !launch.isDemo else { return }
+        let store = self.store
         store.mergeDuplicates()
+        // A week closed or edited on the Mac or Watch gets its score with Health values (iPhone/iPad).
+        store.rescoreRecentClosedWeeks(through: today.week)
+        clearRemindersOfClosedDays()
         widgetPublisher?.publishNow()
         updateMenuBarTitle()
+        syncTick += 1
+    }
+
+    /// Days closed on another device: their evening reminder (planned, snoozed or shown) goes away.
+    func clearRemindersOfClosedDays() {
+        guard !isSandbox, !launch.isDemo else { return }
+        for offset in -1..<7 {
+            let day = today.adding(days: offset)
+            if isDayClosed(day) { ReminderScheduler.dayClosed(day) }
+        }
+    }
+
+    /// "Geräte im Abgleich": this device opened Thalia (at most every 10 minutes).
+    func recordDeviceSeen() {
+        guard !isSandbox, !launch.isDemo else { return }
+        store.recordDeviceSeen(kind: SyncDeviceKind.current)
     }
 
     /// ✓ from the widget (R87): only when the item is still open on that day.

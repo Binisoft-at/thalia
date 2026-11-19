@@ -51,7 +51,8 @@ final class WidgetPublisher {
             // Only a finished import brings other devices' changes.
             let finishedImport = event.type == .import && event.endDate != nil
             guard finishedImport else { return }
-            MainActor.assumeIsolated { self?.publishSoon() }
+            // At once: after a background wake iOS may suspend the app before a delayed write.
+            MainActor.assumeIsolated { self?.publishNow() }
         })
         publishSoon()
     }

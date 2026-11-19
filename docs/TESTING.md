@@ -103,6 +103,16 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 - [ ] Watch: Power-Hours → Bereich → Menge → „Zuletzt“ antippen oder diktieren.
 - [ ] Siri/Kurzbefehl „Power-Hour in Thalia erfassen“ fragt nach „Wofür“.
 
+## 1.6.1 – Sync (siehe [SYNC.md](SYNC.md))
+
+- [ ] Einstellungen → iCloud & Daten → „Geräte im Abgleich“: iPhone, Mac (und Watch, nachdem ihre App offen war) stehen da, mit aktueller Zeit.
+- [ ] Mac: Hauptfenster schließen (⌘W), nur die Menüleiste bleibt. Am iPhone 3 Punkte abhaken → „☀ … %“ am Mac ändert sich nach dem Abgleich, ohne Thalia anzuklicken.
+- [ ] Tag am Mac abschließen → am iPhone kommt am Abend keine „Tag abschließen“-Erinnerung (iPhone-App einmal geöffnet oder im Hintergrund geweckt).
+- [ ] iPhone: Thalia morgens öffnen, abends wieder öffnen → der Health-Vorschlag (Schritte, Wasser) zeigt den Abendstand.
+- [ ] Punkt löschen, neuen Punkt in derselben Kategorie anlegen → der neue Punkt ist leer (übernimmt keine Haken).
+- [ ] Watch: ✓ auf der Watch, gleichzeitig am iPhone eine Notiz zum selben Punkt → nach dem Abgleich sind ✓ und Notiz beide da.
+- [ ] Am Mac etwas abhaken → das iPhone-Widget zeigt es, ohne die iPhone-App zu öffnen (kann ein paar Minuten dauern).
+
 ## v7 (ab Version 1.6.0)
 
 **Nach dem Update zuerst**

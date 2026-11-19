@@ -23,7 +23,12 @@ struct ThaliaWatchApp: App {
         WindowGroup {
             WatchHomeView()
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { publisher.publishNow() }
+                    // .active: catch up after time away; .inactive/.background: write the pending
+                    // snapshot before watchOS suspends the app (wrist down).
+                    publisher.publishNow()
+                    if phase == .active {
+                        TrackerStore(context: container.mainContext).recordDeviceSeen(kind: SyncDeviceKind.current)
+                    }
                 }
         }
         .modelContainer(container)

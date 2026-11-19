@@ -21,7 +21,10 @@ Letzte Aktualisierung: 2026-11-16 · Arbeitsliste: [TASKS-v7.md](TASKS-v7.md) ·
   1.6.0 nicht mehr verwenden (Build 52 existiert), sonst neue Version oder Diagnose-Workflow mit Nummer > 52.
 - iOS-Export scheiterte dreimal mit „Error Downloading App Information“: laut Distribution-Log HTTP 500 von
   `GET /v1/apps?…include=appStoreVersions` (Apple-Serverfehler, kam und ging). `asc-probe.yml` prüft diese Anfragen.
-- Nächste Schritte: Bini testet nach TESTING.md „v7“.
+- 1.6.1: Sync-Prüfung (Workflow mit Gegenprüfung) – 4 Fehler und 7 Risiken behoben, „Geräte im Abgleich“ in den
+  Einstellungen, Produktions-Schema geprüft (alle Felder da). Details und bekannte Grenzen: [SYNC.md](SYNC.md).
+  Health am Mac: bleibt (Regel 5.1.3(ii)) bis Bini A/B entscheidet.
+- Nächste Schritte: TestFlight 1.6.1 → Bini testet nach TESTING.md „1.6.1“ und „v7“.
 - Bekannte Risiken mit Ausweichweg: [TASKS-v7.md](TASKS-v7.md) Abschnitt 7 (Widget-Abhaken aus der Erweiterung, `#Index`
   mit CloudKit, Transaktion-Betrag, Ziffernblock-Leiste).
 

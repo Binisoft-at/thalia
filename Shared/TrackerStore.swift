@@ -210,9 +210,22 @@ struct TrackerStore {
     @discardableResult
     func seedStructure() -> Bool {
         guard liveGoals().isEmpty else { return false }
-        for goal in Template.goals { context.insert(AnnualGoal(goal)) }
+        // Older than any real record: should the person's own structure still arrive from iCloud
+        // (a new device before its first sync), their copy wins `latest(by:)` everywhere.
+        let seeded = Date(timeIntervalSince1970: 0)
+        for record in Template.goals {
+            let goal = AnnualGoal(record)
+            goal.createdAt = seeded
+            goal.modifiedAt = seeded
+            context.insert(goal)
+        }
         let existing = Set(liveCategories().map(\.key))
-        for category in Template.categories where !existing.contains(category.key) { context.insert(TrackCategory(category)) }
+        for record in Template.categories where !existing.contains(record.key) {
+            let category = TrackCategory(record)
+            category.createdAt = seeded
+            category.modifiedAt = seeded
+            context.insert(category)
+        }
         AppLog.info("Goal structure created (10 goals, 18 categories)", category: "store")
         save()
         return true
@@ -234,9 +247,13 @@ struct TrackerStore {
 
     // MARK: Weeks and days
 
+    /// Writers edit the copy that `mergeDuplicates` keeps on every device (the oldest one), after
+    /// folding in two devices' copies: a change never lands on a copy another device deletes.
     @discardableResult
     func ensurePlan(_ week: WeekKey) -> WeekPlan {
-        if let existing = plan(week) { return existing }
+        let key = week.string
+        let copies = fetch(FetchDescriptor<WeekPlan>(predicate: #Predicate<WeekPlan> { $0.weekKey == key && $0.deletedAt == nil }))
+        if let existing = mergePlans(copies) { return existing }
         let created = WeekPlan(WeekRecord(week: week))
         context.insert(created)
         return created
@@ -244,7 +261,9 @@ struct TrackerStore {
 
     @discardableResult
     func ensureDay(_ day: DayKey) -> PlanDay {
-        if let existing = planDay(day) { return existing }
+        let key = day.string
+        let copies = fetch(FetchDescriptor<PlanDay>(predicate: #Predicate<PlanDay> { $0.dayKey == key }))
+        if let existing = mergeDays(copies) { return existing }
         let created = PlanDay(dayKey: day.string)
         context.insert(created)
         return created
@@ -310,6 +329,19 @@ struct TrackerStore {
         save()
     }
 
+    /// Several copies of one mark (written on two devices before they synced): keep the newest,
+    /// fill its empty value or note from the newest copy that has one, delete the rest. `existing`
+    /// is sorted newest first.
+    private func collapse(_ existing: [ItemMark]) -> ItemMark? {
+        guard let target = existing.first else { return nil }
+        for duplicate in existing.dropFirst() {
+            if target.valueRaw.isEmpty, !duplicate.valueRaw.isEmpty { target.valueRaw = duplicate.valueRaw }
+            if target.note.isEmpty, !duplicate.note.isEmpty { target.note = duplicate.note }
+            context.delete(duplicate)
+        }
+        return target
+    }
+
     private func writeMark(_ mark: Mark?, item: PlanItem, day: DayKey, note: String? = nil) {
         let weekKey = item.weekKey
         let code = item.code
@@ -318,9 +350,8 @@ struct TrackerStore {
             $0.weekKey == weekKey && $0.itemCode == code && $0.dayKey == dayKey
         })).sorted { $0.modifiedAt > $1.modifiedAt }
         let target: ItemMark
-        if let first = existing.first {
-            target = first
-            for duplicate in existing.dropFirst() { context.delete(duplicate) }
+        if let kept = collapse(existing) {
+            target = kept
         } else {
             target = ItemMark(weekKey: weekKey, itemCode: code, dayKey: dayKey)
             context.insert(target)
@@ -340,9 +371,8 @@ struct TrackerStore {
             $0.weekKey == weekKey && $0.itemCode == code && $0.dayKey == dayKey
         })).sorted { $0.modifiedAt > $1.modifiedAt }
         let target: ItemMark
-        if let first = existing.first {
-            target = first
-            for duplicate in existing.dropFirst() { context.delete(duplicate) }
+        if let kept = collapse(existing) {
+            target = kept
         } else {
             target = ItemMark(weekKey: weekKey, itemCode: code, dayKey: dayKey)
             context.insert(target)
@@ -833,9 +863,17 @@ struct TrackerStore {
                  target: Target? = nil, measure: String = "", knockout: Bool = false, carryOver: Bool = true) -> PlanItem {
         let existing = items(week)
         let position = (existing.filter { $0.categoryKey == categoryKey }.map(\.position).max() ?? 0) + 1
-        var code = "\(categoryKey)-" + String(format: "%02d", position)
-        let codes = Set(existing.map(\.code))
-        if codes.contains(code) { code = "\(categoryKey)-m\(UUID().uuidString.prefix(4).lowercased())" }
+        // A code is taken when any item of the week has it – also one in "Zuletzt gelöscht" – or a
+        // mark still refers to it; otherwise a new item would inherit a deleted item's marks.
+        let key = week.string
+        let used = Set(fetch(FetchDescriptor<PlanItem>(predicate: #Predicate<PlanItem> { $0.weekKey == key })).map(\.code)
+                       + fetch(FetchDescriptor<ItemMark>(predicate: #Predicate<ItemMark> { $0.weekKey == key })).map(\.itemCode))
+        var number = position
+        var code = "\(categoryKey)-" + String(format: "%02d", number)
+        while used.contains(code) {
+            number += 1
+            code = "\(categoryKey)-" + String(format: "%02d", number)
+        }
         let record = ItemRecord(week: week, code: code, categoryKey: categoryKey, position: position,
                                 title: title.trimmingCharacters(in: .whitespacesAndNewlines), details: details,
                                 days: days, schedule: schedule, target: target, measure: measure, knockout: knockout)
@@ -1142,42 +1180,64 @@ struct TrackerStore {
         var merged = 0
         let days = Dictionary(grouping: fetch(FetchDescriptor<PlanDay>()), by: \.dayKey)
         for group in days.values where group.count > 1 {
-            let sorted = group.sorted { $0.createdAt < $1.createdAt }
-            let versions = sorted.map { DayVersion(dayType: $0.dayType, note: $0.note, closedAt: $0.closedAt, modifiedAt: $0.modifiedAt) }
-            guard let keeper = sorted.first, let result = DuplicateMerge.day(versions) else { continue }
-            keeper.dayType = result.dayType
-            keeper.note = result.note
-            keeper.closedAt = result.closedAt
-            keeper.modifiedAt = Date()
-            for duplicate in sorted.dropFirst() { context.delete(duplicate) }
-            merged += 1
+            if mergeDays(group) != nil { merged += 1 }
         }
         let plans = Dictionary(grouping: allPlans().filter { $0.deletedAt == nil }, by: \.weekKey)
         for group in plans.values where group.count > 1 {
-            let sorted = group.sorted { $0.createdAt < $1.createdAt }
-            let versions = sorted.map {
-                WeekVersion(title: $0.title, details: $0.details, recordedScore: $0.recordedScore, scoringModel: $0.scoringModel,
-                            closedAt: $0.closedAt, importedAt: $0.importedAt, finalScore: $0.finalScore,
-                            finalGoalScores: $0.finalGoalScores, finalGoalsScored: $0.finalGoalsScored, modifiedAt: $0.modifiedAt)
-            }
-            guard let keeper = sorted.first, let result = DuplicateMerge.week(versions) else { continue }
-            keeper.title = result.title
-            keeper.details = result.details
-            keeper.recordedScore = result.recordedScore
-            keeper.scoringModel = result.scoringModel
-            keeper.closedAt = result.closedAt
-            keeper.importedAt = result.importedAt
-            keeper.finalScore = result.finalScore
-            keeper.finalGoalScores = result.finalGoalScores
-            keeper.finalGoalsScored = result.finalGoalsScored
-            keeper.touch()
-            for duplicate in sorted.dropFirst() { context.delete(duplicate) }
-            merged += 1
+            if mergePlans(group) != nil { merged += 1 }
+        }
+        // One mark per item and day: a tick from one device and a note from another stay together.
+        let marks = Dictionary(grouping: fetch(FetchDescriptor<ItemMark>()), by: { "\($0.weekKey)|\($0.itemCode)|\($0.dayKey)" })
+        for group in marks.values where group.count > 1 {
+            if collapse(group.sorted { $0.modifiedAt > $1.modifiedAt }) != nil { merged += 1 }
         }
         guard merged > 0 else { return 0 }
         save()
-        AppLog.info("Merged \(merged) duplicate day/week record(s)", category: "store")
+        AppLog.info("Merged \(merged) duplicate day/week/mark record(s)", category: "store")
         return merged
+    }
+
+    /// The copies of one day (two devices): the oldest is kept with the merged fields. Returns the
+    /// kept copy (the only one when there is just one), nil for none.
+    @discardableResult
+    private func mergeDays(_ group: [PlanDay]) -> PlanDay? {
+        let sorted = group.sorted { $0.createdAt < $1.createdAt }
+        guard let keeper = sorted.first else { return nil }
+        guard sorted.count > 1 else { return keeper }
+        let versions = sorted.map { DayVersion(dayType: $0.dayType, note: $0.note, closedAt: $0.closedAt, modifiedAt: $0.modifiedAt) }
+        guard let result = DuplicateMerge.day(versions) else { return keeper }
+        keeper.dayType = result.dayType
+        keeper.note = result.note
+        keeper.closedAt = result.closedAt
+        keeper.modifiedAt = Date()
+        for duplicate in sorted.dropFirst() { context.delete(duplicate) }
+        return keeper
+    }
+
+    /// The copies of one week plan (two devices), like `mergeDays`.
+    @discardableResult
+    private func mergePlans(_ group: [WeekPlan]) -> WeekPlan? {
+        let sorted = group.sorted { $0.createdAt < $1.createdAt }
+        guard let keeper = sorted.first else { return nil }
+        guard sorted.count > 1 else { return keeper }
+        let versions = sorted.map {
+            WeekVersion(title: $0.title, details: $0.details, recordedScore: $0.recordedScore, scoringModel: $0.scoringModel,
+                        closedAt: $0.closedAt, importedAt: $0.importedAt, finalScore: $0.finalScore,
+                        finalGoalScores: $0.finalGoalScores, finalGoalsScored: $0.finalGoalsScored, modifiedAt: $0.modifiedAt)
+        }
+        guard let result = DuplicateMerge.week(versions) else { return keeper }
+        keeper.title = result.title
+        keeper.details = result.details
+        keeper.recordedScore = result.recordedScore
+        keeper.scoringModel = result.scoringModel
+        keeper.closedAt = result.closedAt
+        keeper.importedAt = result.importedAt
+        keeper.finalScore = result.finalScore
+        keeper.finalGoalScores = result.finalGoalScores
+        keeper.finalGoalsScored = result.finalGoalsScored
+        keeper.touch()
+        for duplicate in sorted.dropFirst() { context.delete(duplicate) }
+        return keeper
     }
 
     // MARK: Trash
@@ -1251,6 +1311,43 @@ struct TrackerStore {
         save()
     }
 
+    // MARK: Devices in sync
+
+    private static let installIDKey = "sync.installID"
+    private static let lastSeenKey = "sync.lastSeenWritten"
+
+    /// This installation's id (kept on the device only, never synced).
+    static var installID: String {
+        if let id = UserDefaults.standard.string(forKey: installIDKey) { return id }
+        let id = UUID().uuidString.lowercased()
+        UserDefaults.standard.set(id, forKey: installIDKey)
+        return id
+    }
+
+    /// Notes in the synced settings that this device just opened Thalia ("Geräte im Abgleich"),
+    /// at most every 10 minutes.
+    func recordDeviceSeen(kind: String, now: Date = Date()) {
+        let defaults = UserDefaults.standard
+        if let last = defaults.object(forKey: Self.lastSeenKey) as? Date,
+           now.timeIntervalSince(last) < SyncDevice.minimumInterval { return }
+        let device = SyncDevice(installID: Self.installID, kind: kind, seenAt: now)
+        setSetting(device.key, device.value)
+        defaults.set(now, forKey: Self.lastSeenKey)
+    }
+
+    /// Every device that has noted itself, newest first.
+    func syncDevices() -> [SyncDevice] {
+        // Few settings exist, so they are filtered in memory (no string-prefix predicate needed).
+        let settings = fetch(FetchDescriptor<AppSetting>()).filter { $0.key.hasPrefix(SyncDevice.keyPrefix) }
+        var newest: [String: SyncDevice] = [:]
+        for setting in settings {
+            guard let device = SyncDevice.parse(key: setting.key, value: setting.value) else { continue }
+            if let known = newest[device.installID], known.seenAt >= device.seenAt { continue }
+            newest[device.installID] = device
+        }
+        return newest.values.sorted { $0.seenAt > $1.seenAt }
+    }
+
     /// The goal year (start, end, review week, motto) – Bini's foundation year unless changed.
     var goalPeriod: GoalPeriod {
         var period = GoalPeriod.foundationYear
@@ -1279,10 +1376,24 @@ struct TrackerStore {
         } catch {
             AppLog.error("Save failed: \(error.localizedDescription)", category: "store")
         }
-        guard !touched.isEmpty else { return }
+        // Only a device that reads Apple Health re-scores closed weeks: the Mac and the Watch don't
+        // see Health values and would store a different score (they ping-ponged with the iPhone).
+        guard !touched.isEmpty, HealthDevice.readsHealth else { return }
         var rescored = false
         for week in touched.sorted() {
             guard let plan = plan(week), plan.isClosed else { continue }
+            if storeFinalScore(plan) { rescored = true }
+        }
+        if rescored { try? context.save() }
+    }
+
+    /// iPhone/iPad after a sync: closed weeks of the last few weeks get their score again with
+    /// Health values – a week closed (or edited) on the Mac or Watch stored it without them.
+    func rescoreRecentClosedWeeks(through week: WeekKey, weeks: Int = 3) {
+        guard HealthDevice.readsHealth else { return }
+        var rescored = false
+        for offset in 0..<weeks {
+            guard let plan = plan(week.adding(weeks: -offset)), plan.isClosed else { continue }
             if storeFinalScore(plan) { rescored = true }
         }
         if rescored { try? context.save() }
