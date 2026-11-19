@@ -1,0 +1,274 @@
+Building for debugging...
+[0/15] Write sources
+[3/15] Write swift-version-24593BA9C3E375BF.txt
+[5/21] Compiling BinisoftKitCore SyncStatus.swift
+[6/21] Compiling BinisoftKitCore AppEnvironment.swift
+[7/21] Compiling BinisoftKitCore AppLog.swift
+[8/21] Compiling BinisoftKitCore Import.swift
+[9/21] Compiling BinisoftKitCore Records.swift
+[10/21] Emitting module BinisoftKitCore
+[11/22] Compiling BinisoftKitCore Tour.swift
+[12/23] Wrapping AST for BinisoftKitCore for debugging
+[14/36] Emitting module ThaliaCore
+[15/39] Compiling ThaliaCore Reports.swift
+[16/39] Compiling ThaliaCore Scoring.swift
+[17/39] Compiling ThaliaCore SyncDevices.swift
+[18/39] Compiling ThaliaCore SyncGerman.swift
+[19/39] Compiling ThaliaCore Template.swift
+[20/39] Compiling ThaliaCore ThaliaTour.swift
+[21/39] Compiling ThaliaCore Vocabulary.swift
+[22/39] Compiling ThaliaCore Measures.swift
+[23/39] Compiling ThaliaCore Merge.swift
+[24/39] Compiling ThaliaCore PlanCSV.swift
+[25/39] Compiling ThaliaCore Records.swift
+[26/39] Compiling ThaliaCore Calendar.swift
+[27/39] Compiling ThaliaCore Demo.swift
+[28/39] Compiling ThaliaCore Format.swift
+[29/39] Compiling ThaliaCore ImportPreview.swift
+[30/40] Wrapping AST for ThaliaCore for debugging
+[32/45] Compiling ThaliaCoreTests SyncDeviceTests.swift
+[33/45] Compiling ThaliaCoreTests ScoringTests.swift
+[34/45] Compiling ThaliaCoreTests CSVTests.swift
+[35/45] Compiling ThaliaCoreTests CalendarTests.swift
+[36/45] Emitting module ThaliaCoreTests
+[37/46] Compiling ThaliaCoreTests V7Tests.swift
+[38/47] /__w/thalia/thalia/Packages/ThaliaCore/.build/x86_64-unknown-linux-gnu/debug/ThaliaCorePackageDiscoveredTests.derived/all-discovered-tests.swift
+[39/47] Write sources
+[40/47] Wrapping AST for ThaliaCoreTests for debugging
+[42/50] Compiling ThaliaCorePackageDiscoveredTests ThaliaCoreTests.swift
+[43/50] Emitting module ThaliaCorePackageDiscoveredTests
+[44/50] Compiling ThaliaCorePackageDiscoveredTests all-discovered-tests.swift
+[45/51] /__w/thalia/thalia/Packages/ThaliaCore/.build/x86_64-unknown-linux-gnu/debug/ThaliaCorePackageTests.derived/runner.swift
+[46/51] Write sources
+[47/51] Wrapping AST for ThaliaCorePackageDiscoveredTests for debugging
+[49/53] Emitting module ThaliaCorePackageTests
+[50/53] Compiling ThaliaCorePackageTests runner.swift
+[51/54] Wrapping AST for ThaliaCorePackageTests for debugging
+[52/54] Write Objects.LinkFileList
+[53/54] Linking ThaliaCorePackageTests.xctest
+Build complete! (27.15s)
+Test Suite 'All tests' started at 2026-11-19 21:01:49.963
+Test Suite 'debug.xctest' started at 2026-11-19 21:01:49.964
+Test Suite 'debug.xctest' passed at 2026-11-19 21:01:49.964
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.0 (0.0) seconds
+Test Suite 'All tests' passed at 2026-11-19 21:01:49.964
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.0 (0.0) seconds
+◇ Test run started.
+↳ Testing Library Version: 6.2.4 (5ee435b15ad40ec)
+↳ Target Platform: x86_64-unknown-linux-gnu
+◇ Suite "Scoring" started.
+◇ Suite "Scoring v3" started.
+◇ Suite "v7 days and numbers" started.
+◇ Suite "Devices in sync" started.
+◇ Suite "Plan CSV" started.
+◇ Suite "v7 backup, import, plan" started.
+◇ Suite "Measurements and work" started.
+◇ Suite "Demo, prompt, report, reminders, tour" started.
+◇ Suite "v7 vocabulary" started.
+◇ Suite "Days and ISO weeks" started.
+◇ Suite "Scoring v2" started.
+◇ Suite "v7 merges and sync texts" started.
+◇ Suite "v7 scoring and summary" started.
+◇ Suite "Vocabulary and formatting" started.
+◇ Test clockTimesOnDaysTheClocksChange() started.
+◇ Test closingDayUsesFourOClock() started.
+◇ Test paceSkipsFreeDays() started.
+◇ Test optionalItemsAreNeverScored() started.
+◇ Test freeDaysLeaveWorkOut() started.
+◇ Test goalsWeighEquallyRegardlessOfCategoryCount() started.
+◇ Test euroToTheCent() started.
+◇ Test weeklyQuotaShortfallCountsOnlyOnceTheWeekIsOver() started.
+◇ Test progressItemsFollowTheirMeasurement() started.
+◇ Test secondaryItemsCountOnlyWhenFilled() started.
+◇ Test lettersAndRelativeDays() started.
+◇ Test flagsRoundTripThroughTheCSV() started.
+◇ Test notApplicableAndBlankDontCountButBlankStaysVisible() started.
+◇ Test weeklyItemsLeaveTheDayOnceTheQuotaIsMet() started.
+◇ Test missedMarkUsesAQuotaSlot() started.
+◇ Test partialCountsHalf() started.
+◇ Test handoverExampleNutrition8Training6IsFitBody7() started.
+◇ Test knockoutRuleZeroesTheCategoryButKeepsTheMarks() started.
+◇ Test ownScoreOverridesTheCalculation() started.
+◇ Test missingGoalCoverageIsVisible() started.
+◇ Test paceAgainstAnEvenWeek() started.
+◇ Test weeklyAverageUsesOnlyValidDays() started.
+◇ Test notScheduledIsNotMissed() started.
+◇ Test seenTexts() started.
+◇ Test labelsNumberSameKinds() started.
+◇ Test weekCompleteness() started.
+◇ Test roundTrip() started.
+◇ Test pastedChatGPTAnswerAndGermanHeaders() started.
+◇ Test historyWeeksBeforeKW42UseTheOldModel() started.
+◇ Test problemsAreExplained() started.
+◇ Test revisedPlanUpdatesAndRemoves() started.
+◇ Test missingTypeColumn() started.
+◇ Test templateHasTenGoalsEighteenCategoriesAndOnlyTheItemsNeeded() started.
+◇ Test slugs() started.
+◇ Test resultsOnlyFileRemovesNothing() started.
+◇ Test reimportingTheSameFileChangesNothing() started.
+◇ Test resultsRoundTrip() started.
+◇ Test backupRoundTrip() started.
+◇ Test templateRoundTripsThroughTheCSV() started.
+◇ Test oldBackupStillImports() started.
+◇ Test promptCarriesPlan() started.
+◇ Test replacementText() started.
+◇ Test everythingIsPowerHoursTutoringToo() started.
+◇ Test repeatPlan() started.
+◇ Test entriesAggregate() started.
+◇ Test periodReport() started.
+◇ Test bedtimesAverageAcrossMidnight() started.
+◇ Test suggestionsNeverInventFailures() started.
+◇ Test workMeasureInPowerHours() started.
+◇ Test demoWeekScoresSensibly() started.
+◇ Test todaySummaryComparesContent() started.
+◇ Test tourStepsTickOff() started.
+◇ Test promptListsManualChanges() started.
+◇ Test tourGlanceTicksOff() started.
+◇ Test promptDefinesTheFormatAndCarriesTheStructure() started.
+◇ Test weekReportShowsScoreAndReality() started.
+◇ Test tourCatalogIsValid() started.
+◇ Test demoIsDeterministicAndConsistent() started.
+➜ Test realFileImports() skipped.
+◇ Test dayMasks() started.
+◇ Test knownWeekdays() started.
+◇ Test appleWeekdayNumbers() started.
+◇ Test parsesAndPrintsDays() started.
+◇ Test remindersUseApplesWeekdays() started.
+◇ Test week53AndYearBoundaries() started.
+◇ Test dayFromDateUsesTheTimeZone() started.
+◇ Test goalYearWeeks() started.
+◇ Test parsesWeekSpellings() started.
+◇ Test markWords() started.
+◇ Test measureKinds() started.
+◇ Test workTotalsInHoursAndMinutes() started.
+◇ Test targetSentencesAndChoices() started.
+◇ Test notApplicableOnlyWhileEnoughDaysAreLeft() started.
+◇ Test neverWorkedOnAMissedTargetCountsOnceAtTheEnd() started.
+◇ Test mergeDays() started.
+◇ Test syncErrorsInGerman() started.
+◇ Test syncStatusInGerman() started.
+◇ Test mergeWeeks() started.
+◇ Test journalFromItem() started.
+◇ Test oldSummaryFileStaysReadable() started.
+◇ Test schedules() started.
+◇ Test germanNumbers() started.
+◇ Test bedtimeAfterMidnightIsLate() started.
+◇ Test targets() started.
+◇ Test eveningRemindersPerDay() started.
+◇ Test openMatchesBlank() started.
+◇ Test progressItemsWaitForTheWeekAndResolveBackwards() started.
+◇ Test dayTypes() started.
+◇ Test progressRatioFromWork() started.
+◇ Test marksFollowTheSheet() started.
+◇ Test summaryResolvesAfterMidnight() started.
+◇ Test markingDoneUpdatesSummary() started.
+◇ Test goalNeedsAllItsCategoriesComplete() started.
+◇ Test sources() started.
+✔ Test clockTimesOnDaysTheClocksChange() passed after 0.072 seconds.
+✔ Test closingDayUsesFourOClock() passed after 0.072 seconds.
+✔ Test paceSkipsFreeDays() passed after 0.073 seconds.
+✔ Test optionalItemsAreNeverScored() passed after 0.078 seconds.
+✔ Test euroToTheCent() passed after 0.078 seconds.
+✔ Test freeDaysLeaveWorkOut() passed after 0.078 seconds.
+✔ Test weeklyQuotaShortfallCountsOnlyOnceTheWeekIsOver() passed after 0.078 seconds.
+✔ Test progressItemsFollowTheirMeasurement() passed after 0.078 seconds.
+✔ Test lettersAndRelativeDays() passed after 0.078 seconds.
+✔ Test secondaryItemsCountOnlyWhenFilled() passed after 0.078 seconds.
+✔ Test weeklyItemsLeaveTheDayOnceTheQuotaIsMet() passed after 0.078 seconds.
+✔ Test missedMarkUsesAQuotaSlot() passed after 0.078 seconds.
+✔ Test notApplicableAndBlankDontCountButBlankStaysVisible() passed after 0.078 seconds.
+✔ Test goalsWeighEquallyRegardlessOfCategoryCount() passed after 0.079 seconds.
+✔ Test partialCountsHalf() passed after 0.078 seconds.
+✔ Test knockoutRuleZeroesTheCategoryButKeepsTheMarks() passed after 0.078 seconds.
+✔ Test ownScoreOverridesTheCalculation() passed after 0.078 seconds.
+✔ Test paceAgainstAnEvenWeek() passed after 0.078 seconds.
+✔ Test handoverExampleNutrition8Training6IsFitBody7() passed after 0.078 seconds.
+✔ Test missingGoalCoverageIsVisible() passed after 0.078 seconds.
+✔ Test weeklyAverageUsesOnlyValidDays() passed after 0.078 seconds.
+✔ Test seenTexts() passed after 0.078 seconds.
+✔ Test weekCompleteness() passed after 0.078 seconds.
+✔ Test labelsNumberSameKinds() passed after 0.078 seconds.
+✔ Test flagsRoundTripThroughTheCSV() passed after 0.079 seconds.
+✔ Test notScheduledIsNotMissed() passed after 0.078 seconds.
+✔ Test historyWeeksBeforeKW42UseTheOldModel() passed after 0.078 seconds.
+✔ Test problemsAreExplained() passed after 0.078 seconds.
+✔ Test missingTypeColumn() passed after 0.078 seconds.
+✔ Test pastedChatGPTAnswerAndGermanHeaders() passed after 0.078 seconds.
+✔ Test slugs() passed after 0.078 seconds.
+✔ Test roundTrip() passed after 0.079 seconds.
+✔ Test templateHasTenGoalsEighteenCategoriesAndOnlyTheItemsNeeded() passed after 0.078 seconds.
+✔ Test resultsOnlyFileRemovesNothing() passed after 0.078 seconds.
+✔ Test resultsRoundTrip() passed after 0.078 seconds.
+✔ Test backupRoundTrip() passed after 0.078 seconds.
+✔ Test oldBackupStillImports() passed after 0.078 seconds.
+✔ Test promptCarriesPlan() passed after 0.078 seconds.
+✔ Test replacementText() passed after 0.078 seconds.
+✔ Test everythingIsPowerHoursTutoringToo() passed after 0.078 seconds.
+✔ Test repeatPlan() passed after 0.078 seconds.
+✔ Test entriesAggregate() passed after 0.078 seconds.
+✔ Test periodReport() passed after 0.078 seconds.
+✔ Test bedtimesAverageAcrossMidnight() passed after 0.078 seconds.
+✔ Test suggestionsNeverInventFailures() passed after 0.078 seconds.
+✔ Test workMeasureInPowerHours() passed after 0.078 seconds.
+✔ Test demoWeekScoresSensibly() passed after 0.078 seconds.
+✔ Test revisedPlanUpdatesAndRemoves() passed after 0.079 seconds.
+✔ Test tourStepsTickOff() passed after 0.078 seconds.
+✔ Test todaySummaryComparesContent() passed after 0.078 seconds.
+✔ Test tourGlanceTicksOff() passed after 0.078 seconds.
+✔ Test promptListsManualChanges() passed after 0.078 seconds.
+✔ Test templateRoundTripsThroughTheCSV() passed after 0.079 seconds.
+✔ Test tourCatalogIsValid() passed after 0.078 seconds.
+✔ Test promptDefinesTheFormatAndCarriesTheStructure() passed after 0.078 seconds.
+✔ Test dayMasks() passed after 0.078 seconds.
+✔ Test knownWeekdays() passed after 0.078 seconds.
+✔ Test appleWeekdayNumbers() passed after 0.078 seconds.
+✔ Test parsesAndPrintsDays() passed after 0.078 seconds.
+✔ Test remindersUseApplesWeekdays() passed after 0.078 seconds.
+✔ Test week53AndYearBoundaries() passed after 0.078 seconds.
+✔ Test dayFromDateUsesTheTimeZone() passed after 0.078 seconds.
+✔ Test goalYearWeeks() passed after 0.078 seconds.
+✔ Test parsesWeekSpellings() passed after 0.078 seconds.
+✔ Test markWords() passed after 0.078 seconds.
+✔ Test measureKinds() passed after 0.078 seconds.
+✔ Test workTotalsInHoursAndMinutes() passed after 0.078 seconds.
+✔ Test targetSentencesAndChoices() passed after 0.078 seconds.
+✔ Test notApplicableOnlyWhileEnoughDaysAreLeft() passed after 0.078 seconds.
+✔ Test neverWorkedOnAMissedTargetCountsOnceAtTheEnd() passed after 0.078 seconds.
+✔ Test mergeDays() passed after 0.078 seconds.
+✔ Test syncErrorsInGerman() passed after 0.078 seconds.
+✔ Test syncStatusInGerman() passed after 0.078 seconds.
+✔ Test mergeWeeks() passed after 0.078 seconds.
+✔ Test journalFromItem() passed after 0.077 seconds.
+✔ Test oldSummaryFileStaysReadable() passed after 0.077 seconds.
+✔ Test schedules() passed after 0.076 seconds.
+✔ Test germanNumbers() passed after 0.076 seconds.
+✔ Test bedtimeAfterMidnightIsLate() passed after 0.076 seconds.
+✔ Test targets() passed after 0.075 seconds.
+✔ Test eveningRemindersPerDay() passed after 0.075 seconds.
+✔ Test openMatchesBlank() passed after 0.075 seconds.
+✔ Test progressItemsWaitForTheWeekAndResolveBackwards() passed after 0.078 seconds.
+✔ Test dayTypes() passed after 0.075 seconds.
+✔ Test progressRatioFromWork() passed after 0.074 seconds.
+✔ Test marksFollowTheSheet() passed after 0.074 seconds.
+✔ Test summaryResolvesAfterMidnight() passed after 0.074 seconds.
+✔ Test markingDoneUpdatesSummary() passed after 0.074 seconds.
+✔ Test goalNeedsAllItsCategoriesComplete() passed after 0.075 seconds.
+✔ Test sources() passed after 0.072 seconds.
+✔ Suite "v7 days and numbers" passed after 0.084 seconds.
+✔ Suite "Scoring" passed after 0.084 seconds.
+✔ Suite "Scoring v3" passed after 0.084 seconds.
+✔ Suite "Devices in sync" passed after 0.084 seconds.
+✔ Suite "v7 backup, import, plan" passed after 0.084 seconds.
+✔ Suite "Measurements and work" passed after 0.084 seconds.
+✔ Suite "Days and ISO weeks" passed after 0.084 seconds.
+✔ Suite "v7 vocabulary" passed after 0.084 seconds.
+✔ Suite "Scoring v2" passed after 0.084 seconds.
+✔ Suite "v7 merges and sync texts" passed after 0.084 seconds.
+✔ Suite "v7 scoring and summary" passed after 0.084 seconds.
+✔ Suite "Vocabulary and formatting" passed after 0.084 seconds.
+✔ Test weekReportShowsScoreAndReality() passed after 0.091 seconds.
+✔ Test reimportingTheSameFileChangesNothing() passed after 0.093 seconds.
+✔ Suite "Plan CSV" passed after 0.096 seconds.
+✔ Test demoIsDeterministicAndConsistent() passed after 0.185 seconds.
+✔ Suite "Demo, prompt, report, reminders, tour" passed after 0.188 seconds.
+✔ Test run with 94 tests in 14 suites passed after 0.189 seconds.

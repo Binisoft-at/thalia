@@ -1,0 +1,27 @@
+OK    apps by bundle id: 1 item(s)
+OK    apps + appStoreVersions (Xcode's export request): 1 item(s)
+OK    appStoreVersions of the app: 2 item(s)
+      version MAC_OS 1.0 · PREPARE_FOR_SUBMISSION
+      version IOS 1.0 · PREPARE_FOR_SUBMISSION
+OK    appStoreVersions filter platform=IOS: 1 item(s)
+OK    appStoreVersions filter platform=MAC_OS: 1 item(s)
+OK    preReleaseVersions of the app: 16 item(s)
+OK    builds of the app: 6 item(s)
+      build MAC_OS 1.6.1 (53): processing VALID · encryption False · audience APP_STORE_ELIGIBLE · expired False
+OK      buildBetaDetail MAC_OS 1.6.1 (53): 1 item(s)
+      → internal IN_BETA_TESTING · external READY_FOR_BETA_SUBMISSION · auto-notify True
+      build IOS 1.6.1 (53): processing VALID · encryption False · audience APP_STORE_ELIGIBLE · expired False
+OK      buildBetaDetail IOS 1.6.1 (53): 1 item(s)
+      → internal IN_BETA_TESTING · external READY_FOR_BETA_SUBMISSION · auto-notify True
+      build IOS 1.6.0 (52): processing VALID · encryption False · audience APP_STORE_ELIGIBLE · expired False
+OK      buildBetaDetail IOS 1.6.0 (52): 1 item(s)
+      → internal IN_BETA_TESTING · external READY_FOR_BETA_SUBMISSION · auto-notify True
+      build MAC_OS 1.6.0 (52): processing VALID · encryption False · audience APP_STORE_ELIGIBLE · expired False
+OK      buildBetaDetail MAC_OS 1.6.0 (52): 1 item(s)
+      → internal IN_BETA_TESTING · external READY_FOR_BETA_SUBMISSION · auto-notify True
+      build MAC_OS 1.6.0 (47): processing VALID · encryption False · audience APP_STORE_ELIGIBLE · expired False
+OK      buildBetaDetail MAC_OS 1.6.0 (47): 1 item(s)
+      → internal IN_BETA_TESTING · external READY_FOR_BETA_SUBMISSION · auto-notify True
+      build MAC_OS 1.5.0 (36): processing VALID · encryption False · audience APP_STORE_ELIGIBLE · expired False
+OK      buildBetaDetail MAC_OS 1.5.0 (36): 1 item(s)
+      → internal IN_BETA_TESTING · external READY_FOR_BETA_SUBMISSION · auto-notify True

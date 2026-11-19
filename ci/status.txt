@@ -1,0 +1,3 @@
+run 32 (push) commit 2d10a09b4ab45cb9b0690e96e169a66791150a68
+core-tests=success build=success
+details: https://github.com/Binisoft-at/thalia/actions/runs/44614444429
