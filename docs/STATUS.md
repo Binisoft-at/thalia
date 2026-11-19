@@ -24,7 +24,9 @@ Letzte Aktualisierung: 2026-11-16 · Arbeitsliste: [TASKS-v7.md](TASKS-v7.md) ·
 - 1.6.1: Sync-Prüfung (Workflow mit Gegenprüfung) – 4 Fehler und 7 Risiken behoben, „Geräte im Abgleich“ in den
   Einstellungen, Produktions-Schema geprüft (alle Felder da). Details und bekannte Grenzen: [SYNC.md](SYNC.md).
   Health am Mac: bleibt (Regel 5.1.3(ii)) bis Bini A/B entscheidet.
-- Nächste Schritte: TestFlight 1.6.1 → Bini testet nach TESTING.md „1.6.1“ und „v7“.
+- TestFlight: **1.6.1 (53)** für iOS + Watch + macOS hochgeladen (testflight-diagnose.yml, Build-Nr. 53). Nächste
+  Uploads: Build-Nr. > 53 (regulärer Workflow erst ab Run 54 verwenden oder Diagnose-Workflow mit Nummer).
+- Nächste Schritte: Bini testet nach TESTING.md „1.6.1“ und „v7“.
 - Bekannte Risiken mit Ausweichweg: [TASKS-v7.md](TASKS-v7.md) Abschnitt 7 (Widget-Abhaken aus der Erweiterung, `#Index`
   mit CloudKit, Transaktion-Betrag, Ziffernblock-Leiste).
 
