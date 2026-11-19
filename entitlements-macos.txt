@@ -1,0 +1,1 @@
+ok: Thalia.app has every entitlement from Config/macOS/Thalia.entitlements

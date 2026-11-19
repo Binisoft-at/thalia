@@ -1,0 +1,3 @@
+run 3 (workflow_dispatch) commit 2d10a09b4ab45cb9b0690e96e169a66791150a68
+prune=success upload=success build=53 (diagnose run 3)
+details: https://github.com/Binisoft-at/thalia/actions/runs/44615904310
