@@ -148,17 +148,15 @@ struct ImportView: View {
                     app.sheet = .closeWeek(source)
                 }
             }
-            HStack(spacing: 10) {
-                Button {
-                    Clipboard.copy(app.store.planningPrompt(for: targetWeek, today: app.today))
-                    promptCopied = true
-                } label: {
-                    Label(copyTitle, systemImage: copySymbol)
-                }
-                .thaliaPrimaryAction()
-                Link("ChatGPT öffnen", destination: URL(string: "https://chatgpt.com")!)
-                    .buttonStyle(.bordered)
+            Button {
+                Clipboard.copy(app.store.planningPrompt(for: targetWeek, today: app.today))
+                promptCopied = true
+            } label: {
+                Label(copyTitle, systemImage: copySymbol)
+                    .frame(maxWidth: .infinity)
             }
+            .thaliaPrimaryAction()
+            ChatGPTLink()
         } header: {
             Text("1 · Prompt kopieren")
         } footer: {
@@ -479,5 +477,16 @@ struct CSVFile: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
+/// "ChatGPT öffnen" as a full-width row under the prompt button (plan and past-week import).
+struct ChatGPTLink: View {
+    var body: some View {
+        Link(destination: URL(string: "https://chatgpt.com")!) {
+            Label("ChatGPT öffnen", systemImage: "arrow.up.forward.app")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
     }
 }

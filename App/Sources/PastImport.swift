@@ -274,11 +274,7 @@ struct PastWeekImportView: View {
                 weekPicker("Bis", selection: $through)
             }
             LabeledContent("Vorlage", value: templateText)
-            // Side by side when they fit on one line each, else one below the other.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { promptButtons }
-                VStack(alignment: .leading, spacing: 10) { promptButtons }
-            }
+            promptButtons
         } header: {
             Text("1 · Prompt kopieren")
         } footer: {
@@ -286,6 +282,7 @@ struct PastWeekImportView: View {
         }
     }
 
+    /// Two full-width rows: side by side, the long title wrapped and lost its symbol on the iPhone.
     @ViewBuilder
     private var promptButtons: some View {
         Button {
@@ -293,14 +290,10 @@ struct PastWeekImportView: View {
             promptCopied = true
         } label: {
             Label(copyTitle, systemImage: copySymbol)
-                .lineLimit(1)
+                .frame(maxWidth: .infinity)
         }
         .thaliaPrimaryAction()
-        .fixedSize()
-        Link("ChatGPT öffnen", destination: URL(string: "https://chatgpt.com")!)
-            .lineLimit(1)
-            .buttonStyle(.bordered)
-            .fixedSize()
+        ChatGPTLink()
     }
 
     private var copyTitle: String { promptCopied ? "Prompt kopiert" : "Prompt kopieren" }
