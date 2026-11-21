@@ -254,8 +254,8 @@ Plan und Regeln: [TASKS-v8.md](TASKS-v8.md). CSV-Format für vergangene Wochen: 
 **Vergangene Woche nachtragen (Entscheidung 8)**
 - [ ] Erreichbar über Woche → … → „Vergangene Woche nachtragen…“, Mac Ablage, Wochenübersicht rechts (Mac/iPad), Import → Vorlagen, leerer Rückblick und eine vergangene Woche ohne Plan.
 - [ ] Wochenauswahl: ab Beginn des Zieljahrs, mindestens 52 Wochen zurück, bis letzte Woche; diese Woche ist nicht wählbar.
-- [ ] a) „Plan übernehmen“ in eine leere vergangene Woche: die Punkte der nächstgelegenen geplanten Woche erscheinen ohne Markierungen; „KWnn in der Woche öffnen“ → abhaken, Krank setzen → „KWnn abschließen“ → die Woche steht im Rückblick und in den Zielen.
-- [ ] a) „Plan übernehmen“ in eine Woche mit Plan: Rückfrage, die alte Woche kommt ins Archiv, „Widerrufen“ im Hinweis holt sie zurück.
+- [ ] a) „Vom Plan“ in eine leere vergangene Woche: die Punkte der nächstgelegenen geplanten Woche erscheinen ohne Markierungen; „KWnn in der Woche öffnen“ → abhaken, Krank setzen → „KWnn abschließen“ → die Woche steht im Rückblick und in den Zielen.
+- [ ] a) „Vom Plan“ in eine Woche mit Plan: Rückfrage, die alte Woche kommt ins Archiv, „Widerrufen“ im Hinweis holt sie zurück.
 - [ ] b) „Mit ChatGPT“, Zeitraum „Wochen aus den Unterlagen“: „Prompt kopieren“ → in ChatGPT Fotos oder ein PDF von zwei Papierwochen dazulegen → CSV zurück → einfügen (oder „Datei…“).
 - [ ] b) Vorschau je Woche: je Woche eine Zeile (z. B. „KW45 2026 (2.–8. Nov.) · neu“ mit Punkten, Markierungen, Krank/Urlaub-Tagen); Importieren → beide Wochen und ihre Tage sind abgeschlossen und erscheinen im Rückblick, in den Zielen und im Ø 4 Wo.
 - [ ] b) Eine CSV mit einer Woche in Matrix-Form (Spalten mo…so) und einer Woche nur mit Wertung (week-Zeile mit Datum und value) → die Vorschau zeigt zwei Zeilen „neu“, der Import schließt beide ab.

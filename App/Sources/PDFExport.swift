@@ -416,7 +416,7 @@ struct PDFFooter: View {
         HStack {
             Label("Thalia", systemImage: "leaf.fill")
                 .font(.system(size: 9, weight: .bold, design: .rounded))
-            Text("· erstellt \(Date().formatted(date: .abbreviated, time: .shortened))")
+            Text("· erstellt \(Date().formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: Locale(identifier: "de_AT"))))")
                 .font(.system(size: 9))
             Spacer()
             Text("Seite \(page) von \(total)")

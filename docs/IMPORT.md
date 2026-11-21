@@ -78,7 +78,7 @@ Results (export, backup, history) use `date`, `value`, `note`:
 *Vergangene Woche nachtragen* (`PastWeekImportView` in `App/Sources/PastImport.swift`; also under
 *Vorlagen* in the plan import) brings in weeks from before the app or from a paper tracker. Three ways:
 
-1. **Plan übernehmen** – the items and measurements of the nearest planned week (before or after the
+1. **Vom Plan** – the items and measurements of the nearest planned week (before or after the
    chosen one) are copied into it with the same ids, without marks, values and day types. The week
    table opens: tick off, set Krank/Urlaub days, close the week. A week that already has a plan is
    archived first (Undo in the toast).

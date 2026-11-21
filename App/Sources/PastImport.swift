@@ -25,7 +25,7 @@ struct PastWeekImportView: View {
 
         var title: String {
             switch self {
-            case .plan: "Plan übernehmen"
+            case .plan: "Vom Plan"
             case .chat: "Mit ChatGPT"
             case .score: "Nur Wertung"
             }
@@ -274,22 +274,33 @@ struct PastWeekImportView: View {
                 weekPicker("Bis", selection: $through)
             }
             LabeledContent("Vorlage", value: templateText)
-            HStack(spacing: 10) {
-                Button {
-                    Clipboard.copy(app.store.pastWeekPrompt(weeks: rangeWeeks, today: app.today))
-                    promptCopied = true
-                } label: {
-                    Label(copyTitle, systemImage: copySymbol)
-                }
-                .thaliaPrimaryAction()
-                Link("ChatGPT öffnen", destination: URL(string: "https://chatgpt.com")!)
-                    .buttonStyle(.bordered)
+            // Side by side when they fit on one line each, else one below the other.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { promptButtons }
+                VStack(alignment: .leading, spacing: 10) { promptButtons }
             }
         } header: {
             Text("1 · Prompt kopieren")
         } footer: {
             Text(promptFooter)
         }
+    }
+
+    @ViewBuilder
+    private var promptButtons: some View {
+        Button {
+            Clipboard.copy(app.store.pastWeekPrompt(weeks: rangeWeeks, today: app.today))
+            promptCopied = true
+        } label: {
+            Label(copyTitle, systemImage: copySymbol)
+                .lineLimit(1)
+        }
+        .thaliaPrimaryAction()
+        .fixedSize()
+        Link("ChatGPT öffnen", destination: URL(string: "https://chatgpt.com")!)
+            .lineLimit(1)
+            .buttonStyle(.bordered)
+            .fixedSize()
     }
 
     private var copyTitle: String { promptCopied ? "Prompt kopiert" : "Prompt kopieren" }

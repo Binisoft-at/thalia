@@ -342,8 +342,8 @@ struct FeatureExplainerView: View {
         Group {
             Step(number: 1, title: "Das Fenster",
                  text: pastWeeksOpenText,
-                 example: "Plan übernehmen · Mit ChatGPT · Nur Wertung")
-            Step(number: 2, title: "Plan übernehmen",
+                 example: "Vom Plan · Mit ChatGPT · Nur Wertung")
+            Step(number: 2, title: "Vom Plan",
                  text: "Die Punkte der nächstgelegenen geplanten Woche kommen in die gewählte Woche, ohne Markierungen. Dann in der Woche abhaken, Krank- und Urlaubstage setzen und die Woche abschließen – erst dann zählt sie. Hat die Woche schon einen Plan, kommt er ins Archiv – „Widerrufen“ holt ihn zurück.",
                  example: "Plan von KW47 übernehmen → KW44")
             Step(number: 3, title: "Mit ChatGPT – auch viele Wochen auf einmal",

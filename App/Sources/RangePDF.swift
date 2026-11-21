@@ -521,7 +521,7 @@ private struct RangeWeekBars: View {
 
     private var barWidth: CGFloat {
         let count: CGFloat = CGFloat(max(1, rows.count))
-        return min(26, (523 - gap * (count - 1)) / count)
+        return min(64, (523 - gap * (count - 1)) / count)
     }
 
     /// Every week's number up to 13 weeks, every second up to 26, else every fourth.
@@ -617,8 +617,12 @@ struct RangeCoverPage: View {
         let scored: String = "\(report.scoredWeeks)/\(data.rows.count)"
         var closedWeeks: String = "–"
         var closedDays: String = "–"
+        // Papier-Wochen (nur die Wertung nachgetragen) sind fertig und zählen als abgeschlossen.
+        let paperWeeks: Int = data.rows.filter { $0.state == .paper && !$0.line.isClosed }.count
+        if planWeeks + paperWeeks > 0 {
+            closedWeeks = "\(report.closedWeeks + paperWeeks)/\(planWeeks + paperWeeks)"
+        }
         if planWeeks > 0 {
-            closedWeeks = "\(report.closedWeeks)/\(planWeeks)"
             closedDays = "\(report.closedDays)/\(data.countedDays)"
         }
         var targets: String = "–"
@@ -704,7 +708,7 @@ private struct RangeTableHeader: View {
     var body: some View {
         HStack(spacing: 0) {
             Text("Woche").frame(width: RangeColumns.week, alignment: .leading)
-            Text("Wertung").frame(width: RangeColumns.score)
+            Text("Wertung").lineLimit(1).minimumScaleFactor(0.6).frame(width: RangeColumns.score)
             HStack(spacing: RangeColumns.goalGap) {
                 ForEach(goals) { goal in
                     GoalKeyDot(goal: goal, size: 13)
@@ -998,7 +1002,7 @@ private struct RangePowerHourBars: View {
 
     private var barWidth: CGFloat {
         let count: CGFloat = CGFloat(max(1, rows.count))
-        return min(26, (523 - gap * (count - 1)) / count)
+        return min(64, (523 - gap * (count - 1)) / count)
     }
 
     private var labelStep: Int {
