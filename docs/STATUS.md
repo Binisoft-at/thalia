@@ -15,7 +15,8 @@ Letzte Aktualisierung: 2026-11-21 · Arbeitsliste: [TASKS-v8.md](TASKS-v8.md) ·
   Prompt-Knöpfe als ganze Zeilen (auch im Planungs-Import), PDF-Spalte „Wertung“ einzeilig, breitere Wochenbalken,
   Papier-Wochen zählen als abgeschlossen, Uhrzeit im PDF-Fuß deutsch (14:43 statt 2:43 PM).
 - TestFlight: 1.7.0 (54) hochgeladen, hat aber einen leeren „Prompt kopieren“-Knopf im Nachtragen-Fenster –
-  **1.7.0 (55)** ist der Build zum Testen (iOS + watchOS + macOS, `testflight-diagnose.yml`, Build-Nr. als Eingabe).
+  **1.7.0 (55)** ist der Build zum Testen (iOS + watchOS + macOS, `testflight-diagnose.yml`, Build-Nr. als Eingabe;
+  laut `asc-probe` am 21. Nov. 2026 für iOS und macOS verarbeitet und `IN_BETA_TESTING`).
 - Keine CloudKit-Schemaänderung: Tagestypen bleiben Text (`PlanDay.dayType`), kein neues `@Model`-Feld.
 - Neue Dateien: `App/Sources/PastImport.swift`, `App/Sources/RangePDF.swift`, `Shared/TrackerStore+Range.swift`,
   Core-Tests `V8Tests.swift`. Neue Fenster: `AppSheet.importPast(WeekKey?)`, `AppSheet.rangePDF`.
