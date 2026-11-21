@@ -10,9 +10,12 @@ Letzte Aktualisierung: 2026-11-21 · Arbeitsliste: [TASKS-v8.md](TASKS-v8.md) ·
   Vorschau je Woche, Abschluss der importierten Wochen – und „Nur Wertung“; CSV mit Matrix-Spalten `mo…so`) und
   **PDF-Bericht** über mehrere Wochen (Deckblatt, Übersicht je Woche, PH je Bereich, Wochenseiten, seitenweise mit
   Fortschritt, PDFKit-Vorschau, Lesezeichen; Mac ⌥⌘P, Sichern, Drucken).
-- Lokal geprüft: 120 Core-Tests in 17 Suiten grün (Docker `swift:6.2-noble`), `swiftc -parse` sauber für App, Shared,
-  Watch, Widgets und WatchWidgets. Typprüfung und Build der SwiftUI/PDFKit-Teile laufen erst in CI am Mac – zuerst
-  ansehen: `App/Sources/RangePDF.swift`, `PDFExport.swift`, `PastImport.swift`, `ReviewView.swift`.
+- Geprüft: 125 Core-Tests in 18 Suiten grün (Docker `swift:6.2-noble`), CI-Läufe 33–35 grün (macOS + iOS gebaut,
+  Screenshots angesehen). Nach CI 33 behoben: Wege-Auswahl „Vom Plan“ (statt abgeschnittenem „Plan übernehm…“),
+  Prompt-Knöpfe als ganze Zeilen (auch im Planungs-Import), PDF-Spalte „Wertung“ einzeilig, breitere Wochenbalken,
+  Papier-Wochen zählen als abgeschlossen, Uhrzeit im PDF-Fuß deutsch (14:43 statt 2:43 PM).
+- TestFlight: 1.7.0 (54) hochgeladen, hat aber einen leeren „Prompt kopieren“-Knopf im Nachtragen-Fenster –
+  **1.7.0 (55)** ist der Build zum Testen (iOS + watchOS + macOS, `testflight-diagnose.yml`, Build-Nr. als Eingabe).
 - Keine CloudKit-Schemaänderung: Tagestypen bleiben Text (`PlanDay.dayType`), kein neues `@Model`-Feld.
 - Neue Dateien: `App/Sources/PastImport.swift`, `App/Sources/RangePDF.swift`, `Shared/TrackerStore+Range.swift`,
   Core-Tests `V8Tests.swift`. Neue Fenster: `AppSheet.importPast(WeekKey?)`, `AppSheet.rangePDF`.
@@ -20,9 +23,9 @@ Letzte Aktualisierung: 2026-11-21 · Arbeitsliste: [TASKS-v8.md](TASKS-v8.md) ·
   Erklärungen: „Wie wird gerechnet?“ endet mit „Neu in 1.7“ (drei Seiten). Demo-Daten: Freitag der aktuellen Woche
   ist „Krank“ (nur `-Demo`, nicht die Übungsseite der Tour). Einstellungen → Hilfe nennt die drei Seiten auch einzeln.
   CI-Screenshots zusätzlich `past-import` und `range-pdf` (iPhone und Mac).
-- Offen bzw. zu prüfen: Dateigröße langer Berichte (Bänder als einfacher Verlauf, sollte Vektor bleiben), die
-  Screenshots `past-import`/`range-pdf`, Mac-Build. Kleine Lücken: siehe „Offene Punkte v8“ unten.
-- Nächste Schritte: CI mit `[screenshots]`, dann TestFlight 1.7.0 (Build-Nr. > 53), Bini testet nach TESTING.md „v8“.
+- Offen bzw. zu prüfen: Dateigröße langer Berichte (Bänder als einfacher Verlauf, sollte Vektor bleiben) – am Gerät
+  mit „Zieljahr bis heute“ + „Rückblick-Texte“. Kleine Lücken: siehe „Offene Punkte v8“ unten.
+- Nächste Schritte: Bini testet 1.7.0 (55) nach TESTING.md „v8“. Nächste Build-Nr. für TestFlight: 56 oder höher.
 
 ### Offene Punkte v8
 - Läuft CI an einem Freitag, zeigen die Demo-Screenshots „today“, „close-day“ und „overview“ den Krank-Tag statt eines
