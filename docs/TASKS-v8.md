@@ -35,10 +35,15 @@ Text (`PlanDay.dayType`), alles Neue ist Logik oder UI.
 8. **Vergangene Woche nachtragen** – neues Fenster „Vergangene Woche nachtragen“ mit drei Wegen:
    a) **Plan übernehmen und selbst abhaken:** Punkte der nächstgelegenen geplanten Woche (vor- oder nachher) in die
       gewählte Woche kopieren (ohne Markierungen), dann die Woche in der Wochentabelle abhaken, Tagestypen setzen.
-   b) **Mit ChatGPT übertragen:** Prompt „vergangene Woche“ kopieren (enthält die Punkte mit ids und das CSV-Format;
-      Tabelle/Foto/Screenshot des alten Trackers einfügen) → CSV einfügen → Vorschau → Import. Importierte vergangene
-      Wochen und ihre Tage werden **abgeschlossen** (so erscheinen sie in Rückblick, Zielen, Ø 4 Wo.).
-      Schalter „Leere Felder“: offen lassen (Standard) / als ✗ zählen.
+   b) **Mit ChatGPT übertragen – auch viele Wochen auf einmal:** Prompt kopieren (enthält Ziele, Kategorien, die
+      Punkte der nächstgelegenen geplanten Woche mit ids als Vorlage und das CSV-Format) → in ChatGPT **Fotos, PDFs
+      oder Tabellen mehrerer Wochen** dazulegen → ChatGPT liest KW/Datum aus den Unterlagen und liefert **eine CSV mit
+      einem Block je Woche** (week-Zeile, day-Zeilen inkl. Krank/Urlaub, item-Zeilen, Markierungen; nur eine
+      Wertung bekannt → week-Zeile mit value) → CSV einfügen (oder Datei wählen) → Vorschau **je Woche** (neu/ersetzt,
+      Punkte, Markierungen, Krank/Urlaub-Tage, Warnungen) → Import. Zeitraum im Fenster: „Wochen aus den Unterlagen“
+      (Standard, ChatGPT erkennt sie) oder fester Bereich von–bis. Alle importierten vergangenen Wochen und ihre Tage
+      werden **abgeschlossen** (so erscheinen sie in Rückblick, Zielen, Ø 4 Wo.). Wochen ≥ aktuelle Woche in der Datei
+      → Warnung, werden nicht abgeschlossen. Schalter „Leere Felder“: offen lassen (Standard) / als ✗ zählen.
    c) **Nur Wochenwertung:** KW + Zahl (Papier-Wertung, `recordedScore`).
    Wochenauswahl: Beginn des Zieljahrs bzw. 52 Wochen zurück bis letzte Woche.
 9. **CSV-Erweiterungen (Core):** Item-Zeilen dürfen Spalten `mo,di,mi,do,fr,sa,so` (auch montag…sonntag, mon…sun)
@@ -82,7 +87,10 @@ Text (`PlanDay.dayType`), alles Neue ist Logik oder UI.
 - PlanCSV: Matrix-Spalten `mo…so` auf Item-Zeilen; `parse(_:knownItems:)` (Default `[]`) mit Warnung für
   Markierungen auf unbekannte Punkte; `Document.fillingBlanks(weeks:with: Mark)`; `Document.closingPast(today:)`
   (alle Wochen < heute.week und ihre Tage mit Markierungen/Typ → closedWeeks/closedDays).
-- `PastWeekPrompt.text(week:items:categories:goals:measures:) -> String` (Reports.swift, neben PlanPrompt).
+- `PastWeekPrompt.text(weeks:items:categories:goals:measures:) -> String` (Reports.swift, neben PlanPrompt);
+  `weeks: [WeekKey]` – leer = „die Wochen aus den angehängten Fotos/PDFs/Tabellen, KW und Datum dort ablesen“,
+  sonst genau diese Wochen; verlangt eine CSV mit einem Block je Woche, verbietet erfundene Markierungen für leere
+  Felder, nennt Krank/Urlaub als Tagestyp und „nur Wertung → week-Zeile mit value“. Test: mehrere Wochen + leer.
 - `WeekLine` (week, score, isClosed, isOldScoring, isPaperOnly, isExcused, goalScores, powerHours, powerHoursTarget,
   closedDays, excusedDays, weeklyTargetsMet, weeklyTargetsCount) und `RangeReport` (lines, average (ohne alte und
   entschuldigte Wochen), goal averages + trend (±0,25 wie Zielüberprüfung), PH je Bereich, Summen) mit
@@ -107,7 +115,7 @@ Text (`PlanDay.dayType`), alles Neue ist Logik oder UI.
 
 ### 3.3 Import (P3)
 - Neue Datei `App/Sources/PastImport.swift`: `PastWeekImportView(week: WeekKey?)` mit den drei Wegen aus
-  Entscheidung 8; nutzt `ImportPreview`/Apply aus ImportView (gemeinsame Teile dort herausziehen, ImportView.swift
+  Entscheidung 8 (Weg b für viele Wochen in einer CSV, Vorschau je Woche, Datei-Auswahl wie im Wochenplan-Import); nutzt `ImportPreview`/Apply aus ImportView (gemeinsame Teile dort herausziehen, ImportView.swift
   gehört P3), schließt importierte vergangene Wochen (über `Document.closingPast`), „Leere Felder“-Schalter.
 - `Shared/TrackerStore+Import.swift`: `nearestPlannedWeek(to:)` (vor und zurück), `copyPlan(from:to:)` (ohne
   Markierungen, über `Document.repeated`), `setPaperScore(_:week:)`.
