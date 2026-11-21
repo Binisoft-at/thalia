@@ -37,7 +37,7 @@ struct ThaliaApp: App {
             Task { @MainActor in
                 // No permission prompt at launch: that comes after the tour or in Settings (R80).
                 _ = await ReminderScheduler.apply(ReminderScheduler.load(), authorize: false,
-                                                  isClosed: { model.isDayClosed($0) })
+                                                  isClosed: { model.skipsEveningReminder($0) })
             }
         }
     }
@@ -182,6 +182,12 @@ struct ThaliaCommands: Commands {
             Divider()
             Button("Wochenplan importieren…") { present { _ in .importPlan(prompt: true) } }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+                .disabled(isBlocked)
+            // v8: past weeks and several weeks as one PDF.
+            Button("Vergangene Woche nachtragen…") { present { _ in .importPast(nil) } }
+                .disabled(isBlocked)
+            Button("Zeitraum als PDF…") { present { _ in .rangePDF } }
+                .keyboardShortcut("p", modifiers: [.command, .option])
                 .disabled(isBlocked)
         }
         CommandMenu("Gehe zu") {

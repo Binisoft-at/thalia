@@ -24,6 +24,8 @@ public struct ExistingState: Sendable {
 
     public var categoryTitles: [String: String] { categories.mapValues(\.title) }
     public var measureCodes: Set<String> { Set(measures.values.map(\.code)) }
+    /// "2026-W45|1.1-01" for every item the app has (v8: marks on unknown items get a warning).
+    public var itemKeys: Set<String> { Set(items.values.map(\.key)) }
 }
 
 /// A week whose plan an import replaces (R49): what goes to the archive, said plainly.
@@ -45,6 +47,64 @@ public struct WeekReplacement: Equatable, Sendable {
         text = "\(week.label) wird ersetzt – \(Format.count(marks, "Markierung", "Markierungen")) und "
             + "\(Format.count(values, "Wert", "Werte")) gehen ins Archiv."
         buttonTitle = "\(week.label) ersetzen"
+    }
+}
+
+/// One week of a file in the preview of past weeks (v8): new or replaced, what comes in.
+public struct ImportWeekSummary: Equatable, Sendable {
+    public var week: WeekKey
+    /// The app has no plan and no week row for this week yet.
+    public var isNew: Bool
+    /// The file replaces the week's plan; its marks and values go to the archive.
+    public var isReplaced: Bool
+    /// Something in the week is new or changed.
+    public var hasChanges: Bool
+    /// Items of the week in the file.
+    public var items: Int
+    /// Marks with a value (✓ ½ ✗ –) in the file.
+    public var marks: Int
+    /// Sick and holiday days by the file's day rows.
+    public var excusedDays: [DayKey]
+    /// The week row's reported score (paper score).
+    public var recordedScore: Double?
+    /// The import closes the week (the app has it open).
+    public var closes: Bool
+    /// The file's warnings about this week ("KW45: …", "KW45 1.1-01: …").
+    public var warnings: [String]
+
+    public init(week: WeekKey, isNew: Bool = true, isReplaced: Bool = false, hasChanges: Bool = true, items: Int = 0, marks: Int = 0,
+                excusedDays: [DayKey] = [], recordedScore: Double? = nil, closes: Bool = false, warnings: [String] = []) {
+        self.week = week
+        self.isNew = isNew
+        self.isReplaced = isReplaced
+        self.hasChanges = hasChanges
+        self.items = items
+        self.marks = marks
+        self.excusedDays = excusedDays
+        self.recordedScore = recordedScore
+        self.closes = closes
+        self.warnings = warnings
+    }
+
+    /// "KW45 2026 (2.–8. Nov.)"
+    public var title: String { "\(week.longLabel) (\(week.rangeLabel))" }
+
+    /// "neu", "ersetzt", "ergänzt" or "unverändert".
+    public var status: String {
+        if isNew { return "neu" }
+        if isReplaced { return "ersetzt" }
+        return hasChanges ? "ergänzt" : "unverändert"
+    }
+
+    /// "24 Punkte · 96 Markierungen · 2 Tage Krank/Urlaub · Wertung 7,5 · wird abgeschlossen"
+    public var detail: String {
+        var parts: [String] = []
+        if items > 0 { parts.append(Format.count(items, "Punkt", "Punkte")) }
+        if marks > 0 { parts.append(Format.count(marks, "Markierung", "Markierungen")) }
+        if !excusedDays.isEmpty { parts.append(Format.count(excusedDays.count, "Tag", "Tage") + " Krank/Urlaub") }
+        if let recordedScore { parts.append("Wertung \(Format.score(recordedScore))") }
+        if closes { parts.append("wird abgeschlossen") }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -75,6 +135,8 @@ public struct ImportPreview {
     /// Closed days and weeks in the file that the app doesn't have closed yet (R27).
     public let newClosedDays: [DayKey]
     public let newClosedWeeks: [WeekKey]
+    /// One per week of the file, oldest first (v8, preview of past weeks).
+    public let weekSummaries: [ImportWeekSummary]
 
     public init(document: PlanCSV.Document, existing: ExistingState) {
         self.document = document
@@ -121,6 +183,35 @@ public struct ImportPreview {
         }
         newClosedDays = document.closedDays.subtracting(existing.closedDays).sorted()
         newClosedWeeks = document.closedWeeks.subtracting(existing.closedWeeks).sorted()
+        weekSummaries = ImportPreview.summaries(document: document, existing: existing, items: items, marks: marks, days: days,
+                                                weeks: weeks, replaced: Set(replaced), newClosedWeeks: Set(newClosedWeeks))
+    }
+
+    /// Every week the file touches (week rows, items, measurements, marks, day rows), each with what comes in.
+    static func summaries(document: PlanCSV.Document, existing: ExistingState, items: ImportPlan<ItemRecord>,
+                          marks: ImportPlan<MarkRecord>, days: ImportPlan<DayRecord>, weeks: ImportPlan<WeekRecord>,
+                          replaced: Set<WeekKey>, newClosedWeeks: Set<WeekKey>) -> [ImportWeekSummary] {
+        var all = Set(document.weeks.map(\.week)).union(document.plannedWeeks).union(document.measuredWeeks)
+        for mark in document.marks { all.insert(mark.week) }
+        for day in document.days { all.insert(day.day.week) }
+        return all.sorted().map { week in
+            let prefix = week.string + "|"
+            let isNew = existing.weeks[week.string] == nil && !existing.items.values.contains { $0.week == week }
+            let changed = items.entries.contains { $0.key.hasPrefix(prefix) && $0.action != .unchanged }
+                || marks.entries.contains { $0.key.hasPrefix(prefix) && $0.action != .unchanged }
+                || days.entries.contains { week.contains($0.record.day) && $0.action != .unchanged }
+                || weeks.entries.contains { $0.record.week == week && $0.action != .unchanged }
+                || replaced.contains(week) || newClosedWeeks.contains(week)
+            let excused = document.days.filter { week.contains($0.day) && DayTypes.isExcused($0.dayType) }.map(\.day).sorted()
+            let warnings = document.warnings.filter { $0.hasPrefix(week.label + ":") || $0.hasPrefix(week.label + " ") }
+            return ImportWeekSummary(
+                week: week, isNew: isNew, isReplaced: replaced.contains(week), hasChanges: changed,
+                items: document.items.filter { $0.week == week }.count,
+                marks: document.marks.filter { $0.week == week && $0.mark != nil }.count,
+                excusedDays: excused, recordedScore: document.weeks.first { $0.week == week }?.recordedScore,
+                closes: newClosedWeeks.contains(week), warnings: warnings
+            )
+        }
     }
 
     /// The app's entries prepared for comparing with the file (R27, backwards compatible): against a
@@ -163,7 +254,8 @@ public struct ImportPreview {
     }
 
     public init(text: String, existing: ExistingState) {
-        self.init(document: PlanCSV.parse(text, knownCategories: existing.categoryTitles, knownMeasures: existing.measureCodes),
+        self.init(document: PlanCSV.parse(text, knownCategories: existing.categoryTitles, knownMeasures: existing.measureCodes,
+                                          knownItems: existing.itemKeys),
                   existing: existing)
     }
 
@@ -234,5 +326,64 @@ public struct ImportPreview {
     /// The week a plan import is about (to jump there afterwards).
     public var primaryWeek: WeekKey? {
         document.plannedWeeks.sorted().last ?? document.weeks.map(\.week).sorted().last
+    }
+}
+
+// MARK: Past weeks against the app's state (v8, decision 8)
+
+extension PlanCSV.Document {
+    /// `closingPast` looks at the file alone. A week the import closes (the app has it open) also
+    /// closes the days the app already has a mark or a day type for, so a file with only some days
+    /// leaves no marked day open. Not counted: marks of a week the file replaces (they go to the
+    /// archive), marks the file sets itself, and the day type of a day the file has a day row for.
+    public func closingKnownDays(existing: ExistingState) -> PlanCSV.Document {
+        let weeks = closedWeeks.subtracting(existing.closedWeeks)
+        guard !weeks.isEmpty else { return self }
+        let fileDays = Set(days.map(\.day))
+        var known: Set<DayKey> = []
+        for record in existing.days.values where weeks.contains(record.day.week) && !fileDays.contains(record.day) {
+            if !record.dayType.trimmingCharacters(in: .whitespaces).isEmpty { known.insert(record.day) }
+        }
+        let fileMarks = Set(marks.map(\.key))
+        var kept = existing.marks.values.filter { mark in
+            mark.mark != nil && weeks.contains(mark.week) && mark.week.contains(mark.day) && !fileMarks.contains(mark.key)
+        }
+        let planned = plannedWeeks.union(measuredWeeks)
+        if kept.contains(where: { planned.contains($0.week) }) {
+            let replaced = Set(ImportPreview(document: self, existing: existing).replacedWeeks)
+            kept = kept.filter { !replaced.contains($0.week) }
+        }
+        known.formUnion(kept.map(\.day))
+        guard !known.isSubset(of: closedDays) else { return self }
+        var result = self
+        result.closedDays.formUnion(known)
+        return result
+    }
+
+    /// Blank fields of the past weeks the file brings items or marks for, filled with ✗ – fixed,
+    /// required items on their days, never on free or excused days (`fillingBlanks`). A week without
+    /// item rows is filled on the app's plan and day types; marks the app already has are kept, unless
+    /// the file replaces the week (then they go to the archive anyway).
+    public func fillingPastBlanks(existing: ExistingState, today: DayKey) -> PlanCSV.Document {
+        let weeks = plannedWeeks.union(marks.map(\.week)).filter { $0 < today.week }
+        guard !weeks.isEmpty else { return self }
+        let replaced = Set(ImportPreview(document: self, existing: existing).replacedWeeks)
+        let typedDays = Set(days.map(\.day))
+        let fileMarks = Set(marks.map(\.key))
+        var probe = self
+        for week in weeks {
+            if !plannedWeeks.contains(week) {
+                probe.items += existing.items.values.filter { $0.week == week }
+            }
+            probe.days += existing.days.values.filter { week.contains($0.day) && !typedDays.contains($0.day) }
+        }
+        let kept = existing.marks.values.filter { mark in
+            weeks.contains(mark.week) && !replaced.contains(mark.week) && mark.mark != nil && !fileMarks.contains(mark.key)
+        }
+        probe.marks += kept
+        let keptKeys = Set(kept.map(\.key))
+        var result = self
+        result.marks = probe.fillingBlanks(weeks: weeks, with: .missed).marks.filter { !keptKeys.contains($0.key) }
+        return result
     }
 }

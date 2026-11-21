@@ -232,6 +232,45 @@ struct ContentTests {
         #expect((score.days[today]?.blank ?? 0) > 0, "today is still being filled in")
     }
 
+    /// v8: `-Demo` launches show a sick Friday in the current week; the practice page stays normal.
+    @Test func demoHasASickFriday() {
+        let saturday = DayKey(year: 2026, month: 11, day: 7)
+        let week = saturday.week
+        let friday = week.day(.friday)
+        let content = Demo.content(today: saturday)
+        let doc = content.document
+        #expect(Demo.sickDay(today: saturday) == friday)
+        #expect(doc.days.first { $0.day == friday }?.dayType == "Krank")
+        #expect(doc.days.filter { DayTypes.isExcused($0.dayType) }.map(\.day) == [friday], "only this week's Friday")
+        #expect(!doc.marks.contains { $0.day == friday }, "nothing is due on a sick day")
+        #expect(!doc.work.contains { $0.day == friday })
+        #expect(doc.entries.contains { $0.day == friday }, "values can still be entered")
+        #expect(content.closedDays.contains(friday))
+        #expect(doc.marks.contains { $0.day == friday.adding(days: -7) }, "last week's Friday is a normal day")
+
+        var marks: [String: Mark] = [:]
+        for mark in doc.marks where mark.week == week { if let m = mark.mark { marks[WeekData.markKey(mark.itemCode, mark.day)] = m } }
+        let types = Dictionary(doc.days.map { ($0.day, $0.dayType) }, uniquingKeysWith: { _, last in last })
+        let excused = DayTypes.excusedDays(week.days) { types[$0] ?? "" }
+        #expect(excused == [friday])
+        let data = WeekData(week: week, goals: doc.goals, categories: doc.categories, items: doc.items.filter { $0.week == week },
+                            marks: marks, excusedDays: excused)
+        let score = Scorer.score(data)
+        #expect(score.days[friday]?.isExcused == true)
+        #expect(!score.isExcused, "one sick day doesn't excuse the week")
+        #expect(score.overall != nil)
+        #expect(score.excusedDays == [friday])
+
+        // The tour's practice page: no sick day, so every step has something to mark.
+        let practice = Demo.content(today: friday, history: false)
+        #expect(Demo.sickDay(today: friday, history: false) == nil)
+        #expect(!practice.document.days.contains { DayTypes.isExcused($0.dayType) })
+        #expect(practice.document.marks.contains { $0.day == friday })
+        // It survives export and re-import with the day type.
+        let parsed = PlanCSV.parse(PlanCSV.export(doc))
+        #expect(parsed.days.first { $0.day == friday }?.dayType == "Krank")
+    }
+
     @Test func promptListsManualChanges() {
         let week = WeekKey(year: 2026, week: 46)
         let change = PlanChangeRecord(week: week.adding(weeks: -1), kind: .added, target: .measure, code: "plank", title: "Plank",
@@ -304,14 +343,31 @@ struct ContentTests {
 
     @Test func tourCatalogIsValid() {
         #expect(ThaliaTour.catalog.problems().isEmpty)
-        #expect(ThaliaTour.version == 7)
-        // v7: welcome, 11 steps, finish.
-        #expect(ThaliaTour.catalog.allSteps.count == 13)
+        #expect(ThaliaTour.version == 8)
+        // v8: welcome, 14 steps, finish.
+        #expect(ThaliaTour.catalog.allSteps.count == 16)
         #expect(ThaliaTour.catalog.steps(newerThan: 0).first?.id == "welcome")
         #expect(ThaliaTour.catalog.steps(newerThan: ThaliaTour.version).isEmpty)
-        // v6 took the tour → "Neu in Thalia" with the eight v7 steps.
+        // v7 took the tour → "Neu in Thalia" with the three v8 cards.
+        let v8 = ThaliaTour.catalog.steps(newerThan: 7).map(\.id)
+        #expect(v8 == ["whats-new", "excused", "past-weeks", "range-pdf", "finish"])
+        // v6 took the tour → the eight v7 steps and the three v8 cards, in tour order.
         let v7 = ThaliaTour.catalog.steps(newerThan: 6).map(\.id)
-        #expect(v7 == ["whats-new", "day", "mark", "work", "measure", "glance", "week", "review", "everywhere", "finish"])
+        #expect(v7 == ["whats-new", "day", "excused", "mark", "work", "measure", "glance", "week", "past-weeks", "review",
+                       "range-pdf", "everywhere", "finish"])
+        // The new cards name the window's three ways and the sick-day rule in the app's words.
+        let steps = Dictionary(uniqueKeysWithValues: ThaliaTour.catalog.allSteps.map { ($0.id, $0) })
+        let pastWeeks = steps["past-weeks"]?.body ?? ""
+        for way in ["„Plan übernehmen“", "„Mit ChatGPT“", "„Nur Wertung“"] {
+            #expect(pastWeeks.contains(way), "\(way)")
+            #expect(steps["past-weeks"]?.macBody.contains(way) == true, "\(way)")
+        }
+        #expect(steps["excused"]?.body.contains("„Krank“ oder „Urlaub“") == true)
+        #expect(steps["excused"]?.body.contains("zählt halb") == true)
+        #expect(steps["range-pdf"]?.macBody.contains("⌥⌘P") == true)
+        for step in ThaliaTour.catalog.allSteps where step.since == 8 {
+            #expect(!step.body.contains(" du ") && !step.body.contains("deine"), "\(step.id)")
+        }
         // v1 took the tour → everything since v2, but not the unchanged undo step.
         let whatsNew = ThaliaTour.catalog.steps(newerThan: 1).map(\.id)
         #expect(whatsNew.first == "whats-new")

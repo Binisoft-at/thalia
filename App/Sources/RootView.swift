@@ -159,7 +159,8 @@ private struct TodayAccessory: View {
             app.sheet = .dayOverview(day)
         } label: {
             HStack(spacing: 10) {
-                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 28, lineWidth: 3.5)
+                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 28, lineWidth: 3.5,
+                         excusedSymbol: excusedSymbol(context, day: day))
                 VStack(alignment: .leading, spacing: 0) {
                     Text(title(context, day: day))
                         .font(.subheadline.weight(.semibold))
@@ -204,10 +205,17 @@ private struct TodayAccessory: View {
     private func title(_ context: WeekContext, day: DayKey) -> String {
         let isToday: Bool = day == app.today
         let prefix: String = isToday ? "" : "\(day.weekday.short) · "
+        // v8: a sick or holiday day has nothing open – it just doesn't count.
+        if context.isExcused(day) { return prefix + context.excusedName(day) + " – zählt nicht" }
         if context.isClosed(day) { return isToday ? "Tag abgeschlossen" : prefix + "abgeschlossen" }
         if context.openCount(on: day) == 0 { return isToday ? "Alles erfasst" : prefix + "alles erfasst" }
         let coverage: String = context.score.days[day]?.coverageText ?? "0 %"
         return isToday ? "Heute \(coverage)" : prefix + coverage
+    }
+
+    /// v8: the day type's symbol on a sick or holiday day (the ring shows no progress then).
+    private func excusedSymbol(_ context: WeekContext, day: DayKey) -> String? {
+        context.isExcused(day) ? DayTypes.symbol(for: context.dayType(day)) : nil
     }
 
     /// "11 offen · 4 PH" – the open count is the ring's (R5).
@@ -361,6 +369,10 @@ private struct SheetContent: View {
             ItemEditor(week: WeekKey(item.weekKey) ?? app.selectedWeek, item: item)
         case .goalReview:
             GoalReviewView()
+        case .importPast(let week):
+            PastWeekImportView(week: week)
+        case .rangePDF:
+            RangePDFSheet()
         }
     }
 }

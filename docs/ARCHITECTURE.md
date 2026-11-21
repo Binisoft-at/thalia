@@ -3,17 +3,19 @@
 ```
 Packages/ThaliaCore   all rules, Foundation only, Swift Testing on Linux:
   Calendar             DayKey ("2026-11-02"), WeekKey ("2026-W45", ISO, week 53), DayMask, GoalPeriod
-  Vocabulary           Mark (✓ ½ ✗ N/A), ItemSchedule, Target, units, MeasureSource, WorkKind, DayTypes, NoteKind, reflection questions
+  Vocabulary           Mark (✓ ½ ✗ N/A), ItemSchedule, Target, units, MeasureSource, WorkKind, DayTypes (work-free; Krank/Urlaub = excused, v8), NoteKind, reflection questions
   Records              plain values for goals, categories, weeks, days, items, measures, marks, entries, work, notes, reviews, own scores
-  Scoring              Scorer (category → goal → week, 10 % per goal, quotas, zero rule, overrides), Pace
-  Measures             day/week values, work in PH vs real hours, mark suggestions
-  PlanCSV / ImportPreview   the CSV contract, validation (ten items per category), import diff incl. removals
-  Template / Demo      Bini's 10 goals + 18 categories + template week; deterministic demo data
-  Reports              WeekReport (Markdown for the planning conversation), PlanPrompt (the prompt for ChatGPT)
+  Scoring              Scorer (category → goal → week, 10 % per goal, quotas, zero rule, overrides, excused days + rule B3), Pace
+  Measures             day/week values, work in PH vs real hours, mark suggestions, targets scaled for excused days
+  PlanCSV / ImportPreview   the CSV contract (incl. mo…so matrix columns), validation, import diff incl. removals, preview per week
+  Template / Demo      Bini's 10 goals + 18 categories + template week; deterministic demo data (Friday of this week Krank)
+  Reports              WeekReport (Markdown for the planning conversation), PlanPrompt (the prompt for ChatGPT),
+                       PastWeekPrompt (past weeks from photos/PDFs/tables), WeekLine + RangeReport (several weeks)
   ThaliaTour           tour catalog, widget snapshot (TodaySummary), ReminderSettings
 Shared/                compiled into the app, the Mac app and the watch app:
   Models               SwiftData models (CloudKit rules: defaults, no relationships – keys; HealthValue device-only)
-  TrackerStore(+Import)  every change: marks, entries, work + timer, notes, reflections, overrides, items, import/export, trash
+  TrackerStore(+Import, +Range)  every change: marks, entries, work + timer, notes, reflections, overrides, items, import/export,
+                       trash; past weeks (copy plan, paper score); the range report over several weeks
   WeekContext / WeekReader   one week read live (@Query) and scored once – used by every screen, the widget snapshot and the watch
   Persistence          ModelStore.open (own container, device-only Health store), demo + practice stores
   WidgetBridge, WorkActivity   widget snapshot in the App Group; Live Activity attributes
@@ -24,7 +26,8 @@ App/Sources            iOS + macOS app (German UI):
   WeekView             the weekly sheet: items × Mo–So, week score, ten goal bars, weekly targets with pace
   GoalsView / ReviewView   the ten goals (year progress, KW49 review), history across the KW42 change
   CloseDayView / CloseWeekView   the evening review and the weekly closing (report + planning prompt)
-  Editors, ImportView, SettingsView, Explainers   sheets, import/export, settings, in-app explainers
+  Editors, ImportView, PastImport, SettingsView, Explainers   sheets, import/export, past weeks, settings, in-app explainers
+  PDFExport / RangePDF   week and day PDF; the PDF report over several weeks (page by page, PDFKit preview)
   Services             reminders (UNUserNotificationCenter), HealthService (HealthKit, read-only), Live Activity
   Intents              App Shortcuts: Power-Hour erfassen, Messwert eintragen, Stand des Tages, Tag abschließen
 Watch/Sources          today's score, +1 PH / timer, measurements +, open items
@@ -47,5 +50,6 @@ Vendor/BinisoftKit     shared kit (synced from the handbook, v1)
 ## Launch arguments (screenshots in CI)
 
 `-Demo` (this week up to today, last week closed, earlier weeks as paper scores) with
-`-DemoScreen today|week|goals|review|close-day|close-week|import|create|work|report|explainer|settings`,
+`-DemoScreen today|week|goals|review|close-day|close-week|import|past-import|range-pdf|create|work|report|explainer|settings`
+(and more, see `AppModel.applyLaunchOptions`),
 `-Tour`, `-TourStep <id>`, `-ResetTour`. Screens CI captures: `Config/ci.env`.

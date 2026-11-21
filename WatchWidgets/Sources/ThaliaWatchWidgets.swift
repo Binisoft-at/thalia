@@ -61,7 +61,7 @@ enum ComplicationTimeline {
 
     static func relevance(_ summary: TodaySummary, at date: Date, calendar: Calendar) -> TimelineEntryRelevance {
         let isEvening = calendar.component(.hour, from: date) >= eveningHour
-        if isEvening && !summary.isClosed {
+        if isEvening && !summary.isClosed && !summary.isExcusedDay {
             return TimelineEntryRelevance(score: 1)
         }
         return TimelineEntryRelevance(score: 0.2)
@@ -76,19 +76,19 @@ enum ComplicationText {
     static func hasNoPlan(_ summary: TodaySummary) -> Bool { summary.hasPlan == false }
 
     static func progress(_ summary: TodaySummary) -> Double {
-        if isNewDay(summary) || hasNoPlan(summary) { return 0 }
+        if isNewDay(summary) || hasNoPlan(summary) || summary.isExcusedDay { return 0 }
         if let score = summary.dayScore { return score / 10 }
         return summary.fill
     }
 
     static func isComplete(_ summary: TodaySummary) -> Bool {
-        guard !isNewDay(summary), !hasNoPlan(summary), summary.dayScore == nil else { return false }
+        guard !isNewDay(summary), !hasNoPlan(summary), !summary.isExcusedDay, summary.dayScore == nil else { return false }
         return summary.fill >= 1
     }
 
-    /// "62", "7,5" or "–".
+    /// "62", "7,5" or "–" (also on a sick or holiday day, v8).
     static func ringLabel(_ summary: TodaySummary) -> String {
-        if isNewDay(summary) || hasNoPlan(summary) { return "–" }
+        if isNewDay(summary) || hasNoPlan(summary) || summary.isExcusedDay { return "–" }
         if let score = summary.dayScore { return Format.score(score) }
         return "\(Int((summary.fill * 100).rounded()))"
     }
@@ -101,14 +101,16 @@ enum ComplicationText {
     static func title(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return "Neuer Tag" }
         if hasNoPlan(summary) { return "Kein Plan" }
+        if summary.isExcusedDay { return "Heute \(summary.excusedName)" }
         if summary.isClosed { return "Tag \(Format.score(summary.dayScore, outOf: true))" }
         return "Heute \(summary.fillText)"
     }
 
-    /// Rectangular, second line: "11 offen · 4 PH".
+    /// Rectangular, second line: "11 offen · 4 PH"; v8: "zählt nicht · 0 PH".
     static func line(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return "Thalia öffnen" }
         if hasNoPlan(summary) { return powerHours(summary) }
+        if summary.isExcusedDay { return "zählt nicht · \(powerHours(summary))" }
         if summary.isClosed { return "Abgeschlossen · \(powerHours(summary))" }
         return "\(summary.openCount) offen · \(powerHours(summary))"
     }
@@ -116,6 +118,7 @@ enum ComplicationText {
     static func inline(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return "Neuer Tag – Thalia öffnen" }
         if hasNoPlan(summary) { return "Kein Plan · \(powerHours(summary))" }
+        if summary.isExcusedDay { return "\(summary.excusedText) · \(powerHours(summary))" }
         if summary.isClosed { return "Tag \(Format.score(summary.dayScore, outOf: false)) · \(powerHours(summary))" }
         return "\(summary.fillText) · \(summary.openCount) offen · \(powerHours(summary))"
     }
@@ -124,6 +127,7 @@ enum ComplicationText {
     static func corner(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return "Neuer Tag" }
         if hasNoPlan(summary) { return "Kein Plan" }
+        if summary.isExcusedDay { return summary.excusedName }
         if summary.isClosed { return "Tag \(Format.score(summary.dayScore, outOf: false))" }
         return "\(summary.openCount) offen · \(powerHours(summary))"
     }
@@ -132,6 +136,7 @@ enum ComplicationText {
     static func accessibility(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return "Thalia, neuer Tag" }
         if hasNoPlan(summary) { return "Thalia, kein Plan, \(powerHours(summary))" }
+        if summary.isExcusedDay { return "Thalia, \(summary.excusedName), der Tag zählt nicht, \(powerHours(summary))" }
         if summary.isClosed { return "Thalia, Tag abgeschlossen, Wertung \(Format.score(summary.dayScore, outOf: false))" }
         return "Thalia, \(summary.fillText) erfasst, \(summary.openCount) offen, \(powerHours(summary))"
     }

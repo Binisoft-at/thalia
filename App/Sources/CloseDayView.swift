@@ -122,7 +122,11 @@ struct CloseDayForm: View {
                         }
                     }
                 }
-                if requiredBlanks.isEmpty {
+                if requiredBlanks.isEmpty && context.isExcused(day) {
+                    // v8: nothing is due on a sick or holiday day.
+                    Label("\(context.excusedName(day)) – nichts ist fällig.", systemImage: DayTypes.symbol(for: context.dayType(day)))
+                        .foregroundStyle(.secondary)
+                } else if requiredBlanks.isEmpty {
                     Label("Alle Pflichtpunkte haben einen Eintrag.", systemImage: "checkmark.seal")
                         .foregroundStyle(.secondary)
                 }
@@ -152,8 +156,8 @@ struct CloseDayForm: View {
                     DisclosureGroup("Wochenpunkte noch offen (\(weeklyOpen.count))") {
                         ForEach(weeklyOpen) { item in
                             VStack(alignment: .leading, spacing: 4) {
-                                if let quota = context.quotaProgress(item) {
-                                    Text("\(quota.done) von \(quota.target) diese Woche – heute nur markieren, wenn erledigt; Fehlendes zählt erst am Wochenende.")
+                                if context.quotaProgress(item) != nil {
+                                    Text(weeklyHint(item))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -305,6 +309,15 @@ struct CloseDayForm: View {
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
                 .id("hero")
+            if context.isExcused(day) {
+                // v8: the day doesn't count; "Typ ändern" takes it back.
+                ExcusedDayCard(app: app, day: day, type: context.dayType(day))
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            } else {
+                // v8: the day type right here – Krank / Urlaub on top.
+                DayTypeMenu(app: app, day: day, current: context.dayType(day))
+            }
             if showsWeekNext {
                 Button(action: continueToWeek) {
                     Label("Weiter: Woche \(day.week.label) abschließen", systemImage: "arrow.right.circle.fill")
@@ -326,15 +339,18 @@ struct CloseDayForm: View {
     }
 
     private var heroSubtitle: String {
-        closed ? "Tag abgeschlossen" : "Noch offen – die Wertung kommt mit dem Abschluss"
+        if context.isExcused(day) { return "\(context.excusedName(day)) – zählt nicht in die Wochenwertung" }
+        return closed ? "Tag abgeschlossen" : "Noch offen – die Wertung kommt mit dem Abschluss"
     }
 
     private func heroValue(_ overall: DayOverall?) -> String {
+        if context.isExcused(day) { return "–" }
         if closed { return Format.score(overall?.score, outOf: false) }
         return overall?.coverageText ?? "0 %"
     }
 
     private func heroProgress(_ overall: DayOverall?) -> Double {
+        if context.isExcused(day) { return 0 }
         if closed { return (overall?.score ?? 0) / 10 }
         return overall?.coverage ?? 0
     }
@@ -370,11 +386,29 @@ struct CloseDayForm: View {
     }
 
     private func dayFacts(_ overall: DayOverall?) -> [(String, String)] {
-        var facts: [(String, String)] = [("Typ", context.dayType(day).isEmpty ? "Tag" : context.dayType(day))]
+        var facts: [(String, String)] = [("Typ", typeFact)]
         if let overall, overall.due > 0 { facts.append(("Punkte", "\(overall.due - overall.blank) von \(overall.due)")) }
         let totals = context.workTotals(on: day)
         if !totals.isEmpty { facts.append(("Fokus", totals.shortText)) }
         return facts
+    }
+
+    /// "2 von 3 diese Woche – heute nur markieren, …"; v8: "… · ½ krank" when sick or holiday days
+    /// make the rest count half.
+    private func weeklyHint(_ item: PlanItem) -> String {
+        guard let quota = context.quotaProgress(item) else { return "" }
+        var base: String = "\(quota.done) von \(quota.target) diese Woche"
+        if quota.done < quota.target, context.quotaShare(item) > 1e-9 {
+            base += " (½ \(context.excusedWord(context.excusedDayList)))"
+        }
+        return base + " – heute nur markieren, wenn erledigt; Fehlendes zählt erst am Wochenende."
+    }
+
+    /// "Arbeitstag" · "Tag"; v8: "Krank – zählt nicht".
+    private var typeFact: String {
+        let type: String = context.dayType(day)
+        if context.isExcused(day) { return "\(context.excusedName(day)) – zählt nicht" }
+        return type.isEmpty ? "Tag" : type
     }
 
     /// "28 PH × 50 min = 23 h 20 min netto" · "Frei – null PH ist richtig" · "keine".

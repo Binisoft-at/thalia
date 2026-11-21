@@ -136,16 +136,23 @@ private extension View {
 /// R10: lays a table row out on the shared columns.
 struct WeekTableGrid<Title: View, Cell: View, Total: View>: View {
     let days: [DayKey]
+    /// v8: sick and holiday days – their column is shaded grey.
+    let shaded: Set<DayKey>
     let title: Title
     let cell: (DayKey) -> Cell
     let total: Total
 
-    init(days: [DayKey], @ViewBuilder title: () -> Title, @ViewBuilder cell: @escaping (DayKey) -> Cell,
+    init(days: [DayKey], shaded: Set<DayKey> = [], @ViewBuilder title: () -> Title, @ViewBuilder cell: @escaping (DayKey) -> Cell,
          @ViewBuilder total: () -> Total) {
         self.days = days
+        self.shaded = shaded
         self.title = title()
         self.cell = cell
         self.total = total()
+    }
+
+    private func shade(_ day: DayKey) -> Color {
+        shaded.contains(day) ? Color.secondary.opacity(0.1) : Color.clear
     }
 
     var body: some View {
@@ -155,6 +162,7 @@ struct WeekTableGrid<Title: View, Cell: View, Total: View>: View {
             ForEach(days, id: \.self) { day in
                 cell(day)
                     .frame(width: WeekTableColumns.day)
+                    .background(shade(day))
             }
             total
                 .frame(width: WeekTableColumns.week, alignment: .trailing)
@@ -200,7 +208,7 @@ private struct WeekTableCategory: View {
         let items: [PlanItem] = context.items(in: category)
         let values: [MeasureDefinition] = WeekValues.measures(in: category, context: context)
         VStack(alignment: .leading, spacing: 0) {
-            WeekTableGrid(days: context.week.days) {
+            WeekTableGrid(days: context.week.days, shaded: context.data.excusedDays) {
                 HStack(spacing: 8) {
                     KeyBadge(key: category.key)
                         .fixedSize()
@@ -211,7 +219,7 @@ private struct WeekTableCategory: View {
                 }
                 .help("\(category.key) \(category.title)")
             } cell: { day in
-                WeekTableCategoryDay(entry: context.score.category(category.key, on: day))
+                WeekTableCategoryDay(entry: context.score.category(category.key, on: day), isExcused: context.isExcused(day))
             } total: {
                 Text(Format.score(context.score.categoryWeek[category.key], outOf: false))
                     .font(.callout.weight(.semibold))
@@ -278,7 +286,7 @@ private struct WeekTableValueRow: View {
     let measure: MeasureDefinition
 
     var body: some View {
-        WeekTableGrid(days: context.week.days) {
+        WeekTableGrid(days: context.week.days, shaded: context.data.excusedDays) {
             HStack(spacing: 6) {
                 Text(measure.title)
                     .font(.callout)
@@ -303,8 +311,11 @@ private struct WeekTableValueRow: View {
 /// The category's result on a day: the score once the category is complete, a dot otherwise.
 private struct WeekTableCategoryDay: View {
     let entry: CategoryDay
+    /// v8: a sick or holiday day – "–", it doesn't count.
+    var isExcused = false
 
     private var text: String {
+        if isExcused { return "–" }
         guard entry.due > 0 else { return "" }
         guard entry.isComplete else { return "·" }
         guard let score = entry.score else { return "–" }
@@ -332,7 +343,7 @@ private struct WeekTableRow: View {
     @State private var confirmsDelete = false
 
     var body: some View {
-        WeekTableGrid(days: context.week.days) {
+        WeekTableGrid(days: context.week.days, shaded: context.data.excusedDays) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
                     .font(.callout)
@@ -377,16 +388,27 @@ private struct WeekTableRow: View {
     private var meta: some View {
         // R64: the same short label as Today and the PDF.
         let kind: String? = context.kindLabel(item)
-        if item.isKnockout || kind != nil {
+        let half: String? = excusedQuotaHint
+        if item.isKnockout || kind != nil || half != nil {
             HStack(spacing: 4) {
                 if item.isKnockout {
                     Image(systemName: "exclamationmark.octagon")
                         .foregroundStyle(.orange)
                 }
                 KindBadge(text: kind)
+                if let half {
+                    Text(half)
+                        .foregroundStyle(.secondary)
+                }
             }
             .font(.caption2)
         }
+    }
+
+    /// v8: "½ krank" – what's still missing of the quota counts half because of sick or holiday days.
+    private var excusedQuotaHint: String? {
+        guard let quota = context.quotaProgress(item), quota.done < quota.target, context.quotaShare(item) > 1e-9 else { return nil }
+        return "½ " + context.excusedWord(context.excusedDayList)
     }
 }
 
@@ -406,9 +428,9 @@ private struct WeekSummaryPanel: View {
                     .listRowBackground(Color.clear)
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(context.score.goalsTotal == 0 ? "Noch keine Ziele" : context.score.coverageText)
+                        Text(context.coverageLine)
                             .font(.caption)
-                            .foregroundStyle(context.score.isComplete ? Color.secondary : Color.orange)
+                            .foregroundStyle(coverageColor)
                         Button {
                             app.sheet = .explainer(.scoring)
                         } label: {
@@ -423,7 +445,7 @@ private struct WeekSummaryPanel: View {
             // R68: one coloured list – each goal with its bar and score.
             Section("Jahresziele") {
                 ForEach(context.goals) { goal in
-                    GoalScoreLine(goal: goal, week: context.score.goalWeek[goal.key])
+                    GoalScoreLine(goal: goal, week: context.score.goalWeek[goal.key], isExcused: context.isGoalExcused(goal))
                 }
             }
 
@@ -469,6 +491,20 @@ private struct WeekSummaryPanel: View {
                     Label("Woche als Bild teilen", systemImage: "photo")
                 }
             }
+
+            // v8: past weeks and several weeks as one PDF.
+            Section {
+                Button {
+                    app.sheet = .importPast(pastWeek)
+                } label: {
+                    Label("Vergangene Woche nachtragen…", systemImage: "clock.arrow.circlepath")
+                }
+                Button {
+                    app.sheet = .rangePDF
+                } label: {
+                    Label("Mehrere Wochen als PDF…", systemImage: "doc.richtext")
+                }
+            }
         }
         .sheet(item: $sharing) { request in
             ShareSheet(content: request.content)
@@ -477,7 +513,15 @@ private struct WeekSummaryPanel: View {
         }
     }
 
+    /// Orange while the week isn't fully comparable; a week of only sick or holiday days isn't a gap (v8).
+    private var coverageColor: Color {
+        if context.score.isComplete || context.score.isExcused { return .secondary }
+        return .orange
+    }
+
     private var nextWeek: WeekKey { context.week.adding(weeks: 1) }
+    /// v8: the week shown when it lies in the past, else nil (the window chooses).
+    private var pastWeek: WeekKey? { context.week < app.today.week ? context.week : nil }
     private var closeTitle: String { context.isClosed ? "Abgeschlossen" : "Woche abschließen" }
     private var closeSymbol: String { context.isClosed ? "checkmark.seal.fill" : "flag.checkered" }
 
@@ -509,8 +553,16 @@ private struct WeekSummaryPanel: View {
 private struct GoalScoreLine: View {
     let goal: AnnualGoal
     let week: GoalWeek?
+    /// v8: everything planned for the goal fell on sick or holiday days.
+    var isExcused = false
 
     private var score: Double? { week?.score }
+
+    /// "7,5" · "–"; v8: "entschuldigt".
+    private var scoreText: String {
+        if score == nil && isExcused { return WeekScore.excusedLabel }
+        return Format.score(score, outOf: false)
+    }
 
     private var fraction: Double {
         let value: Double = score ?? 0
@@ -518,6 +570,7 @@ private struct GoalScoreLine: View {
     }
 
     private var spokenText: String {
+        if score == nil && isExcused { return "\(goal.key) \(goal.title): \(WeekScore.excusedLabel), krank oder Urlaub" }
         guard let score else { return "\(goal.key) \(goal.title): noch keine Wertung" }
         return "\(goal.key) \(goal.title): Wertung \(Format.score(score))"
     }
@@ -531,7 +584,7 @@ private struct GoalScoreLine: View {
                     .font(.caption)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                Text(Format.score(score, outOf: false))
+                Text(scoreText)
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(score == nil ? Color.secondary : tint)

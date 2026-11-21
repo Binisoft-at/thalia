@@ -67,34 +67,35 @@ enum WidgetText {
 
     /// Ring fill: the score once closed, else how much is filled in; empty for a new day or without plan.
     static func progress(_ summary: TodaySummary) -> Double {
-        if isNewDay(summary) || hasNoPlan(summary) { return 0 }
+        if isNewDay(summary) || hasNoPlan(summary) || summary.isExcusedDay { return 0 }
         if let score = summary.dayScore { return score / 10 }
         return summary.fill
     }
 
     static func isComplete(_ summary: TodaySummary) -> Bool {
-        guard !isNewDay(summary), !hasNoPlan(summary), summary.dayScore == nil else { return false }
+        guard !isNewDay(summary), !hasNoPlan(summary), !summary.isExcusedDay, summary.dayScore == nil else { return false }
         return summary.fill >= 1
     }
 
-    /// "62 %", "7,5" or "–".
+    /// "62 %", "7,5" or "–" (also on a sick or holiday day, v8).
     static func ringLabel(_ summary: TodaySummary) -> String {
-        if isNewDay(summary) || hasNoPlan(summary) { return "–" }
+        if isNewDay(summary) || hasNoPlan(summary) || summary.isExcusedDay { return "–" }
         if let score = summary.dayScore { return Format.score(score) }
         return summary.fillText
     }
 
     /// The circular gauge's short value: "62", "7,5" or "–".
     static func gaugeLabel(_ summary: TodaySummary) -> String {
-        if isNewDay(summary) || hasNoPlan(summary) { return "–" }
+        if isNewDay(summary) || hasNoPlan(summary) || summary.isExcusedDay { return "–" }
         if let score = summary.dayScore { return Format.score(score) }
         return "\(Int((summary.fill * 100).rounded()))"
     }
 
-    /// R5: "offen" = the empty required items (`openCount`).
+    /// R5: "offen" = the empty required items (`openCount`). v8: "Krank – zählt nicht".
     static func status(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return "Neuer Tag" }
         if hasNoPlan(summary) { return "Kein Plan" }
+        if summary.isExcusedDay { return summary.excusedText }
         if summary.isClosed { return "Abgeschlossen" }
         return summary.openCount == 0 ? "Alles erfasst" : "\(summary.openCount) offen"
     }
@@ -103,6 +104,7 @@ enum WidgetText {
     static func openHeading(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return newDayText }
         if hasNoPlan(summary) { return "Kein Plan" }
+        if summary.isExcusedDay { return "\(summary.excusedName) – nichts fällig" }
         if summary.isClosed { return "Tag abgeschlossen" }
         return summary.openCount == 0 ? "Alles Wichtige erfasst" : "Noch zu tun · \(summary.openCount)"
     }
@@ -111,6 +113,7 @@ enum WidgetText {
     static func largeStatus(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return newDayText }
         if hasNoPlan(summary) { return "Kein Plan" }
+        if summary.isExcusedDay { return summary.excusedText }
         if summary.isClosed { return "Abgeschlossen" }
         return "\(summary.fillText) erfasst · \(summary.openCount) offen"
     }
@@ -285,6 +288,7 @@ struct TodayWidgetView: View {
         let powerHours = Format.powerHours(summary.powerHours)
         if WidgetText.isNewDay(summary) { return WidgetText.newDayText }
         if WidgetText.hasNoPlan(summary) { return "Kein Plan · \(powerHours)" }
+        if summary.isExcusedDay { return "\(summary.excusedText) · \(powerHours)" }
         if summary.isClosed { return "Tag \(Format.score(summary.dayScore, outOf: false)) · \(powerHours)" }
         return "\(summary.fillText) · \(summary.openCount) offen · \(powerHours)"
     }
@@ -292,12 +296,14 @@ struct TodayWidgetView: View {
     private var rectangularTitle: String {
         if WidgetText.isNewDay(summary) { return "Neuer Tag" }
         if WidgetText.hasNoPlan(summary) { return "Kein Plan" }
+        if summary.isExcusedDay { return "Heute \(summary.excusedName)" }
         if summary.isClosed { return "Tag \(Format.score(summary.dayScore, outOf: true))" }
         return "Heute \(summary.fillText) · \(summary.openCount) offen"
     }
 
     private var rectangularLine: String {
         if WidgetText.isNewDay(summary) || WidgetText.hasNoPlan(summary) { return "Thalia öffnen" }
+        if summary.isExcusedDay { return "Zählt nicht in die Wochenwertung" }
         return summary.open.first ?? "Alles Wichtige erfasst"
     }
 

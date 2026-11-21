@@ -237,23 +237,28 @@ private struct WatchDayStatus: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// v8: an empty ring on a sick or holiday day.
     static func gaugeValue(_ overall: DayOverall?, closed: Bool, hasPlan: Bool) -> Double {
+        if overall?.isExcused == true { return 0 }
         if closed { return (overall?.score ?? 0) / 10 }
         return hasPlan ? (overall?.coverage ?? 0) : 0
     }
 
     static func ringLabel(_ overall: DayOverall?, closed: Bool, hasPlan: Bool) -> String {
+        if overall?.isExcused == true { return "–" }
         if closed { return Format.score(overall?.score, outOf: false) }
         guard hasPlan else { return "–" }
         return "\(Int(((overall?.coverage ?? 0) * 100).rounded()))"
     }
 
     static func isComplete(_ overall: DayOverall?, closed: Bool, hasPlan: Bool) -> Bool {
-        guard !closed, hasPlan, let overall else { return false }
+        guard !closed, hasPlan, let overall, !overall.isExcused else { return false }
         return overall.coverage >= 1
     }
 
     static func status(_ context: WeekContext, closed: Bool) -> String {
+        // v8: a sick or holiday day is never open.
+        if context.isExcused(context.today) { return "\(context.excusedName(context.today)) – zählt nicht" }
         if closed { return "Abgeschlossen" }
         guard context.hasPlan else { return "Kein Plan" }
         guard (context.score.days[context.today]?.due ?? 0) > 0 else { return "Nichts fällig" }

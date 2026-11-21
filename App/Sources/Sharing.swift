@@ -202,6 +202,8 @@ struct ShareContent {
         let complete: Int = context.categories.filter { context.score.category($0.key, on: day).isComplete && context.score.category($0.key, on: day).due > 0 }.count
         let totals = context.workTotals(on: day)
         var facts: [(String, String)] = [("Erfasst", "\(percent(overall?.coverage ?? 0)) %"), ("Kategorien komplett", "\(complete)")]
+        // v8: a sick or holiday day doesn't count.
+        if context.isExcused(day) { facts = [(context.excusedName(day), "zählt nicht")] }
         if !totals.isEmpty { facts.append(("Fokus", totals.shortText)) }
         return ShareContent(title: day.longLabel, subtitle: context.week.label, score: context.isClosed(day) ? overall?.score : nil,
                             fill: overall?.coverage ?? 0, goalScores: goalScores, goalTitles: context.goals.map(\.title),
@@ -211,9 +213,10 @@ struct ShareContent {
     @MainActor
     static func week(_ context: WeekContext) -> ShareContent {
         let totals = context.workTotals()
-        let closedDays: Int = context.week.days.filter { context.isClosed($0) }.count
+        // v8: "3/5 · 2 krank" – sick and holiday days don't count.
         var facts: [(String, String)] = [("Ziele bewertet", "\(context.score.goalsScored)/\(context.score.goalsTotal)"),
-                                         ("Tage abgeschlossen", "\(closedDays)/7")]
+                                         ("Tage abgeschlossen", context.closedDaysText)]
+        if context.score.isExcused { facts[0] = ("Woche", "zählt nicht") }
         if !totals.isEmpty { facts.append(("Fokus", totals.shortText)) }
         return ShareContent(title: "\(context.week.label) · \(context.week.rangeLabel)", subtitle: "Meine Woche",
                             score: context.score.overall, fill: Double(context.score.goalsScored) / Double(max(1, context.score.goalsTotal)),

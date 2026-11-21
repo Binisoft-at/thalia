@@ -267,6 +267,11 @@ struct WeekSummarySections: View {
                         .monospacedDigit()
                 }
             }
+            if !context.excusedDayList.isEmpty {
+                // v8: sick and holiday days are left out of the score.
+                Label(excusedDaysText, systemImage: DayTypes.symbol(for: context.dayType(context.excusedDayList[0])))
+                    .foregroundStyle(.secondary)
+            }
             if !openDays.isEmpty {
                 Label(openDaysText, systemImage: "moon")
                     .foregroundStyle(.orange)
@@ -309,8 +314,8 @@ struct WeekSummarySections: View {
 
     private var facts: [(String, String)] {
         let totals = context.workTotals()
-        let closedDays: Int = week.days.filter { context.isClosed($0) }.count
-        var list: [(String, String)] = [("Fokus", totals.isEmpty ? "–" : totals.shortText), ("Tage abgeschlossen", "\(closedDays)/7")]
+        // v8: sick and holiday days don't need closing ("3/5 · 2 krank").
+        var list: [(String, String)] = [("Fokus", totals.isEmpty ? "–" : totals.shortText), ("Tage abgeschlossen", context.closedDaysText)]
         let targets: Int = context.weeklyTargets.count
         if targets > 0 { list.append(("Wochenziele erreicht", "\(context.weeklyTargetsMet)/\(targets)")) }
         return list
@@ -340,20 +345,40 @@ struct WeekSummarySections: View {
         context.measures.filter { $0.record?.target != nil }
     }
 
-    /// "Ø 7,2 h · Ziel ≥ 7/Tag", "–" without a value.
+    /// "Ø 7,2 h · Ziel ≥ 7/Tag", "–" without a value. v8: a weekly target scaled for sick and
+    /// holiday days: "3 · Ziel ≥ 4,8/Woche (statt 8 – 2 Tage krank)".
     private func measureLine(_ measure: MeasureDefinition) -> String {
-        guard let record = measure.record, let target = record.target else { return "–" }
+        guard let record = measure.record, let full = record.target else { return "–" }
+        let target: Target = record.period == .week ? (context.effectiveTarget(record) ?? full) : full
         var shown = "–"
         if let value = context.weekValue(measure) {
             let prefix: String = record.aggregation == .sum ? "" : "Ø "
             shown = prefix + Format.measure(value, unit: measure.unit)
         }
         let per: String = record.period == .week ? "/Woche" : "/Tag"
-        return "\(shown) · Ziel \(target.label)\(per)"
+        let excused: String = context.excusedDaysText(context.excusedDays(of: measure))
+        if record.period == .week, context.targetShare(record) <= 1e-9 {
+            // v8: every day of the target was a sick or holiday day – not scored (Decision 4).
+            let reason: String = excused.isEmpty ? "zählt nicht" : "zählt nicht – \(excused)"
+            return "\(shown) · Ziel \(full.label)\(per) (\(reason))"
+        }
+        let base: String = "\(shown) · Ziel \(target.label)\(per)"
+        guard target != full else { return base }
+        let note: String = excused.isEmpty ? "statt \(full.label)" : "statt \(full.label) – \(excused)"
+        return base + " (\(note))"
     }
 
+    /// v8: "Krank/Urlaub: Fr, Sa, So – zählen nicht in die Wertung".
+    private var excusedDaysText: String {
+        let days: [DayKey] = context.excusedDayList
+        let names: String = days.map(\.weekday.short).joined(separator: ", ")
+        let verb: String = days.count == 1 ? "zählt" : "zählen"
+        return "\(context.excusedDaysText(days)): \(names) – \(verb) nicht in die Wertung"
+    }
+
+    /// Days not closed yet – sick and holiday days don't need closing (v8).
     private var openDays: [DayKey] {
-        week.days.filter { $0 <= context.today && !context.isClosed($0) }
+        week.days.filter { $0 <= context.today && !context.isClosed($0) && !context.isExcused($0) }
     }
 
     private var openDaysText: String {

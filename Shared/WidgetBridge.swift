@@ -5,6 +5,23 @@ import ThaliaCore
 import WidgetKit
 #endif
 
+/// v8: sick and holiday days in the snapshot – read from `dayType`, so no new field is needed and
+/// older snapshots stay readable.
+extension TodaySummary {
+    /// Today is "Krank" or "Urlaub" (`DayTypes.isExcused`): nothing is open, the day doesn't count.
+    var isExcusedDay: Bool {
+        isNewDay != true && DayTypes.isExcused(dayType ?? "")
+    }
+
+    /// "Krank" or "Urlaub".
+    var excusedName: String {
+        (dayType ?? "").lowercased().contains("krank") ? "Krank" : "Urlaub"
+    }
+
+    /// "Krank – zählt nicht".
+    var excusedText: String { "\(excusedName) – zählt nicht" }
+}
+
 /// The widget snapshot in the shared App Group: `<group>/Thalia/today.json`.
 /// Only this small summary goes there – never the app's data. Ticks from the widget wait in
 /// `<group>/Thalia/pending-marks.json` until the app applies them (R87).

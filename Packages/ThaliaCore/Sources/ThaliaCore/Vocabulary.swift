@@ -470,10 +470,16 @@ public enum PowerHour {
 
 /// The kind of day sets what's reasonable: zero work can be exactly right on a planned day off.
 public enum DayTypes {
-    public static let presets = ["Arbeitstag", "Reisetag", "Familientag", "Erholungstag", "Frei", "Prüfungstag", "Besuch"]
+    public static let presets = ["Arbeitstag", "Reisetag", "Familientag", "Erholungstag", "Frei", "Krank", "Urlaub", "Prüfungstag", "Besuch"]
+
+    /// The presets whose days don't count in the week's score (v8), in picker order.
+    public static let excusedPresets = ["Krank", "Urlaub"]
 
     public static func symbol(for type: String) -> String {
         let t = type.lowercased()
+        // Excused days first: the symbol says "zählt nicht" even for "Familienurlaub".
+        if t.contains("krank") { return "cross.case" }
+        if t.contains("urlaub") { return "beach.umbrella" }
         if t.contains("reise") || t.contains("flug") || t.contains("flughafen") { return "airplane" }
         if t.contains("famil") || t.contains("besuch") { return "figure.2.and.child.holdinghands" }
         if t.contains("erhol") || t.contains("ruhe") || t.contains("krank") { return "leaf" }
@@ -490,6 +496,21 @@ public enum DayTypes {
     public static func isWorkFree(_ type: String) -> Bool {
         let t = type.lowercased()
         return ["frei", "feiertag", "urlaub", "geburtstag", "erholung", "familie", "ruhetag", "krank", "besuch"].contains { t.contains($0) }
+    }
+
+    /// Shown on sick and holiday days (v8).
+    public static let excusedHint = "Krank/Urlaub: Der Tag zählt nicht in die Wochenwertung"
+
+    /// Sick or holiday ("Krank", "Urlaubstag", "krank – Erkältung"): nothing is due, the day doesn't
+    /// count in the week's score (v8). Not "Frei", "Feiertag" or "Erholungstag".
+    public static func isExcused(_ type: String) -> Bool {
+        let t = type.lowercased()
+        return t.contains("krank") || t.contains("urlaub")
+    }
+
+    /// The excused days among `days` by their types (`"2026-11-06"` → "Krank").
+    public static func excusedDays(_ days: [DayKey], types: (DayKey) -> String) -> Set<DayKey> {
+        Set(days.filter { isExcused(types($0)) })
     }
 }
 

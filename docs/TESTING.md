@@ -196,3 +196,95 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 - [ ] Reine Ansicht-Fenster (Heute im Blick, Fokus, Ausgaben, Messwert, Punkt, Bericht, PDF, Papierkorb, Import, Erklärungen) haben oben das × (VoiceOver „Schließen“); kein Fenster zeigt „Schließen“ neben „Tag abschließen“.
 - [ ] Die Kürzel-Fußnote im „+“-Fenster erscheint am Mac und iPad, nicht auf dem iPhone.
 
+
+## v8 (ab Version 1.7.0)
+
+Plan und Regeln: [TASKS-v8.md](TASKS-v8.md). CSV-Format für vergangene Wochen: [IMPORT.md](IMPORT.md), Abschnitt „Vergangene Wochen“.
+
+**Nach dem Update zuerst**
+- [ ] Rückblick, Ziele und Woche zeigen dieselben Wertungen wie vor dem Update (ohne Krank-/Urlaubstage ändert sich nichts).
+- [ ] Die Tour bietet „Neu in Thalia“ mit 3 Karten an: Krank & Urlaub, Vergangene Wochen, PDF-Bericht.
+- [ ] Einstellungen → „Wie wird gerechnet?“ endet mit „Neu in 1.7“; die drei Erklärungen öffnen sich (auch aus der Woche und am Mac über Hilfe).
+- [ ] Einstellungen → Hilfe listet „Krank & Urlaub“, „Vergangene Wochen“ und „PDF-Bericht“ einzeln unter den vier bisherigen Erklärungen.
+- [ ] Einstellungen → Version zeigt 1.7.0.
+
+**Krank & Urlaub setzen (Entscheidung 1)**
+- [ ] Heute: Titel antippen (Mac: Titelmenü in der Symbolleiste) → Tagestyp: „Krank“ und „Urlaub“ stehen oben unter „Zählt nicht in die Wochenwertung“, danach die übrigen Typen und „Eigener Typ…“.
+- [ ] Woche: lange auf den Tageskopf drücken (Mac: Rechtsklick) → dasselbe Menü. Ebenso im Tagesabschluss.
+- [ ] „Tagestyp und Besonderheit…“: Krank und Urlaub sind die ersten Chips; bei Krank steht darunter „Krank/Urlaub: Der Tag zählt nicht in die Wochenwertung“.
+- [ ] Eigener Typ „Urlaub Kroatien“ wirkt wie Urlaub (enthält „urlaub“).
+- [ ] Familientag und Erholungstag wirken wie bisher: nur Arbeitspunkte entfallen, der Rest bleibt fällig.
+
+**Ein Krank-Tag (Entscheidung 2)**
+- [ ] Heute: Karte „Krank – dieser Tag zählt nicht in die Wochenwertung“ mit „Typ ändern“; der Ring zeigt das Symbol, nichts ist offen; die Leiste unten sagt „Krank – zählt nicht“.
+- [ ] Heute im Blick: „Krank – heute ist nichts fällig“, kein „Tag abschließen“-Hinweis.
+- [ ] Werte (Gewicht, Schlaf, Ausgaben) lassen sich weiter eintragen und zählen in den Wochensummen; der Tagesabschluss meldet nichts als fehlend.
+- [ ] Morgens Krank setzen → abends kommt keine Abend-Erinnerung; am nächsten Morgen kein Hinweis „Gestern … offen“.
+- [ ] Typ wieder auf „Arbeitstag“ → die Abend-Erinnerung ist wieder geplant (Erinnerung ein paar Minuten in die Zukunft stellen).
+- [ ] Widget (klein, mittel, groß, Sperrbildschirm): „Krank – zählt nicht“, „–“, leerer Ring. Watch: „Krank – zählt nicht“, leere Anzeige. Komplikation ohne „offen“. Mac-Menüleiste: „Krank – zählt nicht“.
+- [ ] Eigene Kategorie-Wertung im Tagesabschluss an einem Krank-Tag ändert die Wochenwertung nicht.
+
+**„n× pro Woche“ zählt halb (Entscheidung 3)**
+- [ ] 3×-Punkt (jeden Tag geplant), Mo und Mi erledigt, Fr–So Krank, Kategorie nur mit diesem Punkt → nach dem Sonntag Kategorie 8,33 (ohne die Regel 6,67); der Punkt zeigt „· ½ krank“.
+- [ ] 3×-Punkt nur Mo/Mi/Fr geplant, Mo und Mi erledigt, Fr Krank → Kategorie 8,75.
+- [ ] 3×-Punkt dreimal erledigt, danach Krank → kein Abzug, kein Hinweis.
+- [ ] 3×-Punkt, Fr–So Krank, noch nichts erledigt: „Entfällt“ geht nur, solange danach noch 2 Tage bis Do frei sind (am Di ja, am Mi nicht mehr).
+- [ ] Ganze Woche Urlaub mit einem 3×-Punkt: nichts wird gebucht, die Woche bleibt ohne Wertung.
+
+**Wochenziele schrumpfen (Entscheidung 4)**
+- [ ] stammloop 8 PH Mo–Fr, Do und Fr Krank: Fokus, Heute im Blick und Wochenziele zeigen „4,8 statt 8 PH – 2 Tage krank“, Woche abschließen „(statt ≥ 8 – 2 Tage krank)“.
+- [ ] Mit 4 PH steht der Fortschrittspunkt auf Teilweise, mit 5 PH auf erreicht.
+- [ ] Der Tempo-Strich („Soll bis heute“) lässt Krank-Tage aus; „Ø pro Arbeitstag“ im Fokus auch.
+- [ ] Ein Messwert mit Grenze („TEREA ≤ 6“, „Im Bett ≤ 23:00“) bleibt an Krank-Tagen unverändert.
+- [ ] stammloop 8 PH Mo–Fr, alle fünf Tage Krank: das Wochenziel zählt nicht – es fehlt in „x von y erreicht“, im Wochen-PDF und in den Widgets; Fokus und die Kategorie-Seite sagen „Ziel zählt nicht – 5 Tage krank“, kein „0 von 0 PH · erreicht“.
+- [ ] Ein Business-Fortschrittspunkt (Ziel 3, Plan ohne Tagesregeln), Do Krank und Fr Feiertag: Fortschritt und Tempo rechnen mit demselben Ziel (8 × 3/4 = 6).
+
+**Ganze Woche und Ziele (Entscheidungen 5, 6)**
+- [ ] Alle Tage einer Woche Urlaub (Woche → Tagestyp, oder per Vergangene Woche nachtragen): „Woche zählt nicht (krank/Urlaub)“ statt einer Wertung – auch im Wochen-Kopf am iPhone und in der Mac-Seitenleiste (nicht „Noch keine Ziele“).
+- [ ] Rückblick: die Woche ist eine blasse Säule „entschuldigt“ statt einer Lücke, die Zeile trägt „entschuldigt“; der Ø 4 Wo. lässt sie aus.
+- [ ] Ziele: in der Ziel-Karte und im Ziel-Verlauf ist dieselbe Woche eine graue Säule (Legende „Grau = entschuldigt“), keine Lücke.
+- [ ] Wochenplan-Import oder Vergangene Woche nachtragen mit Krank für heute → die heutige Abend-Erinnerung entfällt sofort (nicht erst beim nächsten Öffnen).
+- [ ] Ein Ziel, dessen Punkte nur auf Krank-Tage fielen: „x/y Ziele bewertet“ zählt es nicht mit; die Ziel-Karte sagt „Diese Woche entschuldigt (krank/Urlaub)“.
+- [ ] Wochenbericht (Text): Zeile „Krank/Urlaub: … zählen nicht“, die Tage-Tabelle sagt „zählt nicht“.
+
+**Markierungen von vorher (Entscheidung 7)**
+- [ ] Freitag früh einen Punkt ✓, dann Freitag auf Krank: die Woche zeigt das ✓ gedimmt (VoiceOver: „Krank, zählt nicht“), die Wertung ändert sich wie ohne ✓.
+- [ ] Typ zurück auf „Arbeitstag“ → das ✓ zählt wieder, die Wertung ist wie vorher.
+
+**Vergangene Woche nachtragen (Entscheidung 8)**
+- [ ] Erreichbar über Woche → … → „Vergangene Woche nachtragen…“, Mac Ablage, Wochenübersicht rechts (Mac/iPad), Import → Vorlagen, leerer Rückblick und eine vergangene Woche ohne Plan.
+- [ ] Wochenauswahl: ab Beginn des Zieljahrs, mindestens 52 Wochen zurück, bis letzte Woche; diese Woche ist nicht wählbar.
+- [ ] a) „Plan übernehmen“ in eine leere vergangene Woche: die Punkte der nächstgelegenen geplanten Woche erscheinen ohne Markierungen; „KWnn in der Woche öffnen“ → abhaken, Krank setzen → „KWnn abschließen“ → die Woche steht im Rückblick und in den Zielen.
+- [ ] a) „Plan übernehmen“ in eine Woche mit Plan: Rückfrage, die alte Woche kommt ins Archiv, „Widerrufen“ im Hinweis holt sie zurück.
+- [ ] b) „Mit ChatGPT“, Zeitraum „Wochen aus den Unterlagen“: „Prompt kopieren“ → in ChatGPT Fotos oder ein PDF von zwei Papierwochen dazulegen → CSV zurück → einfügen (oder „Datei…“).
+- [ ] b) Vorschau je Woche: je Woche eine Zeile (z. B. „KW45 2026 (2.–8. Nov.) · neu“ mit Punkten, Markierungen, Krank/Urlaub-Tagen); Importieren → beide Wochen und ihre Tage sind abgeschlossen und erscheinen im Rückblick, in den Zielen und im Ø 4 Wo.
+- [ ] b) Eine CSV mit einer Woche in Matrix-Form (Spalten mo…so) und einer Woche nur mit Wertung (week-Zeile mit Datum und value) → die Vorschau zeigt zwei Zeilen „neu“, der Import schließt beide ab.
+- [ ] b) „Fester Zeitraum“ Von–Bis: der kopierte Prompt nennt genau diese Wochen mit Datum und KW.
+- [ ] b) „Leere Felder als ✗ zählen“ aus (Standard): leere Felder bleiben leer. An: leere feste Punkte werden ✗ – nie an freien Tagen oder Krank-/Urlaubstagen.
+- [ ] b) Die CSV enthält auch diese Woche → Warnung „KWnn: noch nicht vorbei – wird nicht abgeschlossen“, die Woche bleibt offen.
+- [ ] b) Eine Markierung auf einen Punkt, den es weder in der Datei noch in der App gibt → Warnung in der Vorschau.
+- [ ] b) Nur Markierungen für eine geplante vergangene Woche, die am Montag schon Markierungen aus der App hat → nach dem Import ist auch Montag abgeschlossen.
+- [ ] b) Eine Woche ersetzen: Vorschau „ersetzt“, Rückfrage, danach „Widerrufen“ im Hinweis.
+- [ ] c) „Nur Wertung“: KW wählen, 7,5 (oder 7.5) → „Wertung eintragen“ → der Rückblick zeigt 7,5; „Wertung entfernen“ nimmt sie wieder weg.
+- [ ] Nach einem Import mit Krank-/Urlaubstagen in dieser oder der nächsten Woche kommt an diesen Tagen keine Abend-Erinnerung (spätestens, nachdem die App einmal im Hintergrund war und wieder vorne ist).
+
+**CSV (Entscheidung 9)**
+- [ ] Export (Einstellungen → Wochenplan importieren & exportieren) ist im langen Format wie bisher und lässt sich unverändert wieder importieren.
+- [ ] Eine Item-Zeile mit Spalten `mo,di,mi,do,fr,sa,so` und ✓ ½ ✗ – importiert als Markierungen; ein unlesbares Feld steht unter „Nicht gelesen“.
+- [ ] Eine Tageszeile `day,Fr,,Krank` setzt den Freitag auf Krank.
+
+**PDF-Bericht (Entscheidung 10)**
+- [ ] Erreichbar über Rückblick → „PDF-Bericht“, Woche → … → „Mehrere Wochen als PDF…“, Mac Ablage → „Zeitraum als PDF…“ (⌥⌘P), Rückblick-Zeile gedrückt halten (Mac: Rechtsklick) → „PDF-Bericht ab dieser Woche“ und Wochenbericht → Teilen → „Mehrere Wochen als PDF…“.
+- [ ] Zeitraum: Letzte 4 / 8 / 13 Wochen (bis zur letzten fertigen Woche), Zieljahr bis heute, Eigener Zeitraum (Von–Bis). Umfang: Nur Übersicht · + Wochenübersicht je Woche · + Rückblick-Texte. Darunter „x Wochen mit Daten · y mit Plan · z Seiten“.
+- [ ] Erzeugen zeigt „Seite x von y“; Abbrechen mitten drin geht; danach öffnet die Vorschau und blättert flüssig.
+- [ ] Inhalt: Deckblatt (Zeitraum, Ø-Ring, Kacheln, Balken je Woche, 10 Ziele mit Ø und Trend), Übersicht (eine Zeile je Woche: KW, Wertung, 10 Zielfelder in Zielfarbe, PH, abgeschlossene Tage, Krank/Urlaub, Wochenziele), Power-Hours je Bereich, dann die Wochenseiten. Seitenzahlen laufen durch.
+- [ ] Papier-Wochen stehen nur als Zeile; entschuldigte Wochen heißen „entschuldigt“ und zählen nicht im Ø; Wochen vor KW42 auch nicht.
+- [ ] „PDF teilen“ → in Dateien sichern: Dateiname „Thalia-2026-W43-bis-2026-W46.pdf“; Lesezeichen je Woche (Dateien, Vorschau am Mac); Titel „Thalia · Bericht KW…“.
+- [ ] Mac: „Sichern…“ (⌘S) und „Drucken…“ (⌘P).
+- [ ] „Zieljahr bis heute“ + „Rückblick-Texte“ (rund 25 Wochen): die Datei ist höchstens ein paar MB groß, die App bleibt währenddessen bedienbar.
+- [ ] Einzel-PDF einer Woche und eines Tages sehen aus wie vorher (Aurora-Band oben).
+- [ ] Woche mit Fr–So Krank im Wochen-PDF: Spalten grau mit Symbol, auf dem Deckblatt „zählt nicht“, „Tage abgeschlossen … · 3 krank“, „2/3× · ½ krank“, „4,8 statt 8 PH – 2 Tage krank“. Ganz entschuldigte Woche: „–“ / „zählt nicht“.
+
+**Demo und Screenshots (Entscheidung 11)**
+- [ ] CI-Screenshots enthalten „past-import“ und „range-pdf“ für iPhone und Mac (der Bericht ist schon erzeugt und in der Vorschau).
+- [ ] In der Demo-Woche ist Freitag „Krank“: Woche mit grauer Spalte, ohne Markierungen; ein 3×-Punkt zeigt „· ½ krank“.

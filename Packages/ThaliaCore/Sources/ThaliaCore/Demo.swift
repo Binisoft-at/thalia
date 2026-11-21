@@ -11,12 +11,26 @@ public enum Demo {
         public var closedWeeks: [WeekKey]
     }
 
+    /// v8: in `-Demo` launches (with history) Friday of the current week is "Krank", so the screenshots
+    /// show a sick day (grey column, "zählt nicht", the half-counted quota). The tour's practice page
+    /// (no history) keeps a normal week, so its steps always have something to mark.
+    public static let sickDayType = "Krank"
+
+    /// The day `content(today:history:)` marks as sick: Friday of `today`'s week, only with history.
+    public static func sickDay(today: DayKey, history: Bool = true) -> DayKey? {
+        history ? today.week.day(.friday) : nil
+    }
+
     public static func content(today: DayKey, history: Bool = true) -> Content {
         let week = today.week
         var doc = Template.week(week)
         var closedDays: [DayKey] = []
         var closedWeeks: [WeekKey] = []
 
+        if let sick = sickDay(today: today, history: history), let index = doc.days.firstIndex(where: { $0.day == sick }) {
+            doc.days[index].dayType = sickDayType
+            doc.days[index].note = "Erkältet"
+        }
         fill(&doc, week: week, through: today, openDay: today, closed: &closedDays)
 
         if history {
@@ -57,10 +71,17 @@ public enum Demo {
     static func fill(_ doc: inout PlanCSV.Document, week: WeekKey, through today: DayKey, openDay: DayKey?, closed: inout [DayKey]) {
         let measures = doc.measures.filter { $0.week == week }
         let items = doc.items.filter { $0.week == week }
+        let types = Dictionary(doc.days.map { ($0.day, $0.dayType) }, uniquingKeysWith: { _, last in last })
+        let excused = DayTypes.excusedDays(week.days) { types[$0] ?? "" }
         for day in week.days where day <= today {
             let isToday = day == openDay
             var rng = Random(seed: "\(day.string)")
             addEntries(&doc, day: day, isToday: isToday, rng: &rng)
+            // A sick day (v8): values are still entered, but no work and no marks – nothing is due.
+            if excused.contains(day) {
+                if !isToday { closed.append(day) }
+                continue
+            }
             addWork(&doc, day: day, isToday: isToday)
             let dayValues = Dictionary(uniqueKeysWithValues: measures.map { m in
                 (m.code, Measures.dayValue(m, on: day, entries: doc.entries, work: doc.work))

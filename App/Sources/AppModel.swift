@@ -69,6 +69,10 @@ enum AppSheet: Identifiable {
     case editItem(PlanItem)
     /// Prepare the goal review (R95).
     case goalReview
+    /// v8: enter a past week (plan, CSV from documents, or just its score); nil lets the window choose.
+    case importPast(WeekKey?)
+    /// v8: several weeks as one PDF report.
+    case rangePDF
 
     var id: String {
         switch self {
@@ -99,6 +103,8 @@ enum AppSheet: Identifiable {
         case .repeatPlan(let from, let to): "repeat-\(from.string)-\(to.string)"
         case .editItem(let item): "edit-item-" + item.uuid.uuidString
         case .goalReview: "goal-review"
+        case .importPast(let week): "import-past-" + (week?.string ?? "any")
+        case .rangePDF: "range-pdf"
         }
     }
 }
@@ -173,6 +179,8 @@ final class AppModel {
         self.sync = SyncMonitor(mode: isSandbox ? .demo : mode, appName: AppInfo.name)
         self.toasts = ToastCenter()
         guard !isSandbox else { return }
+        // v8: no evening reminder on sick and holiday days, whoever plans the reminders.
+        ReminderScheduler.skipsDay = { [weak self] day in self?.isDayExcused(day) ?? false }
         applyLaunchOptions()
         startDayWatch()
         if !launch.isDemo {
@@ -237,6 +245,11 @@ final class AppModel {
             Task { @MainActor in self?.updateMenuBarTitle() }
         })
         #endif
+        // v8: a day became sick / holiday (or back): its evening reminder goes away or comes back.
+        observers.append(center.addObserver(forName: TrackerStore.dayInfoChanged, object: nil, queue: nil) { [weak self] note in
+            let key: String? = note.userInfo?["day"] as? String
+            Task { @MainActor in self?.dayInfoChanged(key.flatMap { DayKey($0) }) }
+        })
         // Changes from other devices: a finished import from iCloud. Here and not in a view, so it
         // also works on the Mac with only the menu bar open (no main window).
         observers.append(center.addObserver(
@@ -247,6 +260,15 @@ final class AppModel {
                   event.type == .import, event.endDate != nil else { return }
             Task { @MainActor in self?.afterSyncSoon() }
         })
+    }
+
+    /// v8: after `setDayInfo` – no evening reminder on a sick or holiday day; the others planned anew.
+    private func dayInfoChanged(_ day: DayKey?) {
+        guard !isSandbox, !launch.isDemo else { return }
+        if let day, isDayExcused(day) { ReminderScheduler.dayClosed(day) }
+        scheduleReminders()
+        widgetPublisher?.publishNow()
+        updateMenuBarTitle()
     }
 
     /// After an import: give the main context a moment to merge, then `afterSync`.
@@ -291,12 +313,31 @@ final class AppModel {
         store.planDay(day)?.isClosed ?? false
     }
 
+    /// v8: a sick or holiday day ("Krank", "Urlaub"): it doesn't count, so it gets no evening
+    /// reminder and no "gestern offen".
+    func isDayExcused(_ day: DayKey) -> Bool {
+        store.isExcused(day)
+    }
+
+    /// v8: no evening reminder for this day – closed, or sick / on holiday.
+    func skipsEveningReminder(_ day: DayKey) -> Bool {
+        isDayClosed(day) || isDayExcused(day)
+    }
+
+    /// v8: sets only the day's type (the quick choice in Today's title menu, the week, closing the day).
+    func setDayType(_ type: String, day: DayKey) {
+        store.setDayType(day, type: type)
+        widgetPublisher?.publishNow()
+        updateMenuBarTitle()
+    }
+
     /// The day "Tag abschließen" is about (R18): a day other than today that is on screen, else
     /// before 4:00 the day before while it is still open, else today.
     func dayToClose(showing day: DayKey? = nil) -> DayKey {
         if let day, day != today { return day }
         let store = self.store
-        return DayKey.closingDay(isClosed: { store.planDay($0)?.isClosed ?? false })
+        // v8: a sick or holiday day before 4:00 needs no closing – today then.
+        return DayKey.closingDay(isClosed: { (store.planDay($0)?.isClosed ?? false) || store.isExcused($0) })
     }
 
     /// The next / previous page of Today (R35).
@@ -334,7 +375,7 @@ final class AppModel {
         guard !isSandbox, !launch.isDemo else { return }
         for offset in -1..<7 {
             let day = today.adding(days: offset)
-            if isDayClosed(day) { ReminderScheduler.dayClosed(day) }
+            if skipsEveningReminder(day) { ReminderScheduler.dayClosed(day) }
         }
     }
 
@@ -398,7 +439,7 @@ final class AppModel {
         guard !isSandbox, !launch.isDemo else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = await ReminderScheduler.apply(ReminderScheduler.load(), authorize: authorize, isClosed: { self.isDayClosed($0) })
+            _ = await ReminderScheduler.apply(ReminderScheduler.load(), authorize: authorize, isClosed: { self.skipsEveningReminder($0) })
         }
     }
 
@@ -529,7 +570,7 @@ final class AppModel {
         if !isSandbox, !launch.isDemo {
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await ReminderScheduler.dayReopened(day, isClosed: { self.isDayClosed($0) })
+                await ReminderScheduler.dayReopened(day, isClosed: { self.skipsEveningReminder($0) })
             }
         }
         widgetPublisher?.publishNow()
@@ -655,6 +696,10 @@ final class AppModel {
             sheet = .goalReview
         case "weekly-goals":
             sheet = .weeklyGoals(today.week)
+        case "past-import":
+            sheet = .importPast(argument.flatMap { WeekKey($0) })
+        case "range-pdf":
+            sheet = .rangePDF
         default:
             tab = .today
             sidebar = .today
@@ -706,6 +751,10 @@ final class AppModel {
             sheet = .pdf(.week(today.week.adding(weeks: -1)))
         case "pdf-day":
             sheet = .pdf(.day(today))
+        case "past-import":
+            sheet = .importPast(nil)
+        case "range-pdf":
+            sheet = .rangePDF
         case "report":
             sheet = .report(today.week.adding(weeks: -1))
         case "explainer":

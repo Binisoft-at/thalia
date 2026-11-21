@@ -27,6 +27,7 @@ struct GoalsContent: View {
     private var period: GoalPeriod { app.store.goalPeriod }
 
     var body: some View {
+        let excused: Set<WeekKey> = excusedWeeks
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 yearCard
@@ -41,7 +42,7 @@ struct GoalsContent: View {
                             NavigationLink {
                                 GoalDetailView(goalKey: goal.key)
                             } label: {
-                                GoalCard(goal: goal, context: context, history: history(for: goal.key),
+                                GoalCard(goal: goal, context: context, history: history(for: goal.key, excused: excused),
                                          recentAverage: recentAverage(for: goal.key))
                             }
                             .buttonStyle(.plain)
@@ -57,13 +58,29 @@ struct GoalsContent: View {
         .background(Color.groupedBackground)
     }
 
+    /// v8: past weeks (last half year – the cards show 12 points) that were all sick or holiday days
+    /// (no score on purpose), once per render.
+    private var excusedWeeks: Set<WeekKey> {
+        guard !plans.isEmpty else { return [] }
+        return app.store.excusedWeeks(from: context.week.adding(weeks: -26), through: context.week.adding(weeks: -1), today: app.today)
+    }
+
     /// Closed weeks' scores for one goal, oldest first, plus this week live – one point per week (R11).
-    private func history(for goalKey: String) -> [ScorePoint] {
+    /// v8: a week of only sick or holiday days is a point marked "entschuldigt", not a gap.
+    private func history(for goalKey: String, excused: Set<WeekKey>) -> [ScorePoint] {
         guard !plans.isEmpty else { return [] }
         let closed: [WeekScorePoint] = app.store.goalScoreHistory(goalKey: goalKey, through: context.week.adding(weeks: -1))
         var points: [ScorePoint] = closed.map { ScorePoint(week: $0.week, score: $0.score) }
-        if let live = context.score.goalWeek[goalKey]?.score { points.append(ScorePoint(week: context.week, score: live)) }
-        return Array(points.suffix(12))
+        let scored: Set<WeekKey> = Set(points.map(\.week))
+        for week in excused where !scored.contains(week) {
+            points.append(ScorePoint(week: week, score: 10, isExcused: true))
+        }
+        if let live = context.score.goalWeek[goalKey]?.score {
+            points.append(ScorePoint(week: context.week, score: live))
+        } else if context.score.isExcused {
+            points.append(ScorePoint(week: context.week, score: 10, isExcused: true))
+        }
+        return Array(points.sorted { $0.week < $1.week }.suffix(12))
     }
 
     /// R93: "Ø 4 Wo." – the mean of the goal's last four closed weeks, while this week has no score yet.
@@ -170,6 +187,12 @@ struct GoalCard: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
+                    } else if context.isGoalExcused(goal) {
+                        // v8: everything planned fell on sick or holiday days.
+                        Text("Diese Woche \(WeekScore.excusedLabel) (krank/Urlaub)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
                     }
                     if let recentAverage {
                         Text("Ø 4 Wo. \(Format.score(recentAverage))")
@@ -196,24 +219,56 @@ struct GoalCard: View {
                 }
             }
             if history.count > 1 {
-                Chart(history) { point in
-                    LineMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(goal.color)
-                    PointMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
-                        .symbolSize(18)
-                        .foregroundStyle(goal.color)
-                }
-                .chartYScale(domain: 0...10)
-                .chartYAxis(.hidden)
-                .chartXAxis {
-                    AxisMarks { _ in AxisValueLabel().font(.system(size: 8)) }
-                }
-                .frame(height: 54)
+                GoalScoreSparkline(points: history, tint: goal.color)
             }
         }
         .card(padding: 14)
         .contentShape(.rect)
+    }
+}
+
+/// R11: a goal's last weeks as a small line. v8: a week of only sick or holiday days is a pale
+/// column ("entschuldigt") instead of a gap, as in the review.
+struct GoalScoreSparkline: View {
+    let points: [ScorePoint]
+    let tint: Color
+
+    private var scored: [ScorePoint] { points.filter { !$0.isExcused } }
+    private var excused: [ScorePoint] { points.filter(\.isExcused) }
+    /// The weeks in order – two series would otherwise put the pale columns at the end.
+    private var labels: [String] { points.map(\.label) }
+
+    var body: some View {
+        Chart {
+            ForEach(excused) { point in
+                BarMark(x: .value("Woche", point.label), y: .value("Wertung", 10.0))
+                    .foregroundStyle(Color.secondary.opacity(0.16))
+            }
+            ForEach(scored) { point in
+                LineMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(tint)
+                PointMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
+                    .symbolSize(18)
+                    .foregroundStyle(tint)
+            }
+        }
+        .chartXScale(domain: labels)
+        .chartYScale(domain: 0...10)
+        .chartYAxis(.hidden)
+        .chartXAxis {
+            AxisMarks { _ in AxisValueLabel().font(.system(size: 8)) }
+        }
+        .frame(height: 54)
+        .accessibilityLabel(spokenText)
+    }
+
+    /// "KW45 7,2, KW46 entschuldigt, KW47 6,8".
+    private var spokenText: String {
+        points.map { point in
+            let value: String = point.isExcused ? WeekScore.excusedLabel : Format.score(point.score)
+            return "\(point.label) \(value)"
+        }.joined(separator: ", ")
     }
 }
 
@@ -386,7 +441,9 @@ struct GoalDetailContent: View {
     }
 
     /// "Mittwoch: Erledigt" · "Mittwoch: nicht erfasst" · "Mittwoch: nicht fällig".
+    /// v8: "Freitag: Krank, zählt nicht".
     private func cellDescription(_ mark: Mark?, item: PlanItem, day: DayKey) -> String {
+        if context.isExcused(day) { return "\(day.weekday.name): \(context.excusedName(day)), zählt nicht" }
         let state: String
         if let mark {
             state = mark.label(progress: item.schedule == .progress)
@@ -398,8 +455,10 @@ struct GoalDetailContent: View {
         return "\(day.weekday.name): \(state)"
     }
 
+    /// Today in the goal's colour; v8: sick and holiday days grey (they don't count).
     private func todayBackground(_ day: DayKey) -> Color {
-        day == context.today ? goal.color.opacity(0.14) : Color.clear
+        if day == context.today { return goal.color.opacity(0.14) }
+        return context.isExcused(day) ? Color.secondary.opacity(0.14) : Color.clear
     }
 }
 
@@ -684,6 +743,8 @@ struct GoalHistoryCharts: View {
     let context: WeekContext
     @Environment(AppModel.self) private var app
     @State private var scores: [HistoryValue] = []
+    /// v8: weeks of only sick or holiday days – a pale column ("entschuldigt") instead of a gap.
+    @State private var excusedScores: [HistoryValue] = []
     @State private var histories: [MeasureHistory] = []
     @State private var loaded = false
 
@@ -706,24 +767,42 @@ struct GoalHistoryCharts: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Wochenwertung")
                 .font(.subheadline.weight(.semibold))
-            if scores.isEmpty {
+            if scores.isEmpty && excusedScores.isEmpty {
                 Text(loaded ? "Noch keine abgeschlossene Woche in diesem Zeitraum." : "")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Chart(scores) { point in
-                    LineMark(x: .value("Woche", point.date), y: .value("Wertung", point.value))
-                        .interpolationMethod(.monotone)
-                        .foregroundStyle(goal.color)
-                    PointMark(x: .value("Woche", point.date), y: .value("Wertung", point.value))
-                        .symbolSize(16)
-                        .foregroundStyle(goal.color)
+                Chart {
+                    ForEach(excusedScores) { point in
+                        BarMark(x: .value("Woche", point.date, unit: .weekOfYear), y: .value("Wertung", point.value))
+                            .foregroundStyle(Color.secondary.opacity(0.16))
+                    }
+                    ForEach(scores) { point in
+                        LineMark(x: .value("Woche", point.date), y: .value("Wertung", point.value))
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(goal.color)
+                        PointMark(x: .value("Woche", point.date), y: .value("Wertung", point.value))
+                            .symbolSize(16)
+                            .foregroundStyle(goal.color)
+                    }
                 }
                 .chartYScale(domain: 0...10)
                 .frame(height: 120)
                 .accessibilityLabel("Wochenwertung von Ziel \(goal.key)")
+                if !excusedScores.isEmpty {
+                    Label(excusedLegend, systemImage: "cross.case")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
+    }
+
+    /// v8: "Grau = entschuldigt (krank/Urlaub): 2 Wochen".
+    private var excusedLegend: String {
+        let count: Int = excusedScores.count
+        let weeks: String = count == 1 ? "1 Woche" : "\(count) Wochen"
+        return "Grau = \(WeekScore.excusedLabel) (krank/Urlaub): \(weeks)"
     }
 
     private func measureChart(_ history: MeasureHistory) -> some View {
@@ -784,6 +863,11 @@ struct GoalHistoryCharts: View {
         scores = app.store.goalScoreHistory(goalKey: goal.key, through: context.week)
             .filter { $0.week >= first }
             .map { HistoryValue(date: $0.week.monday.date(minutes: 720), value: $0.score) }
+        let scored: Set<Date> = Set(scores.map(\.date))
+        excusedScores = app.store.excusedWeeks(from: first, through: context.week, today: context.today)
+            .sorted()
+            .map { HistoryValue(date: $0.monday.date(minutes: 720), value: 10) }
+            .filter { !scored.contains($0.date) }
         let start: DayKey = first.monday
         let end: DayKey = context.today
         histories = measures.compactMap { measure -> MeasureHistory? in
@@ -906,11 +990,14 @@ struct ScorePoint: Identifiable {
     var isLive = false
     /// R70: a past week that was never closed (its running score).
     var isUnclosed = false
+    /// v8: a week that was all sick or holiday days – no score on purpose ("entschuldigt", not a gap).
+    var isExcused = false
     var id: String { week.string }
     var label: String { week.label }
 
     /// The chart series in the review.
     var series: String {
+        if isExcused { return WeekScore.excusedLabel }
         if isUnclosed { return "nicht abgeschlossen" }
         if isOld { return "vor KW42" }
         return isLive ? "laufend" : "gleich gewichtet"

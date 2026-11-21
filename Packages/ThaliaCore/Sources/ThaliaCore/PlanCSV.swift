@@ -15,6 +15,24 @@ public enum PlanCSV {
 
     public static var header: String { columns.joined(separator: ",") }
 
+    /// Optional weekday columns on item rows (v8): one mark per day (✓ ½ ✗ –), e.g. for a past week
+    /// copied from a paper tracker. The export stays in the long format (one mark row per day).
+    public static let matrixColumns = ["mo", "di", "mi", "do", "fr", "sa", "so"]
+
+    /// The header with the weekday columns: `type,…,note,mo,di,mi,do,fr,sa,so`.
+    public static var matrixHeader: String { (columns + matrixColumns).joined(separator: ",") }
+
+    /// Header names read as weekday columns (German short and long, English short and long).
+    static let matrixAliases: [(Weekday, [String])] = [
+        (.monday, ["mo", "montag", "mon", "monday"]),
+        (.tuesday, ["di", "dienstag", "tue", "tuesday"]),
+        (.wednesday, ["mi", "mittwoch", "wed", "wednesday"]),
+        (.thursday, ["do", "donnerstag", "thu", "thursday"]),
+        (.friday, ["fr", "freitag", "fri", "friday"]),
+        (.saturday, ["sa", "samstag", "sat", "saturday"]),
+        (.sunday, ["so", "sonntag", "sun", "sunday"]),
+    ]
+
     public enum RowType: String, CaseIterable, Sendable {
         case week, day, goal, category, item, measure, mark, entry, work, note, review, score
 
@@ -97,8 +115,11 @@ public enum PlanCSV {
     }
 
     /// Reads a file. `knownCategories` / `knownMeasures` are what the app already has, so items may
-    /// refer to them without repeating the structure.
-    public static func parse(_ raw: String, knownCategories: [String: String] = [:], knownMeasures: Set<String> = []) -> Document {
+    /// refer to them without repeating the structure. `knownItems`: the app's items (`ItemRecord.key`,
+    /// "2026-W45|1.1-01", or bare codes) – marks on items that are neither there nor in the file get
+    /// a warning (v8).
+    public static func parse(_ raw: String, knownCategories: [String: String] = [:], knownMeasures: Set<String> = [],
+                             knownItems: Set<String> = []) -> Document {
         var doc = Document()
         let text = extractCSV(from: raw)
         let (rawHeader, rawRows) = CSV.records(text)
@@ -172,8 +193,9 @@ public enum PlanCSV {
                 warnDuplicate("day:\(key.string)", line: line)
                 let isClosed = flagSet(col("flags")).contains(closedFlag)
                 if isClosed { doc.closedDays.insert(key) }
-                // A row that only says "closed" leaves the day's type and note alone.
-                if isClosed, col("title").isEmpty, col("description").isEmpty { continue }
+                // A row that only says "closed" – or only the date (an unfilled template row, v8) –
+                // leaves the day's type and note alone.
+                if col("title").isEmpty, col("description").isEmpty { continue }
                 doc.days.removeAll { $0.day == key }
                 doc.days.append(DayRecord(day: key, dayType: col("title"), note: col("description")))
 
@@ -236,6 +258,17 @@ public enum PlanCSV {
                     secondary: ItemFlags.secondary(Set(flagSet(col("flags")))), dayRule: ItemFlags.dayRule(Set(flagSet(col("flags"))))
                 ))
                 doc.plannedWeeks.insert(week)
+                // Weekday columns (v8): a mark per day right on the item row.
+                for (weekday, names) in matrixAliases {
+                    guard let cell = names.lazy.map(col).first(where: { !$0.isEmpty }) else { continue }
+                    guard let mark = Mark.parse(cell) else {
+                        doc.skipped.append("Zeile \(line): \u{201C}\(title)\u{201D} \(weekday.short) \u{201C}\(cell)\u{201D} nicht lesbar (✓, ½, ✗ oder –)")
+                        continue
+                    }
+                    let markDay = week.day(weekday)
+                    doc.marks.removeAll { $0.week == week && $0.itemCode == code && $0.day == markDay }
+                    doc.marks.append(MarkRecord(week: week, itemCode: code, day: markDay, mark: mark))
+                }
 
             case .measure:
                 guard let week = currentWeek else {
@@ -374,7 +407,26 @@ public enum PlanCSV {
         }
 
         validate(&doc, knownCategories: knownCategories, knownMeasures: knownMeasures)
+        warnUnknownMarks(&doc, knownItems: knownItems)
         return doc
+    }
+
+    /// Marks on items that are neither in the file nor in the app (v8): one warning per week. A week
+    /// whose item list is in the file only knows the file's items (the import replaces the others).
+    static func warnUnknownMarks(_ doc: inout Document, knownItems: Set<String>) {
+        let fileItems = Set(doc.items.map(\.key))
+        var unknown: [WeekKey: Set<String>] = [:]
+        for mark in doc.marks {
+            let key = ItemRecord.key(week: mark.week, code: mark.itemCode)
+            if fileItems.contains(key) { continue }
+            let known = knownItems.contains(key) || knownItems.contains(mark.itemCode)
+            if known, !doc.plannedWeeks.contains(mark.week) { continue }
+            unknown[mark.week, default: []].insert(mark.itemCode)
+        }
+        for week in unknown.keys.sorted() {
+            let codes = (unknown[week] ?? []).sorted()
+            doc.warnings.append("\(week.label): Markierungen für unbekannte Punkte \(codes.joined(separator: ", ")) – sie zählen erst, wenn es diese Punkte in der Woche gibt.")
+        }
     }
 
     /// The checks behind the preview's warnings: exactly ten items per category, references that exist.
@@ -577,6 +629,67 @@ extension PlanCSV.Document {
         }
         if !doc.items.isEmpty { doc.plannedWeeks = [target] }
         if !doc.measures.isEmpty { doc.measuredWeeks = [target] }
+        return doc
+    }
+
+    // MARK: Past weeks (v8)
+
+    /// The file's view of a week with the scoring rules: its items, marks, free and excused days.
+    /// Categories the file doesn't list are taken from the item ids ("3.2" → goal 3), so the
+    /// Business rule for free days still works.
+    public func weekData(_ week: WeekKey) -> WeekData {
+        var marksByKey: [String: Mark] = [:]
+        for mark in marks where mark.week == week {
+            if let value = mark.mark { marksByKey[WeekData.markKey(mark.itemCode, mark.day)] = value }
+        }
+        var allCategories = categories
+        let listed = Set(categories.map(\.key))
+        for key in Set(items.filter { $0.week == week }.map(\.categoryKey)).subtracting(listed).sorted() {
+            allCategories.append(CategoryRecord(key: key, goalKey: String(key.split(separator: ".").first ?? ""), title: key))
+        }
+        let types = days.filter { week.contains($0.day) }
+        return WeekData(week: week, goals: goals, categories: allCategories, items: items, marks: marksByKey,
+                        workFreeDays: Set(types.filter { DayTypes.isWorkFree($0.dayType) }.map(\.day)),
+                        excusedDays: Set(types.filter { DayTypes.isExcused($0.dayType) }.map(\.day)))
+    }
+
+    /// Blank fields of `weeks` filled with `mark` (the switch "Leere Felder als ✗ zählen"): every fixed,
+    /// required item due on a day (not a free day for work items, not an excused day) without a mark.
+    /// "n× pro Woche", progress, conditional and secondary items stay blank – the week's rules settle them.
+    public func fillingBlanks(weeks: Set<WeekKey>, with mark: Mark) -> PlanCSV.Document {
+        var doc = self
+        for week in weeks.sorted() {
+            let data = weekData(week)
+            for item in data.items.sortedForSheet() where item.schedule == .fixed {
+                for day in week.days where data.isOpenRequired(item, on: day) {
+                    doc.marks.removeAll { $0.week == week && $0.itemCode == item.code && $0.day == day }
+                    doc.marks.append(MarkRecord(week: week, itemCode: item.code, day: day, mark: mark))
+                }
+            }
+        }
+        return doc
+    }
+
+    /// Past weeks closed (a past week brought in later): every week of the file before
+    /// `today.week` with items, marks or a week row, and its days with a mark or a day type.
+    /// The current week and later ones stay open, each with a warning ("KW48: noch nicht vorbei – …").
+    public func closingPast(today: DayKey) -> PlanCSV.Document {
+        var doc = self
+        let current = today.week
+        var weeks = Set(self.weeks.map(\.week)).union(plannedWeeks)
+        for mark in marks { weeks.insert(mark.week) }
+        let past = weeks.filter { $0 < current }
+        for week in weeks.subtracting(past).sorted() {
+            doc.warnings.append("\(week.label): noch nicht vorbei – wird nicht abgeschlossen.")
+        }
+        doc.closedWeeks.formUnion(past)
+        for week in past {
+            for day in week.days {
+                let marked = marks.contains { $0.day == day && $0.mark != nil }
+                let typed = days.contains { $0.day == day && !$0.dayType.trimmingCharacters(in: .whitespaces).isEmpty }
+                if marked || typed { doc.closedDays.insert(day) }
+            }
+        }
         return doc
     }
 }

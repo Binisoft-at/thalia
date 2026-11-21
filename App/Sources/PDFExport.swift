@@ -45,31 +45,105 @@ enum PDFKind: Hashable, Identifiable {
     }
 }
 
+/// The parts of a week's PDF (v8): the single-week PDF has them all; the report over several weeks
+/// picks some and numbers its pages through (`PDFExport.weekPages(_:sections:firstPage:total:)`).
+struct WeekPDFSections: OptionSet, Hashable {
+    let rawValue: Int
+
+    init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    /// The cover with the number, the ten goals and the days.
+    static let cover = WeekPDFSections(rawValue: 1 << 0)
+    /// "Wochenziele & Fokus".
+    static let details = WeekPDFSections(rawValue: 1 << 1)
+    /// "Rückblick": the weekly answers and the day notes.
+    static let review = WeekPDFSections(rawValue: 1 << 2)
+    /// The category tables.
+    static let tables = WeekPDFSections(rawValue: 1 << 3)
+    /// With `.review`: only answered questions and notes, no review page for a week without any
+    /// (report over several weeks).
+    static let answeredOnly = WeekPDFSections(rawValue: 1 << 4)
+
+    /// The single-week PDF, unchanged since v4.
+    static let all: WeekPDFSections = [.cover, .details, .review, .tables]
+}
+
 @MainActor
 enum PDFExport {
     static let pageSize = CGSize(width: 595, height: 842)
     /// Height for rows on a table page (A4 minus head band, margins and footer).
     static let tableBudget: CGFloat = 660
 
+    /// The review pages a week gets with `sections` (none without `.review`).
+    static func reviewPages(_ context: WeekContext, sections: WeekPDFSections) -> [[ReviewBlock]] {
+        guard sections.contains(.review) else { return [] }
+        let blocks: [ReviewBlock] = reviewBlocks(context)
+        guard sections.contains(.answeredOnly) else { return paginateReview(blocks) }
+        let answered: [ReviewBlock] = answeredBlocks(blocks)
+        return answered.isEmpty ? [] : paginateReview(answered)
+    }
+
+    /// Answered blocks only; a group heading moves to the first block that stays.
+    static func answeredBlocks(_ blocks: [ReviewBlock]) -> [ReviewBlock] {
+        var result: [ReviewBlock] = []
+        var heading: String?
+        for block in blocks {
+            if let own = block.heading { heading = own }
+            guard !block.isEmpty else { continue }
+            var kept = block
+            kept.heading = heading
+            heading = nil
+            result.append(kept)
+        }
+        return result
+    }
+
+    /// The table pages a week gets with `sections` (none without `.tables`).
+    static func tablePages(_ context: WeekContext, sections: WeekPDFSections) -> [[Row]] {
+        sections.contains(.tables) ? paginate(weekRows(context)) : []
+    }
+
+    /// v8: how many pages a week's PDF has with `sections` – from the pagination only, nothing drawn.
+    static func weekPageCount(_ context: WeekContext, sections: WeekPDFSections = .all) -> Int {
+        var count = 0
+        if sections.contains(.cover) { count += 1 }
+        if sections.contains(.details) { count += 1 }
+        count += reviewPages(context, sections: sections).count
+        count += tablePages(context, sections: sections).count
+        return count
+    }
+
+    /// v8: a week's pages with `sections`, numbered from `firstPage` of `total` (a report over
+    /// several weeks numbers through). The pages themselves are the single-week PDF's.
+    static func weekPages(_ context: WeekContext, sections: WeekPDFSections = .all, firstPage: Int = 1, total: Int) -> [AnyView] {
+        var pages: [AnyView] = []
+        var page: Int = firstPage
+        if sections.contains(.cover) {
+            pages.append(AnyView(WeekCoverPage(context: context, page: page, total: total)))
+            page += 1
+        }
+        if sections.contains(.details) {
+            pages.append(AnyView(WeekDetailsPage(context: context, page: page, total: total)))
+            page += 1
+        }
+        for blocks in reviewPages(context, sections: sections) {
+            pages.append(AnyView(ReviewPage(context: context, blocks: blocks, page: page, total: total)))
+            page += 1
+        }
+        for rows in tablePages(context, sections: sections) {
+            pages.append(AnyView(TablePage(context: context, title: "\(context.week.label) · Kategorien", rows: rows,
+                                           days: context.week.days, page: page, total: total)))
+            page += 1
+        }
+        return pages
+    }
+
     static func pages(_ kind: PDFKind, context: WeekContext) -> [AnyView] {
         switch kind {
         case .week:
-            let tables = paginate(weekRows(context))
-            let reviews = paginateReview(reviewBlocks(context))
-            let total = 2 + reviews.count + tables.count
-            var pages: [AnyView] = [
-                AnyView(WeekCoverPage(context: context, page: 1, total: total)),
-                AnyView(WeekDetailsPage(context: context, page: 2, total: total)),
-            ]
-            for (index, blocks) in reviews.enumerated() {
-                pages.append(AnyView(ReviewPage(context: context, blocks: blocks, page: index + 3, total: total)))
-            }
-            let firstTable = 3 + reviews.count
-            for (index, rows) in tables.enumerated() {
-                pages.append(AnyView(TablePage(context: context, title: "\(context.week.label) · Kategorien", rows: rows,
-                                               days: context.week.days, page: index + firstTable, total: total)))
-            }
-            return pages
+            return weekPages(context, sections: .all, firstPage: 1, total: weekPageCount(context, sections: .all))
         case .day(let day):
             let tables = paginate(dayRows(context, day: day))
             let total = 1 + tables.count
@@ -87,17 +161,39 @@ enum PDFExport {
         var box = CGRect(origin: .zero, size: pageSize)
         guard let pdf = CGContext(url as CFURL, mediaBox: &box, nil) else { return nil }
         for page in pages(kind, context: context) {
-            let renderer = ImageRenderer(content: page
-                .frame(width: pageSize.width, height: pageSize.height)
-                .environment(\.colorScheme, .light))
-            renderer.render { _, draw in
-                pdf.beginPDFPage(nil)
-                draw(pdf)
-                pdf.endPDFPage()
-            }
+            render(page, into: pdf)
         }
         pdf.closePDF()
         return url
+    }
+
+    /// One A4 page into the PDF, always light (v8: shared with the report over several weeks, which
+    /// passes `vectorBands` so its bands stay small).
+    static func render(_ page: AnyView, into pdf: CGContext, vectorBands: Bool = false) {
+        let renderer = ImageRenderer(content: page
+            .frame(width: pageSize.width, height: pageSize.height)
+            .environment(\.colorScheme, .light)
+            .environment(\.pdfVectorBands, vectorBands))
+        renderer.render { _, draw in
+            pdf.beginPDFPage(nil)
+            draw(pdf)
+            pdf.endPDFPage()
+        }
+    }
+
+    // MARK: Sick and holiday days (v8)
+
+    /// The table legend; with sick or holiday days among `days` also what the grey column means.
+    static func legend(_ context: WeekContext, days: [DayKey]) -> String {
+        let base = "✓ erledigt · ½ teilweise · ✗ nicht erledigt · – entfällt · ○ nicht erfasst"
+        let excused: [DayKey] = days.filter { context.isExcused($0) }
+        guard !excused.isEmpty else { return base }
+        return base + " · grau: " + context.excusedWord(excused) + ", " + PDFStyle.excusedNote
+    }
+
+    /// The background of a day's column: grey on sick and holiday days.
+    static func columnShade(_ context: WeekContext, day: DayKey) -> Color {
+        context.isExcused(day) ? PDFStyle.excusedShade : Color.clear
     }
 
     // MARK: Rows
@@ -258,12 +354,61 @@ enum PDFExport {
 
 // MARK: Building blocks
 
-private let ink = Color(red: 0.09, green: 0.13, blue: 0.17)
-private let muted = Color(red: 0.42, green: 0.47, blue: 0.52)
-private let paper = Color.white
-private let line = Color(red: 0.90, green: 0.92, blue: 0.93)
+/// The PDF's fixed light colours, also for the report over several weeks (RangePDF.swift).
+enum PDFStyle {
+    static let ink = Color(red: 0.09, green: 0.13, blue: 0.17)
+    static let muted = Color(red: 0.42, green: 0.47, blue: 0.52)
+    static let paper = Color.white
+    static let line = Color(red: 0.90, green: 0.92, blue: 0.93)
+    /// Table stripe.
+    static let stripe = Color(red: 0.97, green: 0.98, blue: 0.98)
+    /// v8: the column of a sick or holiday day.
+    static let excusedShade = Color(red: 0.92, green: 0.93, blue: 0.95)
+    static let done = Color(red: 0.20, green: 0.68, blue: 0.38)
+    static let partial = Color(red: 0.95, green: 0.62, blue: 0.15)
+    static let missed = Color(red: 0.88, green: 0.30, blue: 0.28)
+    /// v8: "zählt nicht" next to a sick or holiday day.
+    static let excusedNote = "zählt nicht"
+    /// v8: the aurora's colours from left to right, for the plain band of the report over several weeks.
+    static let bandColors: [Color] = [
+        Color(red: 0.05, green: 0.36, blue: 0.42), Color(red: 0.10, green: 0.55, blue: 0.58),
+        Color(red: 0.20, green: 0.45, blue: 0.75), Color(red: 0.45, green: 0.33, blue: 0.72),
+    ]
+}
 
-private struct PDFFooter: View {
+/// v8: the report over several weeks draws its bands as a plain gradient. The mesh gradient may be
+/// drawn as an image on every page, which would make a long report large.
+private struct PDFVectorBandsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var pdfVectorBands: Bool {
+        get { self[PDFVectorBandsKey.self] }
+        set { self[PDFVectorBandsKey.self] = newValue }
+    }
+}
+
+/// The band behind a cover or a page head: the app's aurora, or (report over several weeks) the
+/// same colours as a plain gradient.
+struct PDFBandBackground: View {
+    @Environment(\.pdfVectorBands) private var vectorBands
+
+    var body: some View {
+        if vectorBands {
+            LinearGradient(colors: PDFStyle.bandColors, startPoint: .leading, endPoint: .trailing)
+        } else {
+            AuroraBackground(animated: false)
+        }
+    }
+}
+
+private let ink = PDFStyle.ink
+private let muted = PDFStyle.muted
+private let paper = PDFStyle.paper
+private let line = PDFStyle.line
+
+struct PDFFooter: View {
     let page: Int
     let total: Int
 
@@ -281,7 +426,7 @@ private struct PDFFooter: View {
     }
 }
 
-private struct PDFSectionTitle: View {
+struct PDFSectionTitle: View {
     let text: String
 
     var body: some View {
@@ -293,7 +438,7 @@ private struct PDFSectionTitle: View {
 }
 
 /// The big ring on a cover.
-private struct CoverRing: View {
+struct CoverRing: View {
     let value: String
     let caption: String
     let progress: Double
@@ -322,7 +467,7 @@ private struct CoverRing: View {
 }
 
 /// The gradient band at the top of a cover.
-private struct CoverBand<Leading: View>: View {
+struct CoverBand<Leading: View>: View {
     let height: CGFloat
     let ringValue: String
     let ringCaption: String
@@ -339,7 +484,7 @@ private struct CoverBand<Leading: View>: View {
 
     var body: some View {
         ZStack {
-            AuroraBackground(animated: false)
+            PDFBandBackground()
             LinearGradient(colors: [.clear, .black.opacity(0.18)], startPoint: .top, endPoint: .bottom)
             HStack(alignment: .center, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) { leading() }
@@ -353,7 +498,7 @@ private struct CoverBand<Leading: View>: View {
     }
 }
 
-private struct StatTile: View {
+struct StatTile: View {
     let label: String
     let value: String
     var tint: Color = Brand.accent
@@ -380,7 +525,7 @@ private struct StatTile: View {
     }
 }
 
-private struct ColourBar: View {
+struct ColourBar: View {
     let fraction: Double
     let tint: Color
 
@@ -398,6 +543,12 @@ private struct ColourBar: View {
 private struct GoalTile: View {
     let goal: AnnualGoal
     let score: Double?
+    /// v8: the goal's items fell only on sick or holiday days – "zählt nicht" instead of a gap.
+    var excused = false
+
+    private var title: String {
+        excused ? goal.title + " · " + PDFStyle.excusedNote : goal.title
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -407,7 +558,7 @@ private struct GoalTile: View {
                 .frame(width: 24, height: 24)
                 .background(goal.color, in: .circle)
             VStack(alignment: .leading, spacing: 5) {
-                Text(goal.title)
+                Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(ink)
                     .lineLimit(1)
@@ -429,6 +580,8 @@ private struct GoalTile: View {
 private struct MarkChip: View {
     let mark: Mark?
     let applies: Bool
+    /// v8: a mark recorded on a sick or holiday day – kept, but it doesn't count.
+    var dimmed = false
 
     var body: some View {
         ZStack {
@@ -444,6 +597,7 @@ private struct MarkChip: View {
             }
         }
         .frame(width: 14, height: 14)
+        .opacity(dimmed ? 0.35 : 1)
     }
 
     private func fill(_ mark: Mark) -> Color {
@@ -463,10 +617,16 @@ private struct WeekCoverPage: View {
     let page: Int
     let total: Int
 
+    /// v8: a week where every day with something planned was sick or on holiday has no score.
+    private var ringCaption: String {
+        context.score.isExcused ? PDFStyle.excusedNote : "von 10"
+    }
+
     var body: some View {
         let score: Double? = context.score.overall
+        let excusedDays: [DayKey] = context.excusedDayList
         VStack(spacing: 0) {
-            CoverBand(height: 270, ringValue: Format.score(score, outOf: false), ringCaption: "von 10", progress: (score ?? 0) / 10) {
+            CoverBand(height: 270, ringValue: Format.score(score, outOf: false), ringCaption: ringCaption, progress: (score ?? 0) / 10) {
                 Text("THALIA · WOCHENBERICHT")
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(2)
@@ -495,7 +655,7 @@ private struct WeekCoverPage: View {
                 PDFSectionTitle(text: "Jahresziele · je 10 % der Woche")
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 8) {
                     ForEach(context.goals) { goal in
-                        GoalTile(goal: goal, score: context.score.goalWeek[goal.key]?.score)
+                        GoalTile(goal: goal, score: context.score.goalWeek[goal.key]?.score, excused: context.isGoalExcused(goal))
                     }
                 }
                 PDFSectionTitle(text: "Die Tage")
@@ -503,6 +663,9 @@ private struct WeekCoverPage: View {
                     ForEach(context.week.days, id: \.self) { day in
                         DayDot(context: context, day: day)
                     }
+                }
+                if !excusedDays.isEmpty {
+                    ExcusedNoteLine(text: excusedText(excusedDays))
                 }
                 Spacer(minLength: 0)
                 PDFFooter(page: page, total: total)
@@ -515,16 +678,23 @@ private struct WeekCoverPage: View {
         .background(paper)
     }
 
+    /// v8: "Fr–So krank: Diese Tage zählen nicht in die Wochenwertung." – or the whole week.
+    private func excusedText(_ days: [DayKey]) -> String {
+        if context.score.isExcused { return WeekScore.excusedText + "." }
+        let names: String = days.map(\.weekday.short).joined(separator: ", ")
+        let subject: String = days.count == 1 ? "Der Tag zählt" : "Diese Tage zählen"
+        return names + " " + context.excusedWord(days) + ": " + subject + " nicht in die Wochenwertung."
+    }
+
     private var stats: [(String, String, Color)] {
         let totals = context.workTotals()
-        let closed: Int = context.week.days.filter { context.isClosed($0) }.count
-        // R16: the same list and count as the app.
+        // R16: the same list and count as the app. v8: sick and holiday days don't count ("3/5 · 2 krank").
         let weekly: [WeeklyTarget] = context.weeklyTargets
         let reached: Int = context.weeklyTargetsMet
         let best: AnnualGoal? = context.goals.max { ($0.weekScore(context) ?? -1) < ($1.weekScore(context) ?? -1) }
         var list: [(String, String, Color)] = [
             ("Fokus", totals.isEmpty ? "–" : totals.shortText, GoalPalette.color(goal: "3")),
-            ("Tage abgeschlossen", "\(closed)/7", Brand.accent),
+            ("Tage abgeschlossen", context.closedDaysText, Brand.accent),
         ]
         if !weekly.isEmpty { list.append(("Wochenziele erreicht", "\(reached)/\(weekly.count)", GoalPalette.color(goal: "8"))) }
         if let best, let score = best.weekScore(context) {
@@ -539,16 +709,66 @@ private extension AnnualGoal {
     func weekScore(_ context: WeekContext) -> Double? { context.score.goalWeek[key]?.score }
 }
 
+/// v8: a grey line with the sick/holiday symbol under the days ("Fr, Sa krank: …").
+private struct ExcusedNoteLine: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "cross.case")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(muted)
+            .lineLimit(2)
+    }
+}
+
 private struct DayDot: View {
     let context: WeekContext
     let day: DayKey
 
     var body: some View {
+        if context.isExcused(day) {
+            excused
+        } else {
+            regular
+        }
+    }
+
+    /// v8: a sick or holiday day – its type in a grey dashed ring, the symbol and "zählt nicht".
+    private var excused: some View {
+        VStack(spacing: 4) {
+            Text("\(day.weekday.short) \(day.day).")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(ink)
+            ZStack {
+                Circle()
+                    .fill(PDFStyle.excusedShade)
+                Circle()
+                    .stroke(muted.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                Text(context.excusedName(day))
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .foregroundStyle(muted)
+                    .minimumScaleFactor(0.6)
+                    .padding(6)
+            }
+            .frame(width: 50, height: 50)
+            HStack(spacing: 2) {
+                Image(systemName: DayTypes.symbol(for: context.dayType(day)))
+                Text(PDFStyle.excusedNote)
+            }
+            .font(.system(size: 7, weight: .semibold))
+            .foregroundStyle(muted)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var regular: some View {
         let overall: DayOverall? = context.score.days[day]
         let closed: Bool = context.isClosed(day)
         let progress: Double = closed ? (overall?.score ?? 0) / 10 : (overall?.coverage ?? 0)
         let text: String = closed ? Format.score(overall?.score, outOf: false) : "\(percent(overall?.coverage ?? 0)) %"
-        VStack(spacing: 4) {
+        return VStack(spacing: 4) {
             Text("\(day.weekday.short) \(day.day).")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(ink)
@@ -692,11 +912,21 @@ private struct WeeklyTargetLine: View {
             Image(systemName: target.isMet ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 11))
                 .foregroundStyle(target.isMet ? Color(red: 0.20, green: 0.68, blue: 0.38) : muted)
-            Text(title)
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(ink)
-                .lineLimit(1)
-                .frame(width: 150, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(ink)
+                    .lineLimit(1)
+                // v8: "4,8 statt 8 PH – 2 Tage krank" when sick or holiday days scaled the target.
+                if let hint = target.scaledHint {
+                    Text(hint)
+                        .font(.system(size: 7.5, weight: .medium))
+                        .foregroundStyle(muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+            .frame(width: 150, alignment: .leading)
             ColourBar(fraction: fraction, tint: GoalPalette.color(category: target.measure.categoryKey))
                 .overlay {
                     GeometryReader { geometry in
@@ -771,13 +1001,13 @@ private struct ReviewPage: View {
 }
 
 /// A slim gradient band at the top of inner pages.
-private struct BandHeader: View {
+struct BandHeader: View {
     let title: String
     let subtitle: String
 
     var body: some View {
         ZStack(alignment: .leading) {
-            AuroraBackground(animated: false)
+            PDFBandBackground()
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 20, weight: .heavy, design: .rounded))
@@ -804,13 +1034,13 @@ private struct TablePage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BandHeader(title: title, subtitle: "✓ erledigt · ½ teilweise · ✗ nicht erledigt · – entfällt · ○ nicht erfasst")
+            BandHeader(title: title, subtitle: PDFExport.legend(context, days: days))
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 0) {
                     Text("Punkt")
                         .frame(maxWidth: .infinity, alignment: .leading)
                     ForEach(days, id: \.self) { day in
-                        Text(PDFExport.columnTitle(day, single: days.count == 1))
+                        ColumnTitle(context: context, day: day, single: days.count == 1)
                             .frame(width: PDFExport.columnWidth(days.count))
                     }
                     Text(days.count == 1 ? "Woche" : "Ø")
@@ -819,9 +1049,12 @@ private struct TablePage: View {
                 .font(.system(size: 9, weight: .heavy))
                 .foregroundStyle(muted)
                 .padding(.vertical, 8)
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    rowView(row, striped: index % 2 == 0)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                        rowView(row, striped: index % 2 == 0)
+                    }
                 }
+                .background(alignment: .trailing) { excusedColumns }
                 Spacer(minLength: 0)
                 PDFFooter(page: page, total: total)
             }
@@ -833,6 +1066,18 @@ private struct TablePage: View {
         .background(paper)
     }
 
+    /// v8: the grey columns of sick and holiday days behind the rows (item rows shade their own cells
+    /// on top of the stripes).
+    private var excusedColumns: some View {
+        HStack(spacing: 0) {
+            ForEach(days, id: \.self) { day in
+                PDFExport.columnShade(context, day: day)
+                    .frame(width: PDFExport.columnWidth(days.count))
+            }
+            Color.clear.frame(width: 50)
+        }
+    }
+
     @ViewBuilder
     private func rowView(_ row: PDFExport.Row, striped: Bool) -> some View {
         switch row {
@@ -840,6 +1085,42 @@ private struct TablePage: View {
             CategoryLine(context: context, category: category, days: days)
         case .item(let item):
             ItemLine(context: context, item: item, days: days, striped: striped)
+        }
+    }
+}
+
+/// A day's column head: "Mo" (or "Mo, 16. Nov."); v8: with the symbol on sick and holiday days.
+private struct ColumnTitle: View {
+    let context: WeekContext
+    let day: DayKey
+    let single: Bool
+
+    var body: some View {
+        if context.isExcused(day) {
+            HStack(spacing: 1) {
+                Image(systemName: DayTypes.symbol(for: context.dayType(day)))
+                    .font(.system(size: 7))
+                Text(PDFExport.columnTitle(day, single: single))
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+        } else {
+            Text(PDFExport.columnTitle(day, single: single))
+        }
+    }
+}
+
+/// One item's mark on a day; v8: on sick and holiday days a mark recorded there shows dimmed.
+private struct PDFMarkCell: View {
+    let context: WeekContext
+    let item: PlanItem
+    let day: DayKey
+
+    var body: some View {
+        if let recorded = context.excusedMark(item, on: day) {
+            MarkChip(mark: recorded, applies: false, dimmed: true)
+        } else {
+            MarkChip(mark: context.mark(item, on: day), applies: context.applies(item, on: day))
         }
     }
 }
@@ -908,21 +1189,25 @@ private struct ItemLine: View {
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             ForEach(days, id: \.self) { day in
-                MarkChip(mark: context.mark(item, on: day), applies: context.applies(item, on: day))
-                    .frame(width: PDFExport.columnWidth(days.count))
+                PDFMarkCell(context: context, item: item, day: day)
+                    .frame(width: PDFExport.columnWidth(days.count), height: 20)
+                    .background(PDFExport.columnShade(context, day: day))
             }
             Text(trailing)
                 .font(.system(size: 8.5, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .frame(width: 50, alignment: .trailing)
         }
         .frame(height: 20)
         .background(striped ? Color(red: 0.97, green: 0.98, blue: 0.98) : paper)
     }
 
+    /// "2/3×" – v8: "2/3× · ½ krank" when sick or holiday days took part of the quota.
     private var trailing: String {
-        if let quota = context.quotaProgress(item) { return "\(quota.done)/\(quota.target)×" }
+        if let quota = context.quotaText(item) { return quota }
         if let progress = context.progress(item) { return "\(percent(progress)) %" }
         return ""
     }
@@ -942,9 +1227,40 @@ private struct DayCoverPage: View {
     let page: Int
     let total: Int
 
-    var body: some View {
+    /// v8: a sick or holiday day doesn't count – no score, no share recorded.
+    private var excused: Bool { context.isExcused(day) }
+
+    private var ringValue: String {
         let overall: DayOverall? = context.score.days[day]
-        let closed: Bool = context.isClosed(day)
+        if excused { return "–" }
+        if context.isClosed(day) { return Format.score(overall?.score, outOf: false) }
+        return "\(percent(overall?.coverage ?? 0)) %"
+    }
+
+    private var ringCaption: String {
+        if excused { return PDFStyle.excusedNote }
+        return context.isClosed(day) ? "von 10" : "erfasst"
+    }
+
+    private var ringProgress: Double {
+        let overall: DayOverall? = context.score.days[day]
+        if excused { return 0 }
+        return context.isClosed(day) ? (overall?.score ?? 0) / 10 : (overall?.coverage ?? 0)
+    }
+
+    /// "Krank · zählt nicht", the type, or "Tag".
+    private var typeLabel: String {
+        let type: String = context.dayType(day)
+        if excused { return type + " · " + PDFStyle.excusedNote }
+        return type.isEmpty ? "Tag" : type
+    }
+
+    private var recordedText: String {
+        guard !excused, let overall = context.score.days[day] else { return "–" }
+        return "\(overall.due - overall.blank)/\(overall.due)"
+    }
+
+    var body: some View {
         // H1: Health values without a value on this device are listed with the hint, not left out.
         let measured: [MeasureDefinition] = Array(context.measures.filter { measure in
             guard context.applies(measure, on: day) else { return false }
@@ -953,10 +1269,7 @@ private struct DayCoverPage: View {
         let blocks: [WorkBlock] = Array(context.work(on: day).prefix(6))
         let notes: [DayNote] = Array(context.notes(on: day).prefix(4))
         VStack(spacing: 0) {
-            CoverBand(height: 230,
-                      ringValue: closed ? Format.score(overall?.score, outOf: false) : "\(percent(overall?.coverage ?? 0)) %",
-                      ringCaption: closed ? "von 10" : "erfasst",
-                      progress: closed ? (overall?.score ?? 0) / 10 : (overall?.coverage ?? 0)) {
+            CoverBand(height: 230, ringValue: ringValue, ringCaption: ringCaption, progress: ringProgress) {
                 Text("THALIA · TAGESBERICHT")
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(2)
@@ -967,7 +1280,7 @@ private struct DayCoverPage: View {
                 Text("\(day.longLabel.replacingOccurrences(of: "\(day.weekday.name), ", with: "")) · \(context.week.label)")
                     .font(.system(size: 14, weight: .semibold))
                     .opacity(0.92)
-                Label(context.dayType(day).isEmpty ? "Tag" : context.dayType(day), systemImage: DayTypes.symbol(for: context.dayType(day)))
+                Label(typeLabel, systemImage: DayTypes.symbol(for: context.dayType(day)))
                     .font(.system(size: 11, weight: .bold))
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -976,12 +1289,15 @@ private struct DayCoverPage: View {
             }
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    StatTile(label: "Punkte erfasst", value: overall.map { "\($0.due - $0.blank)/\($0.due)" } ?? "–")
+                    StatTile(label: "Punkte erfasst", value: recordedText)
                     StatTile(label: "Fokus", value: context.workTotals(on: day).isEmpty ? "–" : context.workTotals(on: day).shortText,
                              tint: GoalPalette.color(goal: "3"))
                     StatTile(label: "Kategorien komplett", value: "\(completeCategories)/\(context.todayCategories(day).count)",
                              tint: GoalPalette.color(goal: "8"))
                     StatTile(label: "Journal", value: journalText, tint: GoalPalette.color(goal: "2"))
+                }
+                if excused {
+                    ExcusedNoteLine(text: DayTypes.excusedHint + ".")
                 }
                 let special: String = context.dayNote(day)
                 if !special.isEmpty {

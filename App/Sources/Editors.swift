@@ -1500,12 +1500,16 @@ struct DayInfoEditor: View {
         return [type, note] != loaded
     }
 
+    /// v8: Krank and Urlaub first – they take the day out of the week's score.
+    private static let presetOrder: [String] =
+        DayTypes.excusedPresets + DayTypes.presets.filter { !DayTypes.excusedPresets.contains($0) }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     WrapLayout(spacing: 8) {
-                        ForEach(DayTypes.presets, id: \.self) { preset in
+                        ForEach(Self.presetOrder, id: \.self) { preset in
                             ChipButton(title: preset, isSelected: !isCustom && type == preset,
                                        symbol: DayTypes.symbol(for: preset)) {
                                 choose(preset)
@@ -1523,7 +1527,9 @@ struct DayInfoEditor: View {
                     Text("Tagestyp")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
-                        if DayTypes.isWorkFree(type) {
+                        if DayTypes.isExcused(type) {
+                            Label(DayTypes.excusedHint, systemImage: DayTypes.symbol(for: type))
+                        } else if DayTypes.isWorkFree(type) {
                             Label(DayTypes.workFreeHint, systemImage: "sun.max")
                         }
                         Text("Ein Arbeits-, Reise-, Familien- oder Erholungstag ist nicht dasselbe. Null Arbeit an einem geplanten freien Tag ist genau richtig.")

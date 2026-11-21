@@ -96,15 +96,14 @@ struct WeekSheet: View {
         }
     }
 
-    private var heroSubtitle: String {
-        context.score.goalsTotal == 0 ? "Noch keine Ziele" : context.score.coverageText
-    }
+    /// v8: a week of only sick or holiday days says "Woche zählt nicht (krank/Urlaub)".
+    private var heroSubtitle: String { context.coverageLine }
 
     private var heroFacts: [(String, String)] {
         let totals: WorkTotals = context.workTotals()
-        let closed: Int = context.week.days.filter { context.isClosed($0) }.count
         let focus: String = totals.isEmpty ? "–" : totals.shortText
-        return [("Fokus", focus), ("Tage abgeschlossen", "\(closed)/7")]
+        // v8: sick and holiday days don't need closing ("3/5 · 2 krank").
+        return [("Fokus", focus), ("Tage abgeschlossen", context.closedDaysText)]
     }
 
     /// The ten goals in their colours (R68), with the scoring explainer.
@@ -409,6 +408,10 @@ private struct WeekMoreMenu: View {
             Button("Bericht", systemImage: "doc.text") { app.sheet = .report(context.week) }
             Button("Wochenkontext bearbeiten…", systemImage: "pencil") { app.sheet = .weekInfo(context.week) }
             Divider()
+            // v8: past weeks and several weeks as one PDF.
+            Button("Vergangene Woche nachtragen…", systemImage: "clock.arrow.circlepath") { app.sheet = .importPast(pastWeek) }
+            Button("Mehrere Wochen als PDF…", systemImage: "doc.richtext") { app.sheet = .rangePDF }
+            Divider()
             Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
             Divider()
             if !app.isSandbox {
@@ -418,6 +421,11 @@ private struct WeekMoreMenu: View {
         } label: {
             Label("Mehr", systemImage: "ellipsis")
         }
+    }
+
+    /// v8: the week shown when it lies in the past, else nil (the window chooses).
+    private var pastWeek: WeekKey? {
+        context.week < app.today.week ? context.week : nil
     }
 }
 
@@ -451,6 +459,8 @@ struct WeekDayHeader: View {
 
     private var isToday: Bool { day == context.today }
     private var isClosed: Bool { context.isClosed(day) }
+    /// v8: a sick or holiday day – the column is dimmed and shows the type's symbol.
+    private var isExcused: Bool { context.isExcused(day) }
 
     private var note: String {
         context.dayNote(day).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -458,13 +468,18 @@ struct WeekDayHeader: View {
 
     /// Past days with a plan that are still open and have blank required items.
     private var openCount: Int? {
-        guard context.hasPlan, day < context.today, !isClosed else { return nil }
+        guard context.hasPlan, day < context.today, !isClosed, !isExcused else { return nil }
         let count: Int = context.openCount(on: day)
         return count > 0 ? count : nil
     }
 
     private var symbol: String {
-        isClosed ? "checkmark.seal.fill" : DayTypes.symbol(for: context.dayType(day))
+        if isExcused { return DayTypes.symbol(for: context.dayType(day)) }
+        return isClosed ? "checkmark.seal.fill" : DayTypes.symbol(for: context.dayType(day))
+    }
+
+    private var symbolColor: Color {
+        isClosed && !isExcused ? Brand.accent : Color.secondary
     }
 
     private var title: String {
@@ -485,6 +500,7 @@ struct WeekDayHeader: View {
     }
 
     private var cellFill: Color {
+        if isExcused { return Color.secondary.opacity(0.12) }
         if isClosed { return Brand.accent.opacity(0.12) }
         return isToday ? Brand.accent.opacity(0.08) : Color.clear
     }
@@ -492,14 +508,15 @@ struct WeekDayHeader: View {
     private var spokenText: String {
         var parts: [String] = [context.dayStatusAccessibility(day)]
         let type: String = context.dayType(day)
-        if !type.isEmpty { parts.append(type) }
+        if !type.isEmpty && !isExcused { parts.append(type) }
         if let openCount { parts.append("\(openCount) offen") }
         if !note.isEmpty { parts.append("Besonderheit: \(note)") }
         return parts.joined(separator: ", ")
     }
 
     private var tooltip: String {
-        let base: String = "\(day.longLabel) in Heute öffnen"
+        var base: String = "\(day.longLabel) in Heute öffnen"
+        if isExcused { base += "\n" + DayTypes.excusedHint }
         return note.isEmpty ? base : "\(base)\nBesonderheit: \(note)"
     }
 
@@ -517,6 +534,7 @@ struct WeekDayHeader: View {
             if day <= context.today {
                 Button(closeTitle, systemImage: "moon.stars") { app.sheet = .closeDay(day) }
             }
+            DayTypeMenu(app: app, day: day, current: context.dayType(day))
             Button("Tagestyp und Besonderheit…", systemImage: "calendar") { app.sheet = .dayInfo(day) }
         }
         .accessibilityLabel(spokenText)
@@ -539,7 +557,7 @@ struct WeekDayHeader: View {
                 .foregroundStyle(titleColor)
             Image(systemName: symbol)
                 .font(.caption)
-                .foregroundStyle(isClosed ? Brand.accent : Color.secondary)
+                .foregroundStyle(symbolColor)
             Text(context.dayStatusText(day))
                 .font(.system(.caption2, design: .rounded))
                 .monospacedDigit()
@@ -672,15 +690,28 @@ struct DayHeaderRow: View {
                     Text(day.weekday.short)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(day == context.today ? Brand.accent : .secondary)
-                    Text(entry.score.map { Format.score($0) } ?? "·")
-                        .font(.system(size: 10, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(entry.knockedOut ? Color.orange : Color.secondary)
+                    if context.isExcused(day) {
+                        // v8: sick / holiday – the column doesn't count.
+                        Image(systemName: DayTypes.symbol(for: context.dayType(day)))
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(entry.score.map { Format.score($0) } ?? "·")
+                            .font(.system(size: 10, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(entry.knockedOut ? Color.orange : Color.secondary)
+                    }
                 }
                 .frame(width: 30)
+                .background(columnFill(day), in: .rect(cornerRadius: 5))
             }
         }
         .accessibilityHidden(true)
+    }
+
+    /// v8: sick and holiday days grey – the column doesn't count.
+    private func columnFill(_ day: DayKey) -> Color {
+        context.isExcused(day) ? Color.secondary.opacity(0.12) : Color.clear
     }
 }
 
@@ -715,6 +746,11 @@ struct WeekItemRow: View {
         .weekItemDeleteDialog(item, isPresented: $confirmsDelete, app: app)
     }
 
+    /// "2/3×"; v8: "2/3× · ½ krank".
+    private var quotaLabel: String {
+        context.quotaText(item) ?? ""
+    }
+
     /// R64: the same short label as Today and the PDF; quota and progress of the week.
     @ViewBuilder
     private var meta: some View {
@@ -728,7 +764,7 @@ struct WeekItemRow: View {
                 }
                 KindBadge(text: kind)
                 if let quota {
-                    Text("\(quota.done)/\(quota.target)×")
+                    Text(quotaLabel)
                         .monospacedDigit()
                         .foregroundStyle(quota.done >= quota.target ? Color.green : Color.secondary)
                 } else if let progress {
@@ -773,11 +809,25 @@ struct WeekMarkCell: View {
             options: context.options(item, on: day),
             hasNote: !context.markNote(item, on: day).isEmpty,
             accessibilityPrefix: "\(day.weekday.name), \(item.title)",
-            help: WeekMarkCell.helpText(mark, item: item, day: day),
+            help: cellHelp(mark),
             onOpenValue: opener(valueSheet),
             onAddNote: { app.sheet = .item(item, day) },
+            dimmedMark: context.excusedMark(item, on: day),
+            excusedName: excusedName,
             onSet: { app.setMark($0, item: item, day: day) }
         )
+    }
+
+    /// "Mi, 18. Nov. · Erledigt"; v8: "Fr, 20. Nov. · Krank – zählt nicht".
+    private func cellHelp(_ mark: Mark?) -> String {
+        guard context.isExcused(day) else { return WeekMarkCell.helpText(mark, item: item, day: day) }
+        return "\(day.shortLabel) · \(context.excusedName(day)) – zählt nicht"
+    }
+
+    /// v8: "Krank" / "Urlaub" on a sick or holiday day where the item was planned.
+    private var excusedName: String? {
+        guard context.isExcused(day), item.days.contains(day.weekday) else { return nil }
+        return context.excusedName(day)
     }
 }
 

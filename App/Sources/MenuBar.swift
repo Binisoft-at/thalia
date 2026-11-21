@@ -224,7 +224,9 @@ private struct MenuBarStatus: View {
 
     private var line: String {
         guard context.hasPlan else { return "Kein Plan" }
-        return GlanceText.dayLine(context.score.days[day], closed: context.isClosed(day), open: context.openCount(on: day))
+        // v8: "Krank – zählt nicht" names the day type.
+        return GlanceText.dayLine(context.score.days[day], closed: context.isClosed(day), open: context.openCount(on: day),
+                                  type: context.dayType(day))
     }
 }
 #endif

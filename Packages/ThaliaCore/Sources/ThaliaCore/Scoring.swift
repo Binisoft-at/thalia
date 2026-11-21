@@ -13,6 +13,9 @@ import Foundation
 // nothing → 0). Marks are never rewritten – the resolution is calculated.
 // Free days (Familientag, Erholungstag, Urlaub …): work-only items are not due (N/A).
 // Secondary items ("Nebensache"): count when filled in, an empty one blocks nothing.
+// Sick and holiday days (Krank, Urlaub – v8): nothing is due, marks and own scores of the day don't
+// count, a weekly quota's share of them counts half (rule B3), weekly targets shrink to the days
+// that still count (Measures.targetShare). A week with only such days has no score.
 
 /// The inputs for one week.
 public struct WeekData: Sendable {
@@ -34,10 +37,14 @@ public struct WeekData: Sendable {
     public var workFreeDays: Set<DayKey>
     /// Categories whose items are work-day-only unless an item says otherwise.
     public let workCategories: Set<String>
+    /// Sick and holiday days (`DayTypes.isExcused`, v8): nothing is due, marks and own scores of the
+    /// day don't count, a weekly quota's share of them counts half.
+    public var excusedDays: Set<DayKey>
 
     public init(week: WeekKey, goals: [GoalRecord], categories: [CategoryRecord], items: [ItemRecord],
                 marks: [String: Mark] = [:], overrides: [String: Double] = [:], isComplete: Bool = false,
-                progress: [String: Double] = [:], worked: [String: Set<DayKey>] = [:], workFreeDays: Set<DayKey> = []) {
+                progress: [String: Double] = [:], worked: [String: Set<DayKey>] = [:], workFreeDays: Set<DayKey> = [],
+                excusedDays: Set<DayKey> = []) {
         self.week = week
         self.goals = goals
         self.categories = categories
@@ -48,9 +55,16 @@ public struct WeekData: Sendable {
         self.progress = progress
         self.worked = worked
         self.workFreeDays = workFreeDays
-        // Without any explicit day rules in the plan: Business (goal 3) except the morning routine.
-        let explicit = self.items.contains { $0.dayRule != .auto }
-        self.workCategories = explicit ? [] : Set(categories.filter { $0.goalKey == "3" && $0.key != "3.1" }.map(\.key))
+        self.excusedDays = excusedDays
+        self.workCategories = WeekData.workCategories(items: self.items, categories: categories)
+    }
+
+    /// Categories whose items are work-day-only unless an item says otherwise: without any explicit
+    /// day rules in the plan, Business (goal 3) except the morning routine. `items` are the week's.
+    /// Also for `Measures.progressRatio`, which runs before the `WeekData` exists (v8).
+    public static func workCategories(items: [ItemRecord], categories: [CategoryRecord]) -> Set<String> {
+        let explicit = items.contains { $0.dayRule != .auto }
+        return explicit ? [] : Set(categories.filter { $0.goalKey == "3" && $0.key != "3.1" }.map(\.key))
     }
 
     /// Only on work days (explicitly, or by its category when the plan says nothing).
@@ -62,9 +76,28 @@ public struct WeekData: Sendable {
         }
     }
 
-    /// Scheduled that day and not left out because the day is free.
+    /// A sick or holiday day (v8): it doesn't count in the week's score.
+    public func isExcused(_ day: DayKey) -> Bool { excusedDays.contains(day) }
+
+    /// Scheduled that day, not left out because the day is free, and the day isn't excused.
     public func applies(_ item: ItemRecord, on day: DayKey) -> Bool {
+        !excusedDays.contains(day) && isPlanned(item, on: day)
+    }
+
+    /// Scheduled that day and not left out because the day is free – whether or not the day is
+    /// excused (the "planned days" of the v8 rules).
+    public func isPlanned(_ item: ItemRecord, on day: DayKey) -> Bool {
         item.applies(on: day) && !(workFreeDays.contains(day) && isWorkOnly(item))
+    }
+
+    /// The item's planned days this week (P), excused ones included.
+    public func plannedDays(_ item: ItemRecord) -> [DayKey] {
+        week.days.filter { isPlanned(item, on: $0) }
+    }
+
+    /// The recorded mark, also on an excused day where it doesn't count (shown dimmed).
+    public func recordedMark(_ item: ItemRecord, on day: DayKey) -> Mark? {
+        marks[WeekData.markKey(item.code, day)]
     }
 
     /// Left out today only because it's a free day (shown as N/A, never blank).
@@ -87,9 +120,14 @@ public struct WeekData: Sendable {
     public static func markKey(_ itemCode: String, _ day: DayKey) -> String { "\(itemCode)|\(day.string)" }
     public static func overrideKey(_ categoryKey: String, _ day: DayKey) -> String { "\(categoryKey)|\(day.string)" }
 
-    /// The mark that counts: derived for linked progress items, N/A on free days for work-only items,
-    /// otherwise the recorded one.
+    /// The mark that counts: N/A on excused days (recorded marks stay stored but don't count),
+    /// derived for linked progress items, N/A on free days for work-only items, otherwise the
+    /// recorded one.
     public func mark(_ item: ItemRecord, on day: DayKey) -> Mark? {
+        if excusedDays.contains(day) {
+            let shown = item.applies(on: day) || worked[item.code]?.contains(day) == true || recordedMark(item, on: day) != nil
+            return shown ? .notApplicable : nil
+        }
         if isFreeDayExcluded(item, on: day) { return .notApplicable }
         if let days = worked[item.code], item.schedule == .progress {
             guard item.applies(on: day) || days.contains(day) else { return nil }
@@ -128,6 +166,9 @@ public struct CategoryDay: Equatable, Sendable {
     public var pending = 0
     /// Weekly quota / progress points that were missed and are booked on this day.
     public var shortfall: Double = 0
+    /// Quota units booked on this day that couldn't be done because of sick or holiday days:
+    /// they count half (rule B3, v8).
+    public var excused: Double = 0
     public var knockedOut = false
     public var overridden = false
     /// Score before the person's override, or the provisional score while incomplete.
@@ -157,6 +198,8 @@ public struct DayOverall: Equatable, Sendable {
     public var goalsDue: Int
     public var due: Int
     public var blank: Int
+    /// A sick or holiday day: nothing due, never open (v8).
+    public var isExcused: Bool = false
 
     /// Share of due items filled in.
     public var coverage: Double { due == 0 ? 1 : Double(due - blank) / Double(due) }
@@ -174,8 +217,15 @@ public struct WeekScore: Sendable {
     public var goalWeek: [String: GoalWeek] = [:]
     public var overall: Double?
     public var goalsScored = 0
+    /// Goals that count this week: all goals except those whose items fell only on sick or holiday days.
     public var goalsTotal = 0
     public var days: [DayKey: DayOverall] = [:]
+    /// The week's sick and holiday days (v8).
+    public var excusedDays: Set<DayKey> = []
+    /// Goals left out of `goalsTotal` because all their planned days were excused.
+    public var goalsExcused = 0
+    /// Every day with something planned was excused: the week has no score (v8).
+    public var isExcused = false
 
     public func category(_ key: String, on day: DayKey) -> CategoryDay {
         categoryDays[key]?[day] ?? CategoryDay()
@@ -184,8 +234,15 @@ public struct WeekScore: Sendable {
     /// Every goal scored: comparable with other complete weeks.
     public var isComplete: Bool { goalsTotal > 0 && goalsScored == goalsTotal }
 
-    /// "10/10 Ziele bewertet" or "9/10 Ziele bewertet – nicht voll vergleichbar".
+    /// Shown instead of the coverage when the whole week was sick or on holiday.
+    public static let excusedText = "Woche zählt nicht (krank/Urlaub)"
+    /// The short label for such a week in charts and tables (instead of a gap).
+    public static let excusedLabel = "entschuldigt"
+
+    /// "10/10 Ziele bewertet" or "9/10 Ziele bewertet – nicht voll vergleichbar";
+    /// "Woche zählt nicht (krank/Urlaub)" for a fully excused week.
     public var coverageText: String {
+        if isExcused { return WeekScore.excusedText }
         let base = "\(goalsScored)/\(goalsTotal) Ziele bewertet"
         return isComplete ? base : base + " – nicht voll vergleichbar"
     }
@@ -213,7 +270,8 @@ public enum Scorer {
                     entry.calculated = calculated
                     entry.score = entry.isComplete ? calculated : nil
                 }
-                if let override = data.overrides[WeekData.overrideKey(category.key, day)] {
+                // Own scores don't count on excused days (v8).
+                if !data.isExcused(day), let override = data.overrides[WeekData.overrideKey(category.key, day)] {
                     entry.score = min(10, max(0, override))
                     entry.overridden = true
                 }
@@ -227,7 +285,10 @@ public enum Scorer {
         }
 
         let categoriesByGoal = Dictionary(grouping: data.categories, by: \.goalKey)
+        let excused = Set(days.filter(data.isExcused))
+        result.excusedDays = excused
         var goalScores: [Double] = []
+        var goalsExcused = 0
         for goal in data.goals {
             let categories = categoriesByGoal[goal.key] ?? []
             // Categories with nothing due or counted this week don't block the goal.
@@ -239,10 +300,20 @@ public enum Scorer {
             let score = complete ? scores.reduce(0, +) / Double(scores.count) : nil
             result.goalWeek[goal.key] = GoalWeek(score: score, categoriesScored: scores.count, categoriesTotal: relevant.count)
             if let score { goalScores.append(score) }
+            // A goal whose items fell only on excused days doesn't count (v8); goals without items still do.
+            if relevant.isEmpty, !excused.isEmpty {
+                let keys = Set(categories.map(\.key))
+                let planned = data.items.filter { keys.contains($0.categoryKey) && $0.schedule.isScored }.flatMap(data.plannedDays)
+                if !planned.isEmpty, planned.allSatisfy(excused.contains) { goalsExcused += 1 }
+            }
         }
-        result.goalsTotal = data.goals.count
+        // The whole week excused: every day with something planned was sick or on holiday.
+        let plannedDays = Set(data.items.filter(\.schedule.isScored).flatMap(data.plannedDays))
+        result.isExcused = !excused.isEmpty && (plannedDays.isEmpty ? excused.count == days.count : plannedDays.isSubset(of: excused))
+        result.goalsExcused = goalsExcused
+        result.goalsTotal = data.goals.count - goalsExcused
         result.goalsScored = goalScores.count
-        result.overall = goalScores.isEmpty ? nil : goalScores.reduce(0, +) / Double(goalScores.count)
+        result.overall = goalScores.isEmpty || result.isExcused ? nil : goalScores.reduce(0, +) / Double(goalScores.count)
 
         for day in days {
             var dayGoalScores: [Double] = []
@@ -263,7 +334,7 @@ public enum Scorer {
             }
             result.days[day] = DayOverall(
                 score: dayGoalScores.isEmpty ? nil : dayGoalScores.reduce(0, +) / Double(dayGoalScores.count),
-                goalsScored: dayGoalScores.count, goalsDue: goalsDue, due: due, blank: blank
+                goalsScored: dayGoalScores.count, goalsDue: goalsDue, due: due, blank: blank, isExcused: excused.contains(day)
             )
         }
         return result
@@ -299,22 +370,59 @@ public enum Scorer {
     }
 
     /// Weekly quotas and progress items that were never worked on, once the week is over.
+    ///
+    /// Rule B3 (v8) for "n× pro Woche": P = planned days, E = the excused ones, A = the rest.
+    /// missing = n − used (✓ ½ ✗ in A), share = n·|E|/|P|, excused = min(missing, share).
+    /// Booked on the last day of A: applicable += missing, earned += ½·excused. A empty → nothing.
     static func bookShortfalls(items: [ItemRecord], days: [DayKey], data: WeekData, into perDay: inout [DayKey: CategoryDay]) {
         for item in items {
-            let lastDay = days.last { data.applies(item, on: $0) } ?? days[days.count - 1]
+            let available = data.plannedDays(item).filter { !data.isExcused($0) }
+            let lastDay: DayKey
+            if let last = available.last {
+                lastDay = last
+            } else if data.excusedDays.isEmpty {
+                // Nothing planned at all (unchanged before v8): the week's last day.
+                lastDay = days[days.count - 1]
+            } else {
+                // Only excused days (or nothing planned in a week with excused days): not scored.
+                continue
+            }
             var missing = 0.0
+            var excused = 0.0
             if let target = item.schedule.weeklyTarget {
                 let used = days.filter { data.mark(item, on: $0)?.counts == true }.count
                 missing = Double(max(0, target - used))
+                excused = min(missing, quotaShare(item, data: data))
             } else if item.schedule == .progress, (data.progress[item.code] ?? 1) < 1 - 1e-9 {
                 let worked = days.contains { data.mark(item, on: $0) == .done || data.mark(item, on: $0) == .partial }
                 missing = worked ? 0 : 1
             }
             guard missing > 0, var entry = perDay[lastDay] else { continue }
             entry.applicable += missing
-            entry.shortfall += missing
+            entry.earned += 0.5 * excused
+            entry.shortfall += missing - 0.5 * excused
+            entry.excused += excused
             perDay[lastDay] = entry
         }
+    }
+
+    /// The part of an "n× pro Woche" quota that falls on excused days at an even pace: n·|E|/|P|
+    /// (0 for other items or without excused days). Up to this many missing units count half.
+    public static func quotaShare(_ item: ItemRecord, data: WeekData) -> Double {
+        guard let target = item.schedule.weeklyTarget, !data.excusedDays.isEmpty else { return 0 }
+        let planned = data.plannedDays(item)
+        guard !planned.isEmpty else { return 0 }
+        let excused = planned.filter(data.isExcused).count
+        return Double(target) * Double(excused) / Double(planned.count)
+    }
+
+    /// The quota units that count half because of sick or holiday days, once the week is over:
+    /// min(missing, share) – 0 while the week runs or when nothing is missing.
+    public static func excusedUnits(_ item: ItemRecord, data: WeekData) -> Double {
+        guard let target = item.schedule.weeklyTarget, data.isComplete else { return 0 }
+        guard data.plannedDays(item).contains(where: { !data.isExcused($0) }) else { return 0 }
+        let used = data.week.days.filter { data.mark(item, on: $0)?.counts == true }.count
+        return min(Double(max(0, target - used)), quotaShare(item, data: data))
     }
 
     /// A week counts as complete once its Sunday is over or it was closed.
@@ -323,11 +431,13 @@ public enum Scorer {
     }
 
     /// N/A for an "n× pro Woche" item only while enough of its days are left to still reach n
-    /// (3× a week with nothing done: possible until Thursday, not on Friday).
+    /// (3× a week with nothing done: possible until Thursday, not on Friday). With excused days the
+    /// quota's share of them is left out: needed = ⌈n − share⌉ − used (v8).
     public static func canMarkNotApplicable(_ item: ItemRecord, on day: DayKey, data: WeekData) -> Bool {
         guard let target = item.schedule.weeklyTarget else { return true }
         let used = data.week.days.filter { $0 != day && data.mark(item, on: $0)?.counts == true }.count
-        let needed = target - used
+        let required = Int((Double(target) - quotaShare(item, data: data) - 1e-9).rounded(.up))
+        let needed = required - used
         guard needed > 0 else { return true }
         let remaining = data.week.days.filter { $0 > day && data.applies(item, on: $0) }.count
         return remaining >= needed
@@ -342,7 +452,7 @@ public enum Scorer {
 
     /// The marks that make sense for an item on a day (the buttons in a row).
     public static func options(for item: ItemRecord, on day: DayKey, data: WeekData) -> [Mark] {
-        if data.isFreeDayExcluded(item, on: day) { return [] }
+        if data.isExcused(day) || data.isFreeDayExcluded(item, on: day) { return [] }
         switch item.schedule {
         case .progress:
             // Derived from the measurement: nothing to tick.
@@ -363,10 +473,13 @@ public struct Pace: Equatable, Sendable {
     public var expected: Double
 
     /// `excluding`: days that don't count as planned (work-free days for work measurements, R47).
-    public init(done: Double, target: Double, days: DayMask, week: WeekKey, today: DayKey, excluding: Set<DayKey> = []) {
+    /// `excused`: sick and holiday days (v8), left out of the even pace too. `target` is the target
+    /// that counts this week – with excused days `Measures.effectiveTarget(_:share:)`'s `scaleMax`.
+    public init(done: Double, target: Double, days: DayMask, week: WeekKey, today: DayKey, excluding: Set<DayKey> = [],
+                excused: Set<DayKey> = []) {
         self.done = done
         self.target = target
-        let planned = week.days.filter { days.contains($0.weekday) && !excluding.contains($0) }
+        let planned = week.days.filter { days.contains($0.weekday) && !excluding.contains($0) && !excused.contains($0) }
         let passed = planned.filter { $0 <= today }.count
         expected = planned.isEmpty ? target : target * Double(passed) / Double(planned.count)
     }

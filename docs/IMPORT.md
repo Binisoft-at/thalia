@@ -25,7 +25,7 @@ structure changes.
 | type | id | parent | title | description | other columns |
 |---|---|---|---|---|---|
 | `week` | `2026-W46` (also `KW46 2026`) | | motto | context, priorities, exceptions, assumptions | `value` = reported score (history), `flags` `alt` = before KW42, `abgeschlossen` = week closed (backup) |
-| `day` | `2026-11-11` (or `Mi` inside a week) | | day type: Arbeitstag, Reisetag, Familientag, Erholungstag, Frei, Prüfungstag … | note ("Arbeit endet 15:00") | `flags` `abgeschlossen` = day closed (backup) |
+| `day` | `2026-11-11` (or `Mi` inside a week) | | day type: Arbeitstag, Reisetag, Familientag, Erholungstag, Frei, Krank, Urlaub, Prüfungstag … (Krank/Urlaub: the day doesn't count, see below) | note ("Arbeit endet 15:00") | `flags` `abgeschlossen` = day closed (backup) |
 | `goal` | `1` … `10` | | annual goal | intent / outcome | |
 | `category` | `1.1` | goal id | category | note | |
 | `measure` | stable id (`protein`) | category id | name | hint | `unit`, `target`, `period`, `link` (source), `flags` (aggregation), `days` |
@@ -72,6 +72,82 @@ Results (export, backup, history) use `date`, `value`, `note`:
   file twice changes nothing.
 - Weeks before KW42 2026 are marked "vor KW42" automatically (another scoring model).
 - Everything is read on the device.
+
+## Vergangene Wochen (past weeks, since 1.7.0)
+
+*Vergangene Woche nachtragen* (`PastWeekImportView` in `App/Sources/PastImport.swift`; also under
+*Vorlagen* in the plan import) brings in weeks from before the app or from a paper tracker. Three ways:
+
+1. **Plan übernehmen** – the items and measurements of the nearest planned week (before or after the
+   chosen one) are copied into it with the same ids, without marks, values and day types. The week
+   table opens: tick off, set Krank/Urlaub days, close the week. A week that already has a plan is
+   archived first (Undo in the toast).
+2. **Mit ChatGPT** – one prompt (`PastWeekPrompt` in `Reports.swift`) for photos, PDFs or tables of one
+   or many weeks. It holds the goals and categories, the items of the template week with their ids
+   (the week itself if it has a plan, else the nearest planned week) and this format. Range:
+   *Wochen aus den Unterlagen* (default – KW and dates are read from the attachments) or a fixed
+   range from–to. The answer is one CSV with one block per week, oldest first. Paste it or choose
+   the file; the preview lists each week (neu / ersetzt / ergänzt / unverändert, items, marks,
+   Krank/Urlaub days, score, "wird abgeschlossen", the week's warnings).
+3. **Nur Wertung** – a week and a number from 0 to 10 from paper (`WeekPlan.recordedScore`).
+
+The weeks to choose from: last week back to the start of the goal year, at least 52 weeks.
+
+### Format
+
+The header gets the weekday columns (`PlanCSV.matrixHeader`):
+
+```csv
+type,id,parent,title,description,days,schedule,unit,target,period,link,flags,date,value,note,mo,di,mi,do,fr,sa,so
+week,,,,,,,,,,,,2026-10-19,6.8,,,,,,,,
+week,2026-W44,,,,,,,,,,,,,,,,,,,,
+day,Fr,,Krank,Erkältung,,,,,,,,,,,,,,,,,
+day,Sa,,Krank,,,,,,,,,,,,,,,,,,
+item,1.2-01,1.2,Krafttraining,,täglich,woche:3,,,,,,,,,✓,,½,,,,
+item,4-03,4,Kein Bildschirm nach 23:00,,täglich,fix,,,,,ko,,,,✓,✓,✗,✓,,,✓
+```
+
+KW43 comes in with only its paper score 6,8 (found by its date); KW44 with two items, seven marks and
+two sick days.
+
+- **Weekday columns** `mo,di,mi,do,fr,sa,so` (also `montag` … `sonntag`, `mon` … `sun`) on `item` rows:
+  one mark per day – `✓` / `1` erledigt, `½` / `0.5` teilweise, `✗` / `X` / `0` nicht erledigt,
+  `–` / `N/A` entfällt; empty = no mark. An unreadable cell is listed under *Nicht gelesen*. The columns
+  can be mixed with `mark` rows. The export stays in the long format (one `mark` row per item and
+  day), so a round trip changes the layout, not the content.
+- **Day rows by weekday** (`Mo` … `So`) belong to the week row above, so one block fits every week. A day
+  row with only an id or date (no type, no note) changes nothing – empty template rows never clear a
+  day type.
+- **Krank / Urlaub:** a day type containing "krank" or "urlaub" (Krank, Urlaubstag …) excuses the day:
+  nothing is due, its marks and own scores don't count, a weekly quota's share of such days counts
+  half. A `day` row with that type is all the file needs.
+- **Week row with only a date:** `id` empty and any date of the week in `date` – the week follows from it.
+- **Only a score:** a `week` row with `value` and nothing else – a paper week. It shows in Rückblick and in
+  the planning prompt's trend lines.
+- **Marks on unknown items:** marks (rows or columns) on an item that is neither in the file nor in the
+  app get one warning per week ("KW44: Markierungen für unbekannte Punkte …"). Items of a category
+  the app doesn't have are skipped.
+
+### What the import does with past weeks
+
+- **Closing:** every week of the file before the current week – with items, marks or a week row – is
+  closed, and so are its days with a mark or a day type (`Document.closingPast`). Days of such a week
+  that the app already has a mark or a day type for are closed too, so a file with only some days
+  leaves no marked day open (not the marks of a week the file replaces). A closed week gets
+  its score as when closing it by hand, so it counts in Rückblick, Ziele, Ø 4 Wo. and the goal review.
+  The current week and later ones stay open, with the warning "KW48: noch nicht vorbei – wird nicht
+  abgeschlossen."
+- **Leere Felder:** open by default – a due fixed item without a mark leaves its category day unscored.
+  With *Leere Felder als ✗ zählen*, every blank field of a fixed, required item on its days counts as
+  ✗ (never on a free day for work items, never on a Krank/Urlaub day; `Document.fillingBlanks`). Quotas
+  ("n× pro Woche"), progress, conditional and secondary items stay blank – the week's rules settle
+  them. Only weeks the file brings items or marks for are filled; a week without item rows is filled
+  on the app's plan, and marks the app already has stay.
+- **Replacing:** a week that already has a different plan is replaced as for a plan import – the old
+  plan goes with its marks and values to the archive (Einstellungen → Archiv), Undo in the toast.
+- **Which score counts:** a closed week with items shows its computed score; a reported `value` counts
+  only where there is none (`historyScore = finalScore ?? recordedScore`). Weeks before KW42 2026 are
+  marked "vor KW42" (other model) and are not averaged with later ones.
 
 ## Export
 

@@ -222,6 +222,8 @@ struct TodayDayMenu: View {
         Button("Zu heute", systemImage: "sun.max") { app.goToToday() }
             .disabled(day == app.today)
         Divider()
+        // v8: Krank / Urlaub in one step (they're on top).
+        DayTypeMenu(app: app, day: day, current: context.dayType(day))
         Button("Tagestyp und Besonderheit…", systemImage: "calendar.badge.clock") { app.sheet = .dayInfo(day) }
     }
 }
@@ -416,11 +418,20 @@ struct TodayDayHints: View {
     let day: DayKey
     /// Space around the lines – only taken when there is something to show.
     var insets = EdgeInsets()
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         let note: String = context.dayNote(day).trimmingCharacters(in: .whitespacesAndNewlines)
         let isFree: Bool = context.isFreeDay(day)
-        if !note.isEmpty || isFree {
+        if context.isExcused(day) {
+            // v8: a sick or holiday day – the card says it doesn't count, "Typ ändern" undoes it.
+            VStack(alignment: .leading, spacing: 6) {
+                ExcusedDayCard(app: app, day: day, type: context.dayType(day))
+                DayNoteLabel(note: note)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(insets)
+        } else if !note.isEmpty || isFree {
             VStack(alignment: .leading, spacing: 3) {
                 DayNoteLabel(note: note)
                 if isFree {
@@ -445,14 +456,21 @@ struct TodayFillButton: View {
 
     private var caption: String {
         let overall: DayOverall? = context.score.days[day]
+        if context.isExcused(day) { return "\(context.excusedName(day)) – zählt nicht" }
         if context.isClosed(day) { return "Abgeschlossen · \(Format.score(overall?.score, outOf: true))" }
         return "\(overall?.coverageText ?? "0 %") erfasst"
     }
 
     private var spoken: String {
         let overall: DayOverall? = context.score.days[day]
+        if context.isExcused(day) { return "\(context.excusedName(day)), der Tag zählt nicht" }
         if context.isClosed(day) { return "Tag abgeschlossen, Wertung \(Format.score(overall?.score))" }
         return "\(overall?.coverageText ?? "0 %") erfasst"
+    }
+
+    /// v8: the day type's symbol in the ring on a sick or holiday day.
+    private var excusedSymbol: String? {
+        context.isExcused(day) ? DayTypes.symbol(for: context.dayType(day)) : nil
     }
 
     var body: some View {
@@ -467,7 +485,7 @@ struct TodayFillButton: View {
             }
         } label: {
             HStack(spacing: 10) {
-                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 34, lineWidth: 4)
+                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 34, lineWidth: 4, excusedSymbol: excusedSymbol)
                 Text(caption)
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
@@ -532,15 +550,16 @@ struct TodayHeader: View {
             } label: {
                 HStack(spacing: 10) {
                     VStack(alignment: .trailing, spacing: 1) {
-                        Text(closed ? "Abgeschlossen" : "Erfasst")
+                        Text(statusCaption(closed: closed))
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(closed ? Format.score(overall?.score, outOf: true) : (overall?.coverageText ?? "–"))
+                        Text(statusValue(closed: closed, overall: overall))
                             .font(.system(.title3, design: .rounded).weight(.bold))
                             .monospacedDigit()
                             .contentTransition(.numericText())
                     }
-                    FillRing(fill: overall?.coverage ?? 0, score: closed ? overall?.score : nil, size: 44)
+                    FillRing(fill: overall?.coverage ?? 0, score: closed ? overall?.score : nil, size: 44,
+                             excusedSymbol: excusedSymbol)
                     if showsOverviewButton {
                         Image(systemName: "info.circle")
                             .font(.body)
@@ -549,9 +568,33 @@ struct TodayHeader: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(closed ? "Tag abgeschlossen, Wertung \(Format.score(overall?.score))" : "\(overall?.coverageText ?? "0 %") erfasst")
+            .accessibilityLabel(spokenStatus(closed: closed, overall: overall))
             .accessibilityHint("Öffnet „Heute im Blick“")
         }
+    }
+
+    /// v8: the day type's symbol in the ring on a sick or holiday day.
+    private var excusedSymbol: String? {
+        context.isExcused(day) ? DayTypes.symbol(for: context.dayType(day)) : nil
+    }
+
+    /// "Abgeschlossen" · "Erfasst"; v8: "Zählt nicht" on a sick or holiday day.
+    private func statusCaption(closed: Bool) -> String {
+        if context.isExcused(day) { return "Zählt nicht" }
+        return closed ? "Abgeschlossen" : "Erfasst"
+    }
+
+    /// "7,5/10" · "62 %"; v8: "Krank" / "Urlaub".
+    private func statusValue(closed: Bool, overall: DayOverall?) -> String {
+        if context.isExcused(day) { return context.excusedName(day) }
+        if closed { return Format.score(overall?.score, outOf: true) }
+        return overall?.coverageText ?? "–"
+    }
+
+    private func spokenStatus(closed: Bool, overall: DayOverall?) -> String {
+        if context.isExcused(day) { return "\(context.excusedName(day)), der Tag zählt nicht" }
+        if closed { return "Tag abgeschlossen, Wertung \(Format.score(overall?.score))" }
+        return "\(overall?.coverageText ?? "0 %") erfasst"
     }
 }
 
@@ -561,10 +604,28 @@ struct FillRing: View {
     var score: Double?
     var size: CGFloat = 44
     var lineWidth: CGFloat = 5
+    /// v8: a sick or holiday day – an empty grey ring with the day type's symbol ("zählt nicht").
+    var excusedSymbol: String?
 
     var body: some View {
         ZStack {
             Circle().stroke(Color.secondary.opacity(0.15), lineWidth: lineWidth)
+            if let excusedSymbol {
+                Image(systemName: excusedSymbol)
+                    .font(.system(size: size * 0.36, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            } else {
+                progress
+            }
+        }
+        .frame(width: size, height: size)
+        .animation(.snappy, value: fill)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var progress: some View {
+        ZStack {
             Circle()
                 .trim(from: 0, to: CGFloat(score.map { $0 / 10 } ?? fill))
                 .stroke(score == nil ? (fill >= 1 ? Color.green : Brand.accent) : Brand.accent,
@@ -576,9 +637,6 @@ struct FillRing: View {
                     .foregroundStyle(.green)
             }
         }
-        .frame(width: size, height: size)
-        .animation(.snappy, value: fill)
-        .accessibilityHidden(true)
     }
 }
 
@@ -1361,6 +1419,13 @@ struct ItemMarkRow: View {
         Button("Löschen…", systemImage: "trash", role: .destructive) { confirmsDelete = true }
     }
 
+    /// "2 von 3 diese Woche"; v8: "2 von 3 diese Woche · ½ krank" (what's missing counts half).
+    private func quotaLine(_ quota: (done: Int, target: Int)) -> String {
+        let base: String = "\(quota.done) von \(quota.target) diese Woche"
+        guard quota.done < quota.target, context.quotaShare(item) > 1e-9 else { return base }
+        return base + " · ½ " + context.excusedWord(context.excusedDayList)
+    }
+
     /// R64: the short kind label, the week's quota and progress.
     @ViewBuilder
     private var meta: some View {
@@ -1371,7 +1436,7 @@ struct ItemMarkRow: View {
             HStack(spacing: 8) {
                 KindBadge(text: kind)
                 if let quota {
-                    Text("\(quota.done) von \(quota.target) diese Woche")
+                    Text(quotaLine(quota))
                         .font(.caption2)
                         .foregroundStyle(quota.done >= quota.target ? .green : .secondary)
                 }
@@ -1995,10 +2060,11 @@ struct WeeklyGoalRow: View {
     var body: some View {
         let weekValue: Double = context.weekValue(goal.measure) ?? 0
         let today: Double = context.dayValue(goal.measure, on: day) ?? 0
-        let targetValue: Double = record?.target?.scaleMax ?? 0
+        let targetValue: Double = effectiveTargetValue
         let fraction: Double = targetValue > 0 ? min(1, weekValue / targetValue) : 0
         let reached: Bool = targetValue > 0 && weekValue >= targetValue - 1e-9
         let pace: Pace? = context.pace(for: goal.measure)
+        let hint: String? = scaledHint
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(goal.item?.title ?? goal.measure.title)
@@ -2009,7 +2075,7 @@ struct WeeklyGoalRow: View {
             GoalBar(fraction: fraction, expected: expectedFraction(pace, target: targetValue), reached: reached,
                     tint: GoalPalette.color(category: goal.measure.categoryKey))
             HStack(spacing: 10) {
-                Text("\(amount(weekValue)) von \(amount(targetValue))")
+                Text(amountsText(weekValue, target: targetValue))
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
                 Text(todayText(today))
@@ -2017,6 +2083,12 @@ struct WeeklyGoalRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                 Spacer(minLength: 0)
+            }
+            if let hint {
+                // v8: "4,8 statt 8 PH – 2 Tage krank".
+                Label("Ziel \(hint)", systemImage: "calendar.badge.minus")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             if !isWork {
                 HStack {
@@ -2037,7 +2109,7 @@ struct WeeklyGoalRow: View {
         Button {
             showsExplanation = true
         } label: {
-            Text(reached ? "erreicht" : "\(percent(fraction)) %")
+            Text(percentLabel(fraction: fraction, reached: reached))
                 .font(.caption.weight(.bold))
                 .monospacedDigit()
                 .padding(.horizontal, 8)
@@ -2068,6 +2140,31 @@ struct WeeklyGoalRow: View {
     }
 
     private var unit: String { isWork ? "PH" : goal.measure.unit }
+
+    /// v8: the target as it counts this week – scaled for sick and holiday days.
+    private var effectiveTargetValue: Double {
+        guard let record, let target = context.effectiveTarget(record) else { return 0 }
+        return target.scaleMax
+    }
+
+    /// v8: "4,8 statt 8 PH – 2 Tage krank" when sick or holiday days scale the target; "zählt nicht
+    /// – 5 Tage krank" when none of its days counts.
+    private var scaledHint: String? {
+        context.weeklyTargetHint(code: goal.measure.code)
+    }
+
+    /// "62 %" · "erreicht"; v8: "zählt nicht" when every day of the target is a sick or holiday day.
+    private func percentLabel(fraction: Double, reached: Bool) -> String {
+        if reached { return "erreicht" }
+        if let record, record.target != nil, context.targetShare(record) <= 1e-9 { return "zählt nicht" }
+        return "\(percent(fraction)) %"
+    }
+
+    /// "3 von 8 PH"; v8: "3 PH in der Woche" when the target doesn't count this week (share 0).
+    private func amountsText(_ weekValue: Double, target: Double) -> String {
+        guard target > 0 else { return "\(amount(weekValue)) in der Woche" }
+        return "\(amount(weekValue)) von \(amount(target))"
+    }
 
     private func amount(_ value: Double) -> String {
         Format.measure(value, unit: unit)
@@ -2154,6 +2251,8 @@ struct DayPageSections: View {
 
     /// "Alles erfasst – bereit zum Abschließen." · "3 Punkte sind noch offen."
     private func openText(_ overall: DayOverall?) -> String {
+        // v8: nothing is due on a sick or holiday day; closing it is optional.
+        if context.isExcused(day) { return "\(context.excusedName(day)) – der Tag zählt nicht. Abschließen ist nicht nötig." }
         guard let overall else { return "" }
         if overall.blank == 0 { return "Alles erfasst – bereit zum Abschließen." }
         let count: String = overall.blank == 1 ? "1 Punkt ist" : "\(overall.blank) Punkte sind"
@@ -2826,6 +2925,15 @@ struct NoPlanView: View {
                 }
                 .buttonStyle(.bordered)
             }
+            if week < app.today.week {
+                // v8: a week that is over – enter it afterwards (plan, documents or just the score).
+                Button {
+                    app.sheet = .importPast(week)
+                } label: {
+                    Label("Vergangene Woche nachtragen", systemImage: "clock.arrow.circlepath")
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding(.vertical, 6)
         .task(id: week) {
@@ -2915,6 +3023,9 @@ struct TodayToolbar: ToolbarContent {
                 Button("Fokus (Power-Hours)", systemImage: "bolt") { app.sheet = .focus(day) }
                 Button("Ausgaben", systemImage: "eurosign.circle") { app.sheet = .expenses(day) }
                 Button("Wochenplan importieren", systemImage: "square.and.arrow.down") { app.sheet = .importPlan(prompt: true) }
+                // v8: past weeks and several weeks as one PDF.
+                Button("Vergangene Woche nachtragen", systemImage: "clock.arrow.circlepath") { app.sheet = .importPast(nil) }
+                Button("Mehrere Wochen als PDF", systemImage: "doc.richtext") { app.sheet = .rangePDF }
                 Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
                 Divider()
                 if !app.isSandbox {
@@ -2972,14 +3083,21 @@ private struct TodayRingButton: View {
 
     private var valueText: String {
         let overall: DayOverall? = context.score.days[day]
+        if context.isExcused(day) { return context.excusedName(day) }
         if context.isClosed(day) { return Format.score(overall?.score) }
         return overall?.coverageText ?? "0 %"
     }
 
     private var spoken: String {
         let overall: DayOverall? = context.score.days[day]
+        if context.isExcused(day) { return "\(context.excusedName(day)), der Tag zählt nicht" }
         if context.isClosed(day) { return "Tag abgeschlossen, Wertung \(Format.score(overall?.score))" }
         return "\(overall?.coverageText ?? "0 %") erfasst"
+    }
+
+    /// v8: the day type's symbol in the ring on a sick or holiday day.
+    private var excusedSymbol: String? {
+        context.isExcused(day) ? DayTypes.symbol(for: context.dayType(day)) : nil
     }
 
     var body: some View {
@@ -2989,7 +3107,7 @@ private struct TodayRingButton: View {
             app.sheet = .dayOverview(day)
         } label: {
             HStack(spacing: 6) {
-                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 22, lineWidth: 3)
+                FillRing(fill: overall?.coverage ?? 0, score: shownScore, size: 22, lineWidth: 3, excusedSymbol: excusedSymbol)
                 Text(valueText)
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
@@ -3022,6 +3140,9 @@ struct MainToolbar: ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button("Wochenplan importieren", systemImage: "square.and.arrow.down") { app.sheet = .importPlan(prompt: true) }
+                // v8: past weeks and several weeks as one PDF.
+                Button("Vergangene Woche nachtragen", systemImage: "clock.arrow.circlepath") { app.sheet = .importPast(nil) }
+                Button("Mehrere Wochen als PDF", systemImage: "doc.richtext") { app.sheet = .rangePDF }
                 Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
                 Divider()
                 if !app.isSandbox {

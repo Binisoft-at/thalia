@@ -77,6 +77,10 @@ struct MarkCell: View {
     var onOpenValue: (() -> Void)? = nil
     /// R65: "Notiz erfassen…" in the context menu.
     var onAddNote: (() -> Void)? = nil
+    /// v8: a mark recorded on a sick or holiday day – kept but not counted, shown dimmed.
+    var dimmedMark: Mark? = nil
+    /// v8: "Krank" on a sick or holiday day (read out: "zählt nicht").
+    var excusedName: String? = nil
     let onSet: (Mark?) -> Void
 
     @State private var hovering = false
@@ -117,6 +121,8 @@ struct MarkCell: View {
             parts.append(accessibilityPrefix)
             parts.append(mark.accessibilityText.lowercased())
         }
+        if let excusedName { parts.append("\(excusedName), zählt nicht") }
+        if let dimmedMark { parts.append("eingetragen war \(dimmedMark.label)") }
         if !applies { parts.append("nicht geplant") }
         if opensValue { parts.append("automatisch") }
         if hasNote { parts.append("mit Notiz") }
@@ -164,7 +170,12 @@ struct MarkCell: View {
                     .fill(applies ? Color.cardBackground : Color.clear)
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(borderColor, style: StrokeStyle(lineWidth: borderWidth, dash: applies ? [] : [2, 3]))
-                if let mark {
+                if let dimmedMark {
+                    // v8: recorded before the day became sick / holiday – it doesn't count.
+                    Text(dimmedMark.symbol)
+                        .font(.system(.callout, design: .rounded).weight(.bold))
+                        .foregroundStyle(Color.secondary.opacity(0.5))
+                } else if let mark {
                     Text(mark.symbol)
                         .font(.system(.callout, design: .rounded).weight(.bold))
                         .foregroundStyle(Optional(mark).textColor)
@@ -347,6 +358,95 @@ struct DayTypeChip: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(Color.secondary.opacity(0.12), in: .capsule)
+    }
+}
+
+/// v8: the day type as a quick choice – Krank and Urlaub on top (they don't count in the week's
+/// score), then the other presets and "Eigener Typ…" (the day editor). Used in Today's title
+/// menu, the week's day heads and closing the day. `app` is passed in so the menu works in
+/// context menus, too.
+struct DayTypeMenu: View {
+    let app: AppModel
+    let day: DayKey
+    let current: String
+    var title: String = "Tagestyp"
+    /// "Tagestyp: Krank" in the label; off for "Typ ändern".
+    var showsCurrent = true
+
+    private var labelText: String {
+        showsCurrent && !current.isEmpty ? "\(title): \(current)" : title
+    }
+
+    private var otherPresets: [String] {
+        DayTypes.presets.filter { !DayTypes.excusedPresets.contains($0) }
+    }
+
+    var body: some View {
+        Menu {
+            Section {
+                ForEach(DayTypes.excusedPresets, id: \.self) { type in
+                    choice(type)
+                }
+            } header: {
+                Text("Zählt nicht in die Wochenwertung")
+            }
+            Section {
+                ForEach(otherPresets, id: \.self) { type in
+                    choice(type)
+                }
+            }
+            // No "clear" entry on purpose: an empty type can come back from an offline copy (the
+            // newest non-empty type wins when duplicates merge) – "Arbeitstag" undoes "Krank".
+            Section {
+                Button("Eigener Typ…", systemImage: "pencil") { app.sheet = .dayInfo(day) }
+            }
+        } label: {
+            Label(labelText, systemImage: DayTypes.symbol(for: current))
+        }
+    }
+
+    @ViewBuilder
+    private func choice(_ type: String) -> some View {
+        if type == current {
+            Button(type, systemImage: "checkmark") { }
+                .disabled(true)
+        } else {
+            Button(type, systemImage: DayTypes.symbol(for: type)) { app.setDayType(type, day: day) }
+        }
+    }
+}
+
+/// v8: on a sick or holiday day – "Krank – dieser Tag zählt nicht in die Wochenwertung" with
+/// "Typ ändern" (Today, closing the day).
+struct ExcusedDayCard: View {
+    let app: AppModel
+    let day: DayKey
+    let type: String
+
+    private var name: String { WeekContext.excusedName(for: type) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: DayTypes.symbol(for: type))
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .frame(width: 32)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(name) – dieser Tag zählt nicht in die Wochenwertung")
+                    .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Nichts ist fällig. Werte lassen sich trotzdem eintragen. Bei „n× pro Woche“ zählt, was deshalb fehlt, halb.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                DayTypeMenu(app: app, day: day, current: type, title: "Typ ändern", showsCurrent: false)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .card(padding: 12)
     }
 }
 
@@ -687,11 +787,23 @@ struct WeeklyTargetRow: View {
                 }
             }
             bar
+            if let hint = target.scaledHint {
+                // v8: the target counts only for the days that aren't sick or holiday days.
+                Label("Ziel \(hint)", systemImage: "calendar.badge.minus")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
         }
         .padding(.vertical, 2)
         .contentShape(.rect)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title): \(status)")
+        .accessibilityLabel(spokenText)
+    }
+
+    private var spokenText: String {
+        guard let hint = target.scaledHint else { return "\(title): \(status)" }
+        return "\(title): \(status), Ziel \(hint)"
     }
 
     private var bar: some View {

@@ -64,6 +64,9 @@ struct SettingsView: View {
                 NavigationLink { ExplainerView(explainer: .powerHours) } label: { Label("Power-Hours", systemImage: "bolt") }
                 NavigationLink { ExplainerView(explainer: .marks) } label: { Label("Erledigt, Teilweise, Nicht erledigt, Entfällt", systemImage: "checklist") }
                 NavigationLink { ExplainerView(explainer: .suggestions) } label: { Label("Was Thalia rechnet – und was du entscheidest", systemImage: "wand.and.stars") }
+                ForEach(FeatureExplainer.allCases) { feature in
+                    NavigationLink { FeatureExplainerView(feature: feature) } label: { Label(feature.title, systemImage: feature.symbol) }
+                }
             } header: {
                 Text("Hilfe")
             } footer: {
@@ -886,6 +889,7 @@ struct ArchiveView: View {
                             titleVisibility: .visible, presenting: restoring) { archive in
             Button("Wiederherstellen") {
                 let result = app.store.restore(archive)
+                app.scheduleReminders()
                 app.toasts.show("\(archive.week?.label ?? "Woche") wiederhergestellt · \(result.summary)", symbol: "arrow.uturn.backward")
             }
         } message: { _ in

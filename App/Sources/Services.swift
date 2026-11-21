@@ -37,6 +37,10 @@ enum ReminderScheduler {
     /// Suffix of a snoozed evening reminder ("thalia.evening.2026-11-16.snooze").
     static let snoozeSuffix = ".snooze"
 
+    /// v8: days without an evening reminder whatever the caller passes – sick and holiday days
+    /// (set by `AppModel`, so Settings skips them too).
+    @MainActor static var skipsDay: ((DayKey) -> Bool)?
+
     /// The "In 30 Min." action on the evening reminder.
     static func registerCategories() {
         let snooze = UNNotificationAction(identifier: ReminderSettings.snoozeActionID, title: "In 30 Min.", options: [])
@@ -53,7 +57,8 @@ enum ReminderScheduler {
                       isClosed: @escaping (DayKey) -> Bool = { _ in false }) async -> String {
         let center = UNUserNotificationCenter.current()
         let requests = settings.requests()
-        let evenings = settings.eveningRequests(from: DayKey.today(), isClosed: isClosed)
+        let skips: ((DayKey) -> Bool)? = skipsDay
+        let evenings = settings.eveningRequests(from: DayKey.today(), isClosed: { isClosed($0) || (skips?($0) ?? false) })
         let old = await center.pendingNotificationRequests().map(\.identifier)
             .filter { $0.hasPrefix("thalia.") && !$0.hasSuffix(snoozeSuffix) }
         center.removePendingNotificationRequests(withIdentifiers: old)

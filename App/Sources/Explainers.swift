@@ -55,7 +55,8 @@ struct ExplainerView: View {
                 Text("• Nicht geplant ist nicht verpasst. Ein überfälliger Punkt wird aber nicht zu „Entfällt“, nur um die Wertung zu schützen.")
                 Text("• Optional heißt nicht automatisch erfolgreich: Eine ganz optionale Woche bleibt unbewertet – weder geschenkte 10 noch automatische 0.")
                 Text("• Fehlende Abdeckung bleibt sichtbar: „9/10 Ziele bewertet – nicht voll vergleichbar“.")
-                Text("• „n× pro Woche“: jedes Erledigt, Teilweise oder Nicht erledigt verbraucht einen Platz; was am Wochenende fehlt, zählt als nicht erledigt.")
+                Text("• „n× pro Woche“: jedes Erledigt, Teilweise oder Nicht erledigt verbraucht einen Platz; was am Wochenende fehlt, zählt als nicht erledigt – außer es ging wegen Krank oder Urlaub nicht mehr: dann zählt es halb.")
+                Text("• Krank- und Urlaubstage zählen nicht in die Wochenwertung. Ist die ganze Woche krank oder Urlaub, bleibt sie ohne Wertung: „Woche zählt nicht (krank/Urlaub)“.")
                 Text("• Persönliche Null-Regeln (z. B. Schlaf): Nicht erledigt setzt die Kategorie an dem Tag auf 0 – die Messwerte bleiben erhalten.")
                 Text("• Deine eigene Wertung ersetzt die Rechnung, wenn du sie setzt.")
                 Text("• Seit KW42 2026 gleich gewichtet – ältere Wochen sind nicht direkt vergleichbar.")
@@ -63,6 +64,7 @@ struct ExplainerView: View {
             }
             .font(.subheadline)
             .card()
+            FeatureExplainerLinks()
         }
     }
 
@@ -121,6 +123,9 @@ struct ExplainerView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text("Fortschrittspunkte heißen „Gearbeitet“ und „Nicht heute“ – am Wochenende zählt, wie weit das Wochenziel erreicht ist.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text("An Krank- und Urlaubstagen ist nichts fällig. Markierungen von vorher bleiben gespeichert, zählen aber nicht und erscheinen gedimmt; zurück auf „Arbeitstag“ zählen sie wieder.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -214,5 +219,202 @@ struct ExplainerSheet: View {
                 }
         }
         .thaliaSheetFrame(width: 560, height: 740)
+    }
+}
+
+/// v8: explainers for the three new features. `Explainer` (AppModel) stays as it is; these open from
+/// the "Neu in 1.7" card at the end of "Wie wird gerechnet?" – a NavigationStack is around every explainer.
+enum FeatureExplainer: String, CaseIterable, Identifiable {
+    case excused, pastWeeks, rangePDF
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .excused: "Krank & Urlaub"
+        case .pastWeeks: "Vergangene Wochen"
+        case .rangePDF: "PDF-Bericht"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .excused: "cross.case"
+        case .pastWeeks: "clock.arrow.circlepath"
+        case .rangePDF: "doc.richtext"
+        }
+    }
+}
+
+/// The links to the v8 explainers, as one card.
+struct FeatureExplainerLinks: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Neu in 1.7", systemImage: "sparkles")
+                .font(.headline)
+            ForEach(FeatureExplainer.allCases) { feature in
+                NavigationLink {
+                    FeatureExplainerView(feature: feature)
+                } label: {
+                    HStack {
+                        Label(feature.title, systemImage: feature.symbol)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .font(.subheadline)
+        .card()
+    }
+}
+
+/// One v8 feature explained, in the same layout as `ExplainerView`.
+struct FeatureExplainerView: View {
+    let feature: FeatureExplainer
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                switch feature {
+                case .excused: excused
+                case .pastWeeks: pastWeeks
+                case .rangePDF: rangePDF
+                }
+            }
+            .padding()
+            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .background(Color.groupedBackground)
+        .navigationTitle(feature.title)
+        .inlineNavigationTitle()
+    }
+
+    // MARK: Krank & Urlaub
+
+    private var excused: some View {
+        Group {
+            Step(number: 1, title: "Tag als Krank oder Urlaub",
+                 text: excusedSettingText,
+                 example: "Fr: Krank · Sa: Krank · So: Krank")
+            Step(number: 2, title: "Was an dem Tag gilt",
+                 text: "Kein Punkt ist fällig und der Tag ist nie offen: kein Ring, keine Abend-Erinnerung, kein Hinweis am nächsten Morgen. Abschließen ist nicht nötig. Werte lassen sich weiter eintragen und zählen in den Wochensummen.",
+                 example: "Woche: Spalte grau, Zellen „–“ · Heute: „Krank – zählt nicht“")
+            Step(number: 3, title: "„n× pro Woche“: was nicht mehr ging, zählt halb",
+                 text: "Fehlt am Wochenende etwas, weil Tage krank oder Urlaub waren, zählt das als Teilweise – höchstens so viel, wie auf diese Tage fiel (n × entschuldigte Tage ÷ geplante Tage).",
+                 example: "3× Training, Mo und Mi erledigt, ab Fr krank → das dritte zählt ½: (10 + 10 + 5) ÷ 3 = 8,33 statt 6,67")
+            Step(number: 4, title: "Wochenziele schrumpfen mit",
+                 text: "Fortschrittspunkte und Wochen-Messziele zählen nur den Anteil der Tage, die bleiben. Grenzen wie „höchstens 6“ bleiben gleich.",
+                 example: "8 PH Mo–Fr, Do und Fr krank → Ziel 4,8 PH: 4 PH = Teilweise, 5 PH = erreicht")
+            Step(number: 5, title: "Ganze Woche krank oder Urlaub",
+                 text: "Fällt alles Geplante auf solche Tage, bekommt die Woche keine Wertung. Rückblick, Ziele und PDF zeigen „entschuldigt“, der Durchschnitt lässt sie aus.",
+                 example: "KW44: Woche zählt nicht (krank/Urlaub)")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Wichtig", systemImage: "exclamationmark.circle")
+                    .font(.headline)
+                Text("• Markierungen von vor der Krankmeldung bleiben gespeichert, zählen aber nicht und erscheinen gedimmt. Zurück auf „Arbeitstag“ – dann zählen sie wieder.")
+                Text("• Eigene Tageswertungen zählen an solchen Tagen nicht.")
+                Text("• Ziele, deren Punkte nur auf solche Tage fielen, zählen nicht bei „x/y Ziele bewertet“.")
+                Text("• Auch eigene Tagestypen mit „krank“ oder „urlaub“ im Namen zählen so.")
+                Text("• Familientag und Erholungstag sind etwas anderes: Dort entfallen nur Arbeitspunkte, der Rest bleibt fällig.")
+            }
+            .font(.subheadline)
+            .card()
+        }
+    }
+
+    private var excusedSettingText: String {
+        #if os(macOS)
+        return "Heute: Titelmenü in der Symbolleiste → Tagestyp → „Krank“ oder „Urlaub“ (ganz oben). In der Woche: Rechtsklick auf den Tag. Auch im Tagesabschluss."
+        #else
+        return "Heute: oben auf den Titel tippen → Tagestyp → „Krank“ oder „Urlaub“ (ganz oben). In der Woche: lange auf den Tag drücken. Auch im Tagesabschluss."
+        #endif
+    }
+
+    // MARK: Vergangene Wochen
+
+    private var pastWeeks: some View {
+        Group {
+            Step(number: 1, title: "Das Fenster",
+                 text: pastWeeksOpenText,
+                 example: "Plan übernehmen · Mit ChatGPT · Nur Wertung")
+            Step(number: 2, title: "Plan übernehmen",
+                 text: "Die Punkte der nächstgelegenen geplanten Woche kommen in die gewählte Woche, ohne Markierungen. Dann in der Woche abhaken, Krank- und Urlaubstage setzen und die Woche abschließen – erst dann zählt sie. Hat die Woche schon einen Plan, kommt er ins Archiv – „Widerrufen“ holt ihn zurück.",
+                 example: "Plan von KW47 übernehmen → KW44")
+            Step(number: 3, title: "Mit ChatGPT – auch viele Wochen auf einmal",
+                 text: "„Prompt kopieren“, in ChatGPT Fotos, PDFs oder Tabellen dazulegen. Zurück kommt eine CSV mit einem Block je Woche: Tage (auch Krank/Urlaub), Punkte, Markierungen, oder nur eine Wertung. CSV einfügen oder „Datei…“ → Vorschau je Woche → Importieren. Zeitraum: „Wochen aus den Unterlagen“ oder ein fester Bereich von–bis.",
+                 example: "KW45 2026 (2.–8. Nov.) · neu · 4 Markierungen · 2 Tage Krank/Urlaub")
+            Step(number: 4, title: "Nur Wertung",
+                 text: "Für Wochen, von denen nur die Zahl vom Papier bekannt ist: Woche wählen, Wertung 0–10 eintragen. Sie erscheint im Rückblick; mehrere Wochen nacheinander gehen ohne Schließen.",
+                 example: "KW38 · 7,5")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Wichtig", systemImage: "exclamationmark.circle")
+                    .font(.headline)
+                Text("• Per CSV nachgetragene vergangene Wochen werden mit ihren Tagen abgeschlossen – so zählen sie im Rückblick, bei den Zielen und im Ø 4 Wo.")
+                Text("• Leere Felder bleiben leer. Nur mit dem Schalter „Leere Felder als ✗ zählen“ werden sie zu Nicht erledigt.")
+                Text("• Diese und spätere Wochen werden nicht abgeschlossen; die Vorschau warnt.")
+                Text("• Markierungen auf Punkte, die weder in der Datei noch in der App stehen, meldet die Vorschau.")
+                Text("• Eine ersetzte Woche kommt ins Archiv und lässt sich widerrufen.")
+            }
+            .font(.subheadline)
+            .card()
+        }
+    }
+
+    private var pastWeeksOpenText: String {
+        #if os(macOS)
+        return "Ablage → „Vergangene Woche nachtragen…“, auch rechts in der Woche (Wochenübersicht) und im Import unter „Vorlagen“. Wählbar sind die Wochen ab Beginn des Zieljahrs – mindestens 52 Wochen zurück – bis letzte Woche."
+        #else
+        return "Woche → … → „Vergangene Woche nachtragen…“, auch im Import unter „Vorlagen“. Wählbar sind die Wochen ab Beginn des Zieljahrs – mindestens 52 Wochen zurück – bis letzte Woche."
+        #endif
+    }
+
+    // MARK: PDF-Bericht
+
+    private var rangePDF: some View {
+        Group {
+            Step(number: 1, title: "Das Fenster",
+                 text: rangePDFOpenText,
+                 example: "Rückblick → PDF-Bericht")
+            Step(number: 2, title: "Zeitraum und Umfang",
+                 text: "Letzte 4, 8 oder 13 Wochen (bis zur letzten fertigen Woche), Zieljahr bis heute oder ein eigener Zeitraum von–bis. Umfang: nur Übersicht, + Wochenübersicht je Woche (Deckblatt und Tabellen) oder + Rückblick-Texte.",
+                 example: "Letzte 8 Wochen · + Wochenübersicht je Woche · 42 Seiten")
+            Step(number: 3, title: "Was drinsteht",
+                 text: "Deckblatt mit Ø-Ring, Kacheln, Balken je Woche und den 10 Zielen mit Ø und Trend; eine Übersicht mit einer Zeile je Woche (Wertung, Ziele in Zielfarbe, PH, abgeschlossene Tage, Krank/Urlaub, Wochenziele); Power-Hours je Bereich; danach die Wochenseiten. Die Seitenzahlen laufen durch.",
+                 example: "1 Fit Body · Ø 7,2 · ↑ steigend")
+            Step(number: 4, title: "Erzeugen und teilen",
+                 text: rangePDFShareText,
+                 example: "Seite 37 von 120")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Wichtig", systemImage: "exclamationmark.circle")
+                    .font(.headline)
+                Text("• Der Ø zählt nur gleich gewichtete Wochen (ab KW42 2026) mit Wertung; entschuldigte Wochen (krank/Urlaub) fallen weg.")
+                Text("• Trend je Ziel: die letzten vier gegen die ersten vier Wochen; bei mehr als 0,25 Unterschied steigend oder fallend – wie in der Zielüberprüfung.")
+                Text("• Wochen nur mit Papier-Wertung stehen als Zeile in der Übersicht, ohne eigene Seiten.")
+            }
+            .font(.subheadline)
+            .card()
+        }
+    }
+
+    private var rangePDFOpenText: String {
+        #if os(macOS)
+        return "Ablage → „Zeitraum als PDF…“ (⌥⌘P), Rückblick → „PDF-Bericht“ oder rechts in der Woche (Wochenübersicht). Im Rückblick per Rechtsklick auf eine Woche auch „PDF-Bericht ab dieser Woche“."
+        #else
+        return "Rückblick → „PDF-Bericht“ oder Woche → … → „Mehrere Wochen als PDF…“. Im Rückblick eine Woche gedrückt halten → „PDF-Bericht ab dieser Woche“."
+        #endif
+    }
+
+    private var rangePDFShareText: String {
+        #if os(macOS)
+        return "Thalia baut den Bericht Seite für Seite – abbrechen geht jederzeit – und zeigt ihn in der Vorschau. Dann sichern (⌘S), drucken (⌘P) oder teilen. Lesezeichen führen zu jeder Woche."
+        #else
+        return "Thalia baut den Bericht Seite für Seite – abbrechen geht jederzeit – und zeigt ihn in der Vorschau. Dann teilen, etwa in Dateien oder per Mail. Lesezeichen führen zu jeder Woche."
+        #endif
     }
 }

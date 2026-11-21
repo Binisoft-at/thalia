@@ -21,13 +21,34 @@ struct WeeklyTarget: Identifiable {
     let item: PlanItem?
     /// The week's value so far (0 without entries).
     let value: Double
+    /// The target that counts this week: scaled for sick and holiday days (v8, `Measures.effectiveTarget`).
     let target: Target
     let pace: Pace
     /// "PH" for work, else `Units.display(unit)`.
     let unit: String
+    /// The plan's target before scaling (v8).
+    var fullTarget: Target
+    /// The share of the target that still counts (1 without sick or holiday days, v8).
+    var share: Double = 1
+    /// "2 Tage krank": the sick or holiday days among the measurement's days (v8); empty without.
+    var excusedText: String = ""
     var id: String { measure.code }
     /// Limits: while below; targets: reached.
     var isMet: Bool { target.isMet(value) }
+    /// v8: the target was scaled down for sick or holiday days.
+    var isScaled: Bool { target != fullTarget }
+    /// v8: at least one of the measurement's days still counts (share > 0); otherwise it isn't scored
+    /// this week (Decision 4) and stays out of `WeekContext.weeklyTargets`.
+    var isCounted: Bool { share > 1e-9 }
+    /// v8: "4,8 statt 8 PH – 2 Tage krank"; "zählt nicht – 5 Tage krank" when no day counts; nil
+    /// when nothing was scaled.
+    var scaledHint: String? {
+        if !isCounted { return excusedText.isEmpty ? "zählt nicht" : "zählt nicht – " + excusedText }
+        guard isScaled else { return nil }
+        let shown: String = unit.isEmpty ? "" : " " + unit
+        let base: String = Format.number(target.scaleMax) + " statt " + Format.number(fullTarget.scaleMax) + shown
+        return excusedText.isEmpty ? base : base + " – " + excusedText
+    }
 }
 
 /// R12: a suggestion from a measurement. A struct instead of a named tuple: `[(item:, mark:)]`
@@ -124,19 +145,24 @@ struct WeekContext {
         let isComplete = Scorer.isComplete(week: week, today: today, closed: self.plan?.isClosed ?? false)
         let itemRecords = self.items.compactMap(\.record)
         let measureRecords = self.measures.compactMap(\.record)
+        let dayInfo = self.days
+        let free = Set(week.days.filter { DayTypes.isWorkFree(dayInfo[$0.string]?.dayType ?? "") })
+        // v8: sick and holiday days don't count (nothing due, weekly targets scaled).
+        let excused: Set<DayKey> = DayTypes.excusedDays(week.days) { dayInfo[$0.string]?.dayType ?? "" }
+        // Work categories as in `WeekData`, so progress, pace and weekly targets scale the same way.
+        let workCategories: Set<String> = WeekData.workCategories(items: itemRecords, categories: self.categories.map(\.record))
         var progress: [String: Double] = [:]
         var worked: [String: Set<DayKey>] = [:]
         for item in itemRecords where item.schedule == .progress {
             progress[item.code] = Measures.progressRatio(for: item, measures: measureRecords, days: week.days,
-                                                         entries: records, work: workRecords)
+                                                         entries: records, work: workRecords, excused: excused, workFree: free,
+                                                         workCategories: workCategories)
             worked[item.code] = Measures.workedDays(for: item, measures: measureRecords, days: week.days,
                                                     entries: records, work: workRecords)
         }
-        let dayInfo = self.days
-        let free = Set(week.days.filter { DayTypes.isWorkFree(dayInfo[$0.string]?.dayType ?? "") })
         data = WeekData(week: week, goals: self.goals.map(\.record), categories: self.categories.map(\.record),
                         items: itemRecords, marks: markValues, overrides: overrideValues, isComplete: isComplete,
-                        progress: progress, worked: worked, workFreeDays: free)
+                        progress: progress, worked: worked, workFreeDays: free, excusedDays: excused)
         score = Scorer.score(data)
     }
 
@@ -152,6 +178,13 @@ struct WeekContext {
     /// The mark as recorded (for undo of bulk changes).
     func recordedMark(_ item: PlanItem, on day: DayKey) -> Mark? {
         marks[WeekData.markKey(item.code, day)]?.mark
+    }
+
+    /// v8: a ✓ ½ ✗ recorded on a sick or holiday day (e.g. before the day became "Krank"): kept, but
+    /// it doesn't count – the week shows it dimmed. nil on other days.
+    func excusedMark(_ item: PlanItem, on day: DayKey) -> Mark? {
+        guard isExcused(day), let recorded = recordedMark(item, on: day), recorded != .notApplicable else { return nil }
+        return recorded
     }
 
     /// Due that day (scheduled and not left out because the day is free).
@@ -173,6 +206,8 @@ struct WeekContext {
 
     func isDerived(_ item: PlanItem) -> Bool { item.record.map { data.isDerived($0) } ?? false }
     func isFreeDay(_ day: DayKey) -> Bool { data.workFreeDays.contains(day) }
+    /// v8: a sick or holiday day – nothing due, never open, it doesn't count in the week's score.
+    func isExcused(_ day: DayKey) -> Bool { data.isExcused(day) }
 
     /// n×/week item already done often enough on other days (folded away in the daily list).
     func isQuotaMetElsewhere(_ item: PlanItem, on day: DayKey) -> Bool {
@@ -258,11 +293,84 @@ struct WeekContext {
         }
     }
 
-    /// Weekly progress of an item with a quota ("2 von 3").
+    /// Weekly progress of an item with a quota ("2 von 3"). Marks on sick or holiday days don't count (v8).
     func quotaProgress(_ item: PlanItem) -> (done: Int, target: Int)? {
         guard let target = item.schedule.weeklyTarget else { return nil }
         let done = week.days.filter { mark(item, on: $0) == .done || mark(item, on: $0) == .partial }.count
         return (done, target)
+    }
+
+    /// v8 (rule B3): the part of a quota that falls on sick or holiday days (n·|E|/|P|, 0 without them).
+    func quotaShare(_ item: PlanItem) -> Double {
+        item.record.map { Scorer.quotaShare($0, data: data) } ?? 0
+    }
+
+    /// v8: the quota units that count half because of sick or holiday days (once the week is over).
+    func quotaExcusedUnits(_ item: PlanItem) -> Double {
+        item.record.map { Scorer.excusedUnits($0, data: data) } ?? 0
+    }
+
+    /// v8: "2/3× · ½ krank" – what's still missing of the quota counts half because of sick or
+    /// holiday days (up to their share); "2/3×" otherwise.
+    func quotaText(_ item: PlanItem) -> String? {
+        guard let quota = quotaProgress(item) else { return nil }
+        let base = "\(quota.done)/\(quota.target)×"
+        guard quota.done < quota.target, quotaShare(item) > 1e-9 else { return base }
+        return base + " · ½ " + excusedWord(excusedDayList)
+    }
+
+    /// v8: the week's sick and holiday days, in order.
+    var excusedDayList: [DayKey] { week.days.filter { isExcused($0) } }
+
+    /// The week hero's line: "6/10 Ziele bewertet", "Noch keine Ziele"; v8: a week of only sick or
+    /// holiday days says "Woche zählt nicht (krank/Urlaub)" (its goals drop out of `goalsTotal`).
+    var coverageLine: String {
+        if score.isExcused { return WeekScore.excusedText }
+        if score.goalsTotal == 0 { return "Noch keine Ziele" }
+        return score.coverageText
+    }
+
+    /// v8: the goal's items fell only on sick or holiday days – it doesn't count this week (the same
+    /// rule as `WeekScore.goalsExcused`); shown as "entschuldigt" instead of a gap.
+    func isGoalExcused(_ goal: AnnualGoal) -> Bool {
+        guard !data.excusedDays.isEmpty, (score.goalWeek[goal.key]?.categoriesTotal ?? 0) == 0 else { return false }
+        let keys = Set(categories(of: goal).map(\.key))
+        let planned: [DayKey] = data.items.filter { keys.contains($0.categoryKey) && $0.schedule.isScored }.flatMap { data.plannedDays($0) }
+        return !planned.isEmpty && planned.allSatisfy { data.isExcused($0) }
+    }
+
+    /// v8: "5/7", or "3/5 · 2 krank" – closed days of those that count (sick and holiday days don't).
+    var closedDaysText: String {
+        let counted: [DayKey] = week.days.filter { !isExcused($0) }
+        let closed: Int = counted.filter { isClosed($0) }.count
+        let base = "\(closed)/\(counted.count)"
+        let excused: [DayKey] = excusedDayList
+        guard !excused.isEmpty else { return base }
+        return base + " · \(excused.count) " + excusedWord(excused)
+    }
+
+    /// v8: "Krank" or "Urlaub" for an excused day (the short word, whatever the exact type says).
+    func excusedName(_ day: DayKey) -> String {
+        WeekContext.excusedName(for: dayType(day))
+    }
+
+    /// "Krank" when the type mentions it, else "Urlaub".
+    static func excusedName(for type: String) -> String {
+        type.lowercased().contains("krank") ? "Krank" : "Urlaub"
+    }
+
+    /// v8: "krank", "Urlaub" or "krank/Urlaub" for a set of excused days.
+    func excusedWord(_ days: [DayKey]) -> String {
+        let names = Set(days.map { excusedName($0) })
+        if names == ["Krank"] { return "krank" }
+        if names == ["Urlaub"] { return "Urlaub" }
+        return "krank/Urlaub"
+    }
+
+    /// v8: "2 Tage krank", "1 Tag Urlaub"; empty without excused days.
+    func excusedDaysText(_ days: [DayKey]) -> String {
+        guard !days.isEmpty else { return "" }
+        return Format.count(days.count, "Tag", "Tage") + " " + excusedWord(days)
     }
 
     func reportInput() -> WeekReportInput {
@@ -353,22 +461,28 @@ struct WeekContext {
         }
     }
 
-    /// R5: the number of blank required items (the ring's count).
+    /// R5: the number of blank required items (the ring's count); 0 on sick and holiday days (v8).
     func openCount(on day: DayKey) -> Int {
-        score.days[day]?.blank ?? 0
+        guard !isExcused(day) else { return 0 }
+        return score.days[day]?.blank ?? 0
     }
 
     /// R8: "–" without a plan or for days still to come; the score once closed ("7,5"); else "62 %".
+    /// v8: "Krank" / "Urlaub" on sick and holiday days.
     func dayStatusText(_ day: DayKey) -> String {
-        guard hasPlan, day <= today else { return "–" }
+        guard hasPlan else { return "–" }
+        if isExcused(day) { return excusedName(day) }
+        guard day <= today else { return "–" }
         if isClosed(day) { return Format.score(score.days[day]?.score) }
         return score.days[day]?.coverageText ?? "–"
     }
 
     /// R8/R66: "Mittwoch, abgeschlossen, Wertung 7,5" · "Mittwoch, 62 Prozent erfasst" · "Mittwoch, kommt noch".
+    /// v8: "Freitag, Krank, zählt nicht".
     func dayStatusAccessibility(_ day: DayKey) -> String {
         let name = day.weekday.name
         guard hasPlan else { return "\(name), kein Plan" }
+        if isExcused(day) { return "\(name), \(excusedName(day)), zählt nicht" }
         guard day <= today else { return "\(name), kommt noch" }
         if isClosed(day) {
             guard let value = score.days[day]?.score else { return "\(name), abgeschlossen" }
@@ -400,8 +514,18 @@ struct WeekContext {
         return counts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
     }
 
-    /// Sum of the weekly power-hour targets of the work measurements.
+    /// Sum of the weekly power-hour targets of the work measurements – scaled for sick and holiday
+    /// days (v8); a measurement whose days are all excused doesn't count (nil when none counts).
     var workTarget: Double? {
+        let targets: [Double] = measures.compactMap { measure in
+            guard let record = measure.record, record.isWork, record.period == .week, targetShare(record) > 1e-9 else { return nil }
+            return effectiveTarget(record)?.scaleMax
+        }
+        return targets.isEmpty ? nil : targets.reduce(0, +)
+    }
+
+    /// v8: the weekly power-hour targets as planned (before scaling for sick or holiday days).
+    var workTargetFull: Double? {
         let targets: [Double] = measures.compactMap { measure in
             guard let record = measure.record, record.isWork, record.period == .week, let target = record.target else { return nil }
             return target.scaleMax
@@ -409,13 +533,50 @@ struct WeekContext {
         return targets.isEmpty ? nil : targets.reduce(0, +)
     }
 
-    /// Weekly targets as plain numbers (widgets, Mac sidebar).
+    /// v8: "4,8 statt 8 PH – 2 Tage krank" when sick or holiday days scale the weekly PH target,
+    /// "zählt nicht – 5 Tage krank" when none of its days counts, else nil.
+    var workTargetHint: String? {
+        guard let full = workTargetFull else { return nil }
+        let work: [MeasureDefinition] = measures.filter { $0.record?.isWork == true && $0.record?.period == .week }
+        let excused: [DayKey] = excusedDayList.filter { day in work.contains { $0.days.contains(day.weekday) } }
+        let text: String = excusedDaysText(excused)
+        let base: String
+        if let scaled = workTarget {
+            guard abs(full - scaled) > 1e-9 else { return nil }
+            base = Format.number(scaled) + " statt " + Format.number(full) + " PH"
+        } else {
+            base = "zählt nicht"
+        }
+        return text.isEmpty ? base : base + " – " + text
+    }
+
+    /// Weekly targets as plain numbers (widgets, Mac sidebar), scaled for sick and holiday days (v8);
+    /// without those whose days are all excused (not scored).
     var weeklyLines: [TodaySummary.GoalLine] {
         measures.compactMap { measure in
-            guard let record = measure.record, record.period == .week, let target = record.target, target.scaleMax > 0 else { return nil }
+            guard let record = measure.record, record.period == .week, targetShare(record) > 1e-9,
+                  let target = effectiveTarget(record), target.scaleMax > 0 else { return nil }
             return TodaySummary.GoalLine(title: measure.title, value: weekValue(measure) ?? 0, target: target.scaleMax,
                                          unit: record.isWork ? "PH" : measure.unit, categoryKey: measure.categoryKey)
         }
+    }
+
+    /// v8: a measurement's target as it counts this week (`Measures.effectiveTarget`): scaled to the
+    /// days that aren't sick or holiday days; limits and times unchanged.
+    func effectiveTarget(_ record: MeasureRecord) -> Target? {
+        Measures.effectiveTarget(for: record, week: week, excused: data.excusedDays, workFree: data.workFreeDays,
+                                 workCategories: data.workCategories)
+    }
+
+    /// v8: the share of a weekly target that still counts (1 without sick or holiday days).
+    func targetShare(_ record: MeasureRecord) -> Double {
+        Measures.targetShare(for: record, week: week, excused: data.excusedDays, workFree: data.workFreeDays,
+                             workCategories: data.workCategories)
+    }
+
+    /// v8: the sick or holiday days among a measurement's days.
+    func excusedDays(of measure: MeasureDefinition) -> [DayKey] {
+        excusedDayList.filter { measure.days.contains($0.weekday) }
     }
 }
 
@@ -425,30 +586,45 @@ extension WeekContext {
     /// H1: shown instead of "fehlt" where the value comes from Apple Health on another device.
     static let healthElsewhereHint = "Wert aus Health auf dem iPhone"
 
-    /// R16: every weekly measurement with a target, in plan order.
-    var weeklyTargets: [WeeklyTarget] {
+    /// R16: every weekly measurement with a target that is scored this week, in plan order. v8:
+    /// `target` is scaled for sick and holiday days (`fullTarget` keeps the plan's), so pace,
+    /// "erreicht" and the hint agree; a measurement whose days are all sick or holiday days isn't
+    /// scored (Decision 4) – it's left out here, in "x von y erreicht", the PDF and the widgets, like
+    /// `WeekLine` does.
+    var weeklyTargets: [WeeklyTarget] { allWeeklyTargets.filter(\.isCounted) }
+
+    /// v8: the hint for a weekly measurement's target ("4,8 statt 8 PH – 2 Tage krank", "zählt nicht
+    /// – 5 Tage krank"), also for one that isn't scored this week; nil without.
+    func weeklyTargetHint(code: String) -> String? {
+        allWeeklyTargets.first { $0.measure.code == code }?.scaledHint
+    }
+
+    /// Every weekly measurement with a target, also those whose days are all excused (share 0).
+    private var allWeeklyTargets: [WeeklyTarget] {
         measures.compactMap { measure -> WeeklyTarget? in
-            guard let record = measure.record, record.period == .week, let target = record.target else { return nil }
+            guard let record = measure.record, record.period == .week, let full = record.target else { return nil }
+            let target: Target = effectiveTarget(record) ?? full
             let value = weekValue(measure) ?? 0
             let tempo: Pace = pace(for: measure)
-                ?? Pace(done: value, target: target.scaleMax, days: measure.days, week: week, today: today)
+                ?? Pace(done: value, target: target.scaleMax, days: measure.days, week: week, today: today, excused: data.excusedDays)
             let linked = items.first { $0.measureCode == measure.code && $0.schedule == .progress }
-            return WeeklyTarget(measure: measure, item: linked, value: value, target: target, pace: tempo,
-                                unit: record.isWork ? "PH" : Units.display(measure.unit))
+            var line = WeeklyTarget(measure: measure, item: linked, value: value, target: target, pace: tempo,
+                                    unit: record.isWork ? "PH" : Units.display(measure.unit), fullTarget: full)
+            line.share = targetShare(record)
+            line.excusedText = excusedDaysText(excusedDays(of: measure))
+            return line
         }
     }
 
-    /// R16: how many weekly targets are met (also PDF and report).
+    /// R16: how many weekly targets are met (also PDF and report) – against the scaled targets (v8).
     var weeklyTargetsMet: Int { weeklyTargets.filter(\.isMet).count }
 
     /// R47: the weekly measurement's pace; work measurements don't plan on work-free days.
+    /// v8: sick and holiday days are left out and the target is scaled (`Measures.weeklyPace`).
     func pace(for measure: MeasureDefinition) -> Pace? {
-        guard let record = measure.record, record.period == .week, let target = record.target else { return nil }
-        let isWorkMeasure = record.isWork || record.dayRule == .workOnly
-            || (record.dayRule == .auto && data.workCategories.contains(record.categoryKey))
-        let excluded: Set<DayKey> = isWorkMeasure ? data.workFreeDays : []
-        return Pace(done: weekValue(measure) ?? 0, target: target.scaleMax, days: measure.days, week: week, today: today,
-                    excluding: excluded)
+        guard let record = measure.record else { return nil }
+        return Measures.weeklyPace(record, done: weekValue(measure) ?? 0, week: week, today: today, excused: data.excusedDays,
+                                   workFree: data.workFreeDays, workCategories: data.workCategories)
     }
 
     /// R64: short label for how an item counts; nil for a plain fixed item.
@@ -474,8 +650,9 @@ extension WeekContext {
     }
 
     /// H1: due that day, no value – and not a value that only Health on the iPhone can give.
+    /// v8: never missing on a sick or holiday day (a value can still be entered and counts).
     func countsAsMissing(_ measure: MeasureDefinition, on day: DayKey) -> Bool {
-        applies(measure, on: day) && dayValue(measure, on: day) == nil && !isHealthElsewhere(measure)
+        !isExcused(day) && applies(measure, on: day) && dayValue(measure, on: day) == nil && !isHealthElsewhere(measure)
     }
 
     /// The mark a linked measurement suggests, whatever is recorded.

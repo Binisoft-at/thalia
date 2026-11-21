@@ -245,8 +245,10 @@ struct GlanceList: View {
     // MARK: Values
 
     /// Everything required is recorded and the day is still open: "Tag abschließen" (R50).
+    /// v8: not on a sick or holiday day – there is nothing to close.
     private var closeAction: (() -> Void)? {
-        guard context.hasPlan, day <= app.today, !context.isClosed(day), context.openCount(on: day) == 0 else { return nil }
+        guard context.hasPlan, day <= app.today, !context.isClosed(day), !context.isExcused(day),
+              context.openCount(on: day) == 0 else { return nil }
         let model: AppModel = app
         let target: DayKey = day
         return { model.sheet = .closeDay(target) }
@@ -302,6 +304,11 @@ private struct GlanceHeader: View {
         return context.score.days[day]?.score
     }
 
+    /// v8: the day type's symbol in the ring on a sick or holiday day.
+    private var excusedSymbol: String? {
+        context.isExcused(day) ? DayTypes.symbol(for: context.dayType(day)) : nil
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -312,7 +319,12 @@ private struct GlanceHeader: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                 DayNoteLabel(note: context.dayNote(day))
-                if context.isFreeDay(day) {
+                if context.isExcused(day) {
+                    // v8: sick or holiday – takes the place of the work-free hint.
+                    Label(DayTypes.excusedHint, systemImage: DayTypes.symbol(for: context.dayType(day)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if context.isFreeDay(day) {
                     Label(DayTypes.workFreeHint, systemImage: "sun.max")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -320,7 +332,7 @@ private struct GlanceHeader: View {
             }
             Spacer(minLength: 8)
             if context.hasPlan {
-                FillRing(fill: fill, score: shownScore, size: 44, lineWidth: 5)
+                FillRing(fill: fill, score: shownScore, size: 44, lineWidth: 5, excusedSymbol: excusedSymbol)
             }
         }
         .padding(.vertical, 4)
@@ -421,7 +433,9 @@ enum GlanceText {
     }
 
     /// "73 % erfasst · 11 offen" – the open count is the ring's (R5); closed: the score.
-    static func dayLine(_ overall: DayOverall?, closed: Bool, open: Int) -> String {
+    /// v8: "Krank – zählt nicht" on a sick or holiday day (`type` gives the word).
+    static func dayLine(_ overall: DayOverall?, closed: Bool, open: Int, type: String = "") -> String {
+        if overall?.isExcused == true { return excusedLine(type) }
         if closed { return "Abgeschlossen · \(Format.score(overall?.score, outOf: true))" }
         let coverage: String = overall?.coverageText ?? "0 %"
         return "\(coverage) erfasst · \(open) offen"
@@ -437,9 +451,16 @@ enum GlanceText {
         "Ausgaben \(Format.euro(today ?? 0)) heute · \(Format.euro(week ?? 0)) Woche"
     }
 
-    /// "Wertung 7,1 · 6/10 Ziele bewertet" (R16).
+    /// v8: "Krank – zählt nicht"; "Krank/Urlaub – zählt nicht" without the type.
+    static func excusedLine(_ type: String) -> String {
+        let name: String = DayTypes.isExcused(type) ? WeekContext.excusedName(for: type) : "Krank/Urlaub"
+        return "\(name) – zählt nicht"
+    }
+
+    /// "Wertung 7,1 · 6/10 Ziele bewertet" (R16); v8: "Woche zählt nicht (krank/Urlaub)".
     static func weekLine(_ score: WeekScore) -> String {
-        "Wertung \(Format.score(score.overall)) · \(score.goalsScored)/\(score.goalsTotal) Ziele bewertet"
+        if score.isExcused { return WeekScore.excusedText }
+        return "Wertung \(Format.score(score.overall)) · \(score.goalsScored)/\(score.goalsTotal) Ziele bewertet"
     }
 
     /// "Montag · Arbeitstag" (R50).
@@ -459,7 +480,9 @@ enum GlanceText {
     static func dateLine(_ context: WeekContext, day: DayKey) -> String {
         var parts: [String] = [date(day), day.week.label]
         if context.hasPlan {
-            if context.isClosed(day) {
+            if context.isExcused(day) {
+                parts.append("zählt nicht")
+            } else if context.isClosed(day) {
                 parts.append("Wertung \(Format.score(context.score.days[day]?.score))")
             } else if day <= context.today {
                 let coverage: String = context.score.days[day]?.coverageText ?? "0 %"
@@ -597,7 +620,11 @@ struct OpenToDoSection: View {
         let byCategory: [String: [PlanItem]] = Dictionary(grouping: open, by: \.categoryKey)
         let keys: [String] = context.categories.map(\.key).filter { byCategory[$0] != nil }
         Section {
-            if open.isEmpty {
+            if open.isEmpty && context.isExcused(day) {
+                // v8: nothing is due on a sick or holiday day.
+                Label("\(context.excusedName(day)) – heute ist nichts fällig.", systemImage: DayTypes.symbol(for: context.dayType(day)))
+                    .foregroundStyle(.secondary)
+            } else if open.isEmpty {
                 Label("Alles Wichtige ist erfasst.", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
                 if let onClose {
@@ -678,9 +705,12 @@ struct WeeklyOpenSection: View {
         }
     }
 
+    /// "2 von 3 diese Woche"; v8: "… · ½ krank" when sick or holiday days make the rest count half.
     private func quotaText(_ item: PlanItem) -> String {
         guard let quota = context.quotaProgress(item) else { return "" }
-        return "\(quota.done) von \(quota.target) diese Woche"
+        let base: String = "\(quota.done) von \(quota.target) diese Woche"
+        guard quota.done < quota.target, context.quotaShare(item) > 1e-9 else { return base }
+        return base + " · ½ " + context.excusedWord(context.excusedDayList)
     }
 }
 
@@ -718,8 +748,10 @@ struct YesterdayBanner: View {
         }
     }
 
+    /// v8: never for a sick or holiday day – it doesn't count, so nothing is left open.
     private func isVisible(_ context: WeekContext) -> Bool {
-        guard dismissed != yesterday.string, context.hasPlan, !context.isClosed(yesterday) else { return false }
+        guard dismissed != yesterday.string, context.hasPlan, !context.isClosed(yesterday),
+              !context.isExcused(yesterday) else { return false }
         return !context.items(on: yesterday).isEmpty
     }
 
@@ -875,7 +907,8 @@ private struct SidebarGlanceText: View {
     /// "73 % erfasst · 11 offen" – the ring's count (R5).
     private var dayLine: String {
         guard context.hasPlan else { return "Kein Plan" }
-        return GlanceText.dayLine(context.score.days[day], closed: context.isClosed(day), open: context.openCount(on: day))
+        return GlanceText.dayLine(context.score.days[day], closed: context.isClosed(day), open: context.openCount(on: day),
+                                  type: context.dayType(day))
     }
 
     /// The plan's note for today (R90).

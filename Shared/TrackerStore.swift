@@ -89,6 +89,11 @@ struct TrackerStore {
             .latest(by: \.dayKey, modified: \.modifiedAt)[key]
     }
 
+    /// v8: the day's type is "Krank" or "Urlaub" (`DayTypes.isExcused`): it doesn't count.
+    func isExcused(_ day: DayKey) -> Bool {
+        DayTypes.isExcused(planDay(day)?.dayType ?? "")
+    }
+
     func items(_ week: WeekKey) -> [PlanItem] {
         let key = week.string
         return fetch(FetchDescriptor<PlanItem>(predicate: #Predicate<PlanItem> { $0.weekKey == key && $0.deletedAt == nil }))
@@ -196,6 +201,8 @@ struct TrackerStore {
         } else {
             work = Format.powerHours(worked)
         }
+        // v8: a week that was all sick or holiday days has no score on purpose.
+        if score == nil, context.score.isExcused { return "\(week.label): \(WeekScore.excusedText) · \(work)" }
         return "\(week.label): Wertung \(Format.score(score)) · \(work)"
     }
 
@@ -275,6 +282,16 @@ struct TrackerStore {
         info.note = note
         info.modifiedAt = Date()
         save()
+        // v8: a sick or holiday day gets no evening reminder – the app plans them again.
+        NotificationCenter.default.post(name: TrackerStore.dayInfoChanged, object: nil, userInfo: ["day": day.string])
+    }
+
+    /// v8: posted after `setDayInfo` (userInfo "day": "2026-11-20"); `AppModel` plans the reminders again.
+    static let dayInfoChanged = Notification.Name("thalia.dayInfoChanged")
+
+    /// v8: only the day's type, the note stays ("Krank" from a menu).
+    func setDayType(_ day: DayKey, type: String) {
+        setDayInfo(day, type: type, note: planDay(day)?.note ?? "")
     }
 
     func updatePlan(_ week: WeekKey, title: String, details: String) {
@@ -1071,9 +1088,16 @@ struct TrackerStore {
                 keys.contains($0.dayKey) && $0.deletedAt == nil
             }))
             let powerHours = blocks.reduce(0) { $0 + $1.hours }
+            // v8: the target as it counted that week – scaled for sick and holiday days.
+            let dayInfo = fetch(FetchDescriptor<PlanDay>(predicate: #Predicate<PlanDay> { keys.contains($0.dayKey) }))
+                .latest(by: \.dayKey, modified: \.modifiedAt)
+            let excused: Set<DayKey> = DayTypes.excusedDays(shown.days) { dayInfo[$0.string]?.dayType ?? "" }
+            let free: Set<DayKey> = Set(shown.days.filter { DayTypes.isWorkFree(dayInfo[$0.string]?.dayType ?? "") })
+            // A measurement whose days were all excused has no target that week (not scored, Decision 4).
             let targets: [Double] = measures(shown).latest(by: \.code, modified: \.modifiedAt).values.compactMap { measure in
-                guard let record = measure.record, record.isWork, record.period == .week, let target = record.target else { return nil }
-                return target.scaleMax
+                guard let record = measure.record, record.isWork, record.period == .week,
+                      Measures.targetShare(for: record, week: shown, excused: excused, workFree: free) > 1e-9 else { return nil }
+                return Measures.effectiveTarget(for: record, week: shown, excused: excused, workFree: free)?.scaleMax
             }
             return WeekWorkPoint(week: shown, powerHours: powerHours, target: targets.isEmpty ? nil : targets.reduce(0, +))
         }
@@ -1120,6 +1144,19 @@ struct TrackerStore {
                 return WeekScorePoint(week: shown, score: score)
             }
             .sorted { $0.week < $1.week }
+    }
+
+    /// v8 (Decision 5): weeks from `start` through `week` with a plan but no score because every day
+    /// with something planned was a sick or holiday day – the goal charts show them as
+    /// "entschuldigt" instead of a gap (the review finds them the same way).
+    func excusedWeeks(from start: WeekKey? = nil, through week: WeekKey, today: DayKey = DayKey.today()) -> Set<WeekKey> {
+        var result: Set<WeekKey> = []
+        for plan in allPlans().filter({ $0.deletedAt == nil }).latest(by: \.weekKey, modified: \.modifiedAt).values {
+            guard let shown = plan.week, shown <= week, plan.historyScore == nil else { continue }
+            if let start, shown < start { continue }
+            if weekContext(for: shown, today: today).score.isExcused { result.insert(shown) }
+        }
+        return result
     }
 
     /// R95: the goal review from the start of the goal year through `week` (weeks with a plan only).

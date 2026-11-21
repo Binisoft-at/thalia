@@ -448,6 +448,117 @@ extension TrackerStore {
         PlanCSV.export(exportDocument(weeks: weeks))
     }
 
+    // MARK: Past weeks (v8)
+
+    /// Whether a week has at least one item (one narrow lookup).
+    private func hasPlannedItems(_ week: WeekKey) -> Bool {
+        let key = week.string
+        var descriptor = FetchDescriptor<PlanItem>(predicate: #Predicate<PlanItem> { $0.weekKey == key && $0.deletedAt == nil })
+        descriptor.fetchLimit = 1
+        let found: [PlanItem] = (try? context.fetch(descriptor)) ?? []
+        return !found.isEmpty
+    }
+
+    /// The planned week (with items) nearest to `week`, before or after it – never `week` itself.
+    /// At the same distance both ways the earlier one. Candidates come from the small week table (R84).
+    func nearestPlannedWeek(to week: WeekKey) -> WeekKey? {
+        let candidates = Set(allPlans().filter { $0.deletedAt == nil }.compactMap(\.week)).subtracting([week])
+        let origin = week.monday.ordinal
+        let ordered = candidates.sorted { a, b in
+            let left = abs(a.monday.ordinal - origin)
+            let right = abs(b.monday.ordinal - origin)
+            return left == right ? a < b : left < right
+        }
+        return ordered.first { hasPlannedItems($0) }
+    }
+
+    /// The week whose items a past week is filled in on: the week itself when it has a plan, else the
+    /// nearest planned one. Several weeks: the latest of them decides; none (weeks from the
+    /// attachments): last week.
+    func pastTemplateWeek(for weeks: [WeekKey], today: DayKey) -> WeekKey? {
+        let anchor = weeks.max() ?? today.week.adding(weeks: -1)
+        if hasPlannedItems(anchor) { return anchor }
+        return nearestPlannedWeek(to: anchor)
+    }
+
+    /// Number of items of a week (newest copy of each), for "Vorlage: KW46 · 24 Punkte".
+    func plannedItemCount(_ week: WeekKey) -> Int {
+        items(week).latest(by: \.key, modified: \.modifiedAt).count
+    }
+
+    /// Path a: `source`'s plan as the plan of `target` – items and measurements with the same ids,
+    /// without marks, values and day types (those belong to the target: Krank, Urlaub …). The target's
+    /// week row (motto, paper score) stays. Runs through the normal import, so a planned target is
+    /// archived first and comes back with Undo (R49).
+    @discardableResult
+    func copyPlan(from source: WeekKey, to target: WeekKey) -> ImportResult {
+        var document = exportDocument(weeks: [source]).repeated(from: source, to: target)
+        document.days = []
+        if let current = plan(target)?.record { document.weeks = [current] }
+        AppLog.info("Plan \(source.string) copied to \(target.string)", category: "import")
+        return apply(ImportPreview(document: document, existing: existingState()))
+    }
+
+    /// Path c: a past week's score from paper (`WeekPlan.recordedScore`, 0–10); nil removes it. A new
+    /// week before KW42 2026 gets the earlier model, like a CSV week row without flags.
+    func setPaperScore(_ score: Double?, week: WeekKey) {
+        let isNew = plan(week) == nil
+        let weekPlan = ensurePlan(week)
+        weekPlan.recordedScore = score.map { min(10, max(0, $0)) }
+        if isNew, week < WeekRecord.scoringChange { weekPlan.scoringModel = "alt" }
+        weekPlan.touch()
+        AppLog.info("Paper score set for \(week.string)", category: "import")
+        save()
+    }
+
+    /// Path b: the prompt for ChatGPT – goals, categories, the template week's items and measurements
+    /// with their ids, the CSV format. `weeks` empty: the weeks of the attached photos, PDFs or tables.
+    func pastWeekPrompt(weeks: [WeekKey], today: DayKey) -> String {
+        var templateItems: [ItemRecord] = []
+        var templateMeasures: [MeasureRecord] = []
+        if let source = pastTemplateWeek(for: weeks, today: today) {
+            templateItems = items(source).latest(by: \.key, modified: \.modifiedAt).values.compactMap(\.record)
+            templateMeasures = measures(source).latest(by: \.key, modified: \.modifiedAt).values.compactMap(\.record)
+        }
+        var goals = liveGoals().latest(by: \.key, modified: \.modifiedAt).values.map(\.record)
+        if goals.isEmpty { goals = Template.goals }
+        var categories = liveCategories().latest(by: \.key, modified: \.modifiedAt).values.map(\.record)
+        if categories.isEmpty { categories = Template.categories }
+        AppLog.info("Past-week prompt built (\(weeks.count) weeks, \(templateItems.count) items)", category: "import")
+        return PastWeekPrompt.text(weeks: weeks, items: templateItems, categories: categories, goals: goals,
+                                   measures: templateMeasures)
+    }
+
+    /// Path b: a file of past weeks, read for the preview (decision 8). Blank fields of fixed items count
+    /// as ✗ when asked (`blanksAsMissed`); weeks before this week are closed with their days – the
+    /// days the file brings and those the app already has marks or a day type for.
+    func pastPreview(_ text: String, blanksAsMissed: Bool, today: DayKey) -> ImportPreview {
+        let existing = existingState()
+        var document = PlanCSV.parse(text, knownCategories: existing.categoryTitles, knownMeasures: existing.measureCodes,
+                                     knownItems: existing.itemKeys)
+        if blanksAsMissed { document = Self.fillingPastBlanks(document, existing: existing, today: today) }
+        let closed = Self.closingKnownDays(document.closingPast(today: today), existing: existing)
+        return ImportPreview(document: closed, existing: existing)
+    }
+
+    /// `Document.closingPast` looks at the file alone. A week the import closes (the app has it open)
+    /// also closes the days the app already has a mark or a day type for, so a file with only some days
+    /// leaves no marked day open. Not counted: marks of a week the file replaces (they go to the
+    /// archive), marks the file sets itself, and the day type of a day the file has a day row for.
+    /// The logic lives in ThaliaCore (`Document.closingKnownDays(existing:)`, tested there).
+    static func closingKnownDays(_ document: PlanCSV.Document, existing: ExistingState) -> PlanCSV.Document {
+        document.closingKnownDays(existing: existing)
+    }
+
+    /// Blank fields of the past weeks the file brings items or marks for, filled with ✗ – fixed, required
+    /// items on their days, never on free or excused days (`Document.fillingBlanks`). A week without item
+    /// rows is filled on the app's plan and day types; marks the app already has are kept, unless the
+    /// file replaces the week (then they go to the archive anyway).
+    /// The logic lives in ThaliaCore (`Document.fillingPastBlanks(existing:today:)`, tested there).
+    static func fillingPastBlanks(_ document: PlanCSV.Document, existing: ExistingState, today: DayKey) -> PlanCSV.Document {
+        document.fillingPastBlanks(existing: existing, today: today)
+    }
+
     /// Imports a whole document without a preview (demo and tour data).
     /// Entries go in one by one (an import keeps one value per measurement and day).
     func seed(_ content: Demo.Content) {

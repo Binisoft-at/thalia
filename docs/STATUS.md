@@ -1,6 +1,37 @@
 # Thalia – Stand (zum Wiedereinstieg nach Kontext-Kompaktierung)
 
-Letzte Aktualisierung: 2026-11-16 · Arbeitsliste: [TASKS-v7.md](TASKS-v7.md) · Durchsicht: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+Letzte Aktualisierung: 2026-11-21 · Arbeitsliste: [TASKS-v8.md](TASKS-v8.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+
+## Stand v8 (Version 1.7.0, Tour-Version 8)
+- Drei Wünsche vom 21. Nov. 2026 aus [TASKS-v8.md](TASKS-v8.md), Pakete P1–P5 umgesetzt:
+  **Krank & Urlaub** (Tagestypen, die nicht in die Wochenwertung zählen; „n× pro Woche“ zählt den entschuldigten
+  Teil halb, Regel B3; Wochenziele skaliert, „4,8 statt 8 PH – 2 Tage krank“; ganze Woche „entschuldigt“),
+  **Vergangene Woche nachtragen** (Fenster mit „Plan übernehmen“, „Mit ChatGPT“ – viele Wochen in einer CSV,
+  Vorschau je Woche, Abschluss der importierten Wochen – und „Nur Wertung“; CSV mit Matrix-Spalten `mo…so`) und
+  **PDF-Bericht** über mehrere Wochen (Deckblatt, Übersicht je Woche, PH je Bereich, Wochenseiten, seitenweise mit
+  Fortschritt, PDFKit-Vorschau, Lesezeichen; Mac ⌥⌘P, Sichern, Drucken).
+- Lokal geprüft: 120 Core-Tests in 17 Suiten grün (Docker `swift:6.2-noble`), `swiftc -parse` sauber für App, Shared,
+  Watch, Widgets und WatchWidgets. Typprüfung und Build der SwiftUI/PDFKit-Teile laufen erst in CI am Mac – zuerst
+  ansehen: `App/Sources/RangePDF.swift`, `PDFExport.swift`, `PastImport.swift`, `ReviewView.swift`.
+- Keine CloudKit-Schemaänderung: Tagestypen bleiben Text (`PlanDay.dayType`), kein neues `@Model`-Feld.
+- Neue Dateien: `App/Sources/PastImport.swift`, `App/Sources/RangePDF.swift`, `Shared/TrackerStore+Range.swift`,
+  Core-Tests `V8Tests.swift`. Neue Fenster: `AppSheet.importPast(WeekKey?)`, `AppSheet.rangePDF`.
+- Tour 8: drei neue Karten `since: 8` (Krank & Urlaub, Vergangene Wochen, PDF-Bericht), siehe [TOUR.md](TOUR.md).
+  Erklärungen: „Wie wird gerechnet?“ endet mit „Neu in 1.7“ (drei Seiten). Demo-Daten: Freitag der aktuellen Woche
+  ist „Krank“ (nur `-Demo`, nicht die Übungsseite der Tour). Einstellungen → Hilfe nennt die drei Seiten auch einzeln.
+  CI-Screenshots zusätzlich `past-import` und `range-pdf` (iPhone und Mac).
+- Offen bzw. zu prüfen: Dateigröße langer Berichte (Bänder als einfacher Verlauf, sollte Vektor bleiben), die
+  Screenshots `past-import`/`range-pdf`, Mac-Build. Kleine Lücken: siehe „Offene Punkte v8“ unten.
+- Nächste Schritte: CI mit `[screenshots]`, dann TestFlight 1.7.0 (Build-Nr. > 53), Bini testet nach TESTING.md „v8“.
+
+### Offene Punkte v8
+- Läuft CI an einem Freitag, zeigen die Demo-Screenshots „today“, „close-day“ und „overview“ den Krank-Tag statt eines
+  normalen Tags (Demo-Freitag ist immer „Krank“, so verlangt in Entscheidung 11).
+- Erledigt beim Lückenschließen: Import (und Rückgängig, Archiv-Wiederherstellen) plant die Abend-Erinnerungen neu;
+  `closingKnownDays`/`fillingPastBlanks` liegen jetzt in ThaliaCore (`PlanCSV.Document`) mit Repo-Tests; ein Wochenziel,
+  dessen Tage alle krank/Urlaub sind, wird nicht bewertet (fehlt in „x von y erreicht“, PDF, Widgets; Hinweis „zählt
+  nicht“); Wochen-Kopf und Mac-Seitenleiste zeigen „Woche zählt nicht (krank/Urlaub)“; die Ziel-Diagramme zeigen eine
+  ganz entschuldigte Woche als graue Säule.
 
 ## Stand v7 (Version 1.6.0, Tour-Version 7)
 - Alle neun Pakete P1–P9 aus [TASKS-v7.md](TASKS-v7.md) sind umgesetzt (R1–R97 und H1). Lokal geprüft: Core-Tests grün,
@@ -51,9 +82,9 @@ Letzte Aktualisierung: 2026-11-16 · Arbeitsliste: [TASKS-v7.md](TASKS-v7.md) ·
 - Offene A/B-Fragen aus v1 (unbeantwortet): Sprache (A Deutsch), Health-Werte nur Gerät (A), Papier-Historie importieren (A), Erinnerungszeiten (A 08:15/21:45/So 17:00).
 
 ## Architektur (Kurz)
-- `Packages/ThaliaCore` (Linux-getestet): Calendar (DayKey/WeekKey/DayMask/GoalPeriod), Vocabulary (Mark, ItemSchedule, Target, Units, MeasureSource, WorkKind, DayTypes, NoteKind, ReflectionQuestion), Records, Scoring (Scorer, Pace), Measures (+WorkTotals), PlanCSV, ImportPreview, Template, Demo, Reports (WeekReport, PlanPrompt), ThaliaTour (+TodaySummary, ReminderSettings), Format.
-- `Shared/`: Models (SwiftData, Schlüssel statt Relationen, HealthValue device-only), TrackerStore(+Import), WeekContext/WeekReader, Persistence, DemoData, WidgetBridge, WorkActivity.
-- `App/Sources`: AppModel, RootView, TodayView, WeekView, GoalsView, ReviewView, CloseDayView, CloseWeekView, Editors, ImportView, SettingsView, Explainers, Services (Reminder, Health, Live Activity), Intents, TourView, Components, AppPlatform, ThaliaTips, ThaliaApp.
+- `Packages/ThaliaCore` (Linux-getestet): Calendar (DayKey/WeekKey/DayMask/GoalPeriod), Vocabulary (Mark, ItemSchedule, Target, Units, MeasureSource, WorkKind, DayTypes, NoteKind, ReflectionQuestion), Records, Scoring (Scorer, Pace), Measures (+WorkTotals), PlanCSV, ImportPreview, Template, Demo, Reports (WeekReport, PlanPrompt, PastWeekPrompt, WeekLine/RangeReport), ThaliaTour (+TodaySummary, ReminderSettings), Format.
+- `Shared/`: Models (SwiftData, Schlüssel statt Relationen, HealthValue device-only), TrackerStore(+Import, +Range), WeekContext/WeekReader, Persistence, DemoData, WidgetBridge, WorkActivity.
+- `App/Sources`: AppModel, RootView, TodayView, WeekView, GoalsView, ReviewView, CloseDayView, CloseWeekView, Editors, ImportView, PastImport, PDFExport, RangePDF, SettingsView, Explainers, Services (Reminder, Health, Live Activity), Intents, TourView, Components, AppPlatform, ThaliaTips, ThaliaApp.
 - `Watch/Sources`, `Widgets/Sources`. Screens für CI-Screenshots: `Config/ci.env`.
 
 ## v2 – Fortschritt

@@ -142,6 +142,12 @@ struct FocusContent: View {
                          caption: heroCaption, progress: heroProgress(totals), facts: facts(totals, areas: areas))
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+                if let hint = context.workTargetHint {
+                    // v8: sick and holiday days scale the weekly PH target.
+                    Label("Ziel \(hint)", systemImage: "calendar.badge.minus")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             if !bars.isEmpty {
                 Section("Mo–So") {
@@ -366,8 +372,9 @@ struct FocusContent: View {
         return Format.powerHours(total / Double(workdays))
     }
 
+    /// v8: sick and holiday days aren't work days here either.
     private func isPassedWorkday(_ day: DayKey) -> Bool {
-        day <= context.today && !context.isFreeDay(day) && day.weekday.rawValue <= Weekday.friday.rawValue
+        day <= context.today && !context.isFreeDay(day) && !context.isExcused(day) && day.weekday.rawValue <= Weekday.friday.rawValue
     }
 
     /// "Ziel erreicht in 3 von 8 Wochen" (R88), nil without any weekly PH target.
@@ -415,6 +422,12 @@ private struct AreaRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let hint = scaledHint {
+                    // v8: "4,8 statt 8 PH – 2 Tage krank".
+                    Text("Ziel \(hint)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if !topics.isEmpty {
                     Text(topics)
                         .font(.caption)
@@ -430,6 +443,11 @@ private struct AreaRow: View {
     }
 
     private var pace: Pace? { context.pace(for: measure) }
+
+    /// v8: the scaled target's hint, nil without sick or holiday days.
+    private var scaledHint: String? {
+        context.weeklyTargetHint(code: measure.code)
+    }
 
     private var status: String {
         guard let pace else { return Format.powerHours(context.weekValue(measure) ?? 0) }

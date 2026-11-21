@@ -14,7 +14,18 @@ struct ReviewView: View {
             ReviewContent(current: context)
         }
         .navigationTitle("Rückblick")
-        .toolbar { MainToolbar() }
+        .toolbar {
+            // v8: several weeks as one PDF.
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    app.sheet = .rangePDF
+                } label: {
+                    Label("PDF-Bericht", systemImage: "doc.richtext")
+                }
+                .help("Mehrere Wochen als PDF (⌥⌘P)")
+            }
+            MainToolbar()
+        }
     }
 }
 
@@ -24,6 +35,8 @@ struct ReviewContent: View {
     @Query(filter: #Predicate<WeekPlan> { $0.deletedAt == nil }, sort: \WeekPlan.weekKey, order: .reverse) private var plans: [WeekPlan]
     /// Observed so "Geparkte Ideen" follows new ideas ("idee" = `NoteKind.idea.rawValue`) (R95).
     @Query(filter: #Predicate<DayNote> { $0.kindRaw == "idee" && $0.deletedAt == nil }) private var ideaNotes: [DayNote]
+    /// v8: "PDF-Bericht ab dieser Woche" from a row's context menu.
+    @State private var rangeStart: RangeStart?
 
     private var weeks: [WeekPlan] {
         Array(plans.latest(by: \.weekKey, modified: \.modifiedAt).values).sorted { $0.weekKey > $1.weekKey }
@@ -37,28 +50,58 @@ struct ReviewContent: View {
             guard let week = plan.week, week < current.week, !plan.isClosed, plan.recordedScore == nil else { continue }
             let context: WeekContext = app.store.weekContext(for: week, today: app.today)
             guard context.hasPlan else { continue }
-            result[week.string] = UnclosedWeek(score: context.score.overall)
+            result[week.string] = UnclosedWeek(score: context.score.overall, isExcused: context.score.isExcused)
         }
         return result
     }
 
-    private func chartPoints(_ open: [String: UnclosedWeek]) -> [ScorePoint] {
+    /// v8: closed weeks without a score because every day with something planned was a sick or
+    /// holiday day – shown as "entschuldigt", not as a gap.
+    private var excusedClosed: Set<String> {
+        var result: Set<String> = []
+        for plan in weeks {
+            guard let week = plan.week, week < current.week, plan.isClosed, plan.historyScore == nil else { continue }
+            if app.store.weekContext(for: week, today: app.today).score.isExcused { result.insert(week.string) }
+        }
+        return result
+    }
+
+    private func chartPoints(_ open: [String: UnclosedWeek], excused: Set<String>) -> [ScorePoint] {
         var result: [ScorePoint] = weeks.compactMap { plan -> ScorePoint? in
             guard let week = plan.week, week != current.week else { return nil }
             if let info = open[week.string] {
+                if info.isExcused { return ScorePoint(week: week, score: 10, isExcused: true) }
                 guard let score = info.score else { return nil }
                 return ScorePoint(week: week, score: score, isUnclosed: true)
             }
+            if excused.contains(week.string) { return ScorePoint(week: week, score: 10, isExcused: true) }
             guard let score = plan.historyScore else { return nil }
             return ScorePoint(week: week, score: score, isOld: plan.isOldScoring)
         }
-        if let live = current.score.overall { result.append(ScorePoint(week: current.week, score: live, isLive: true)) }
+        if let live = current.score.overall {
+            result.append(ScorePoint(week: current.week, score: live, isLive: true))
+        } else if current.score.isExcused {
+            result.append(ScorePoint(week: current.week, score: 10, isExcused: true))
+        }
         return Array(result.sorted { $0.week < $1.week }.suffix(16))
+    }
+
+    /// The number above a bar; "–" over a sick/holiday week (its bar is a pale full column).
+    private static func barLabel(_ point: ScorePoint) -> String {
+        point.isExcused ? "–" : Format.score(point.score)
+    }
+
+    /// v8: the week was all sick or holiday days.
+    private func isExcused(_ week: WeekKey, open: UnclosedWeek?, excused: Set<String>) -> Bool {
+        if week == current.week { return current.score.isExcused }
+        if let open { return open.isExcused }
+        return excused.contains(week.string)
     }
 
     var body: some View {
         let open: [String: UnclosedWeek] = unclosed
-        let points: [ScorePoint] = chartPoints(open)
+        let excused: Set<String> = excusedClosed
+        let points: [ScorePoint] = chartPoints(open, excused: excused)
         List {
             if points.count > 0 {
                 Section {
@@ -66,7 +109,7 @@ struct ReviewContent: View {
                         BarMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
                             .foregroundStyle(by: .value("Modell", point.series))
                             .annotation(position: .top) {
-                                Text(Format.score(point.score))
+                                Text(ReviewContent.barLabel(point))
                                     .font(.system(size: 8, design: .rounded))
                                     .foregroundStyle(.secondary)
                             }
@@ -76,6 +119,7 @@ struct ReviewContent: View {
                         "gleich gewichtet": Brand.accent,
                         "laufend": Brand.accent.opacity(0.45),
                         "nicht abgeschlossen": Color.orange,
+                        "entschuldigt": Color.secondary.opacity(0.16), // WeekScore.excusedLabel
                     ])
                     .chartYScale(domain: 0...10)
                     .chartXAxis {
@@ -86,7 +130,7 @@ struct ReviewContent: View {
                 } header: {
                     SectionHeading(title: "Wochenwertungen", symbol: "chart.bar")
                 } footer: {
-                    Text("Grau: vor KW42 (anderes Bewertungsmodell). Orange: nicht abgeschlossen – laufende Wertung. Eine steigende Wertung heißt nicht, dass alles besser wurde – Arbeit, Reisen und Erholung waren jede Woche anders.")
+                    Text("Grau: vor KW42 (anderes Bewertungsmodell). Orange: nicht abgeschlossen – laufende Wertung. Hellgrau: entschuldigt (krank/Urlaub) – die Woche zählt nicht. Eine steigende Wertung heißt nicht, dass alles besser wurde – Arbeit, Reisen und Erholung waren jede Woche anders.")
                 }
             }
 
@@ -113,18 +157,25 @@ struct ReviewContent: View {
 
             Section("Wochen") {
                 if weeks.isEmpty {
-                    Text("Noch keine Wochen. Importiere einen Wochenplan – oder deine bisherigen Wochenwertungen (type week mit value).")
+                    Text("Noch keine Wochen. Importiere einen Wochenplan – oder trage vergangene Wochen nach: abgehakt, mit Krank/Urlaub-Tagen oder nur mit der Wochenwertung.")
                         .foregroundStyle(.secondary)
+                    // v8: past weeks from paper, photos or tables.
+                    Button {
+                        app.sheet = .importPast(nil)
+                    } label: {
+                        Label("Vergangene Woche nachtragen…", systemImage: "clock.arrow.circlepath")
+                    }
                 }
                 ForEach(weeks) { plan in
                     if let week = plan.week {
                         let info: UnclosedWeek? = open[week.string]
+                        let weekExcused: Bool = isExcused(week, open: info, excused: excused)
                         Button {
                             app.sheet = .report(week)
                         } label: {
                             WeekHistoryRow(plan: plan, week: week,
                                            liveScore: liveScore(week, unclosed: info),
-                                           isCurrent: week == current.week, isUnclosed: info != nil)
+                                           isCurrent: week == current.week, isUnclosed: info != nil, isExcused: weekExcused)
                         }
                         .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
@@ -147,10 +198,18 @@ struct ReviewContent: View {
                                 app.sidebar = .week
                             }
                             Button("Bericht", systemImage: "doc.text") { app.sheet = .report(week) }
+                            Button("PDF-Bericht ab dieser Woche", systemImage: "doc.richtext") {
+                                rangeStart = RangeStart(week: week)
+                            }
                         }
                     }
                 }
             }
+        }
+        .sheet(item: $rangeStart) { start in
+            RangePDFSheet(from: start.week)
+                .environment(app)
+                .toastHost(app)
         }
     }
 
@@ -166,9 +225,17 @@ struct ReviewContent: View {
     }
 }
 
+/// v8: the first week of a "PDF-Bericht ab dieser Woche".
+private struct RangeStart: Identifiable {
+    let week: WeekKey
+    var id: String { week.string }
+}
+
 /// A past week with a plan that was never closed: its running score (R70).
 struct UnclosedWeek {
     let score: Double?
+    /// v8: every day with something planned was a sick or holiday day – no score on purpose.
+    var isExcused = false
 }
 
 struct WeekHistoryRow: View {
@@ -178,6 +245,8 @@ struct WeekHistoryRow: View {
     let isCurrent: Bool
     /// R70: a past week with a plan that was never closed – orange with "nicht abgeschlossen".
     var isUnclosed = false
+    /// v8: the week was all sick or holiday days – "entschuldigt" instead of a missing score.
+    var isExcused = false
 
     private var ringScore: Double? { liveScore ?? plan.historyScore }
 
@@ -203,6 +272,14 @@ struct WeekHistoryRow: View {
                     if plan.isOldScoring {
                         Text("vor KW42").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                             .padding(.horizontal, 5).background(Color.secondary.opacity(0.12), in: .capsule)
+                    }
+                    if isExcused {
+                        Label(WeekScore.excusedLabel, systemImage: "cross.case")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .background(Color.secondary.opacity(0.12), in: .capsule)
+                            .accessibilityLabel(WeekScore.excusedText)
                     }
                 }
                 Text(plan.title.isEmpty ? week.rangeLabel : "\(week.rangeLabel) · \(plan.title)")
@@ -233,6 +310,8 @@ struct ReportView: View {
     @State private var copied = false
     @State private var sharing: ShareRequest?
     @State private var showsPDF = false
+    /// v8: "Mehrere Wochen als PDF…" from the share menu.
+    @State private var showsRangePDF = false
 
     var body: some View {
         NavigationStack {
@@ -251,6 +330,11 @@ struct ReportView: View {
                     SheetCloseButton { dismiss() }
                 }
             }
+        }
+        .sheet(isPresented: $showsRangePDF) {
+            RangePDFSheet()
+                .environment(app)
+                .toastHost(app)
         }
         .thaliaSheetFrame(width: 620, height: 640)
     }
@@ -290,6 +374,11 @@ struct ReportView: View {
                         showsPDF = true
                     } label: {
                         Label("Woche als PDF", systemImage: "doc.richtext")
+                    }
+                    Button {
+                        showsRangePDF = true
+                    } label: {
+                        Label("Mehrere Wochen als PDF…", systemImage: "rectangle.stack")
                     }
                     Button {
                         sharing = ShareRequest(content: .week(context))

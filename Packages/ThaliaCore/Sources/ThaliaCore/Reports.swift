@@ -50,17 +50,26 @@ public struct WeekReportInput: Sendable {
         for score in overrides { overridesByKey[WeekData.overrideKey(score.categoryKey, score.day)] = score.score }
         var progress: [String: Double] = [:]
         var worked: [String: Set<DayKey>] = [:]
+        let free = workFreeDays
+        let excused = excusedDays
+        let workCategories = WeekData.workCategories(items: items.filter { $0.week == week.week }, categories: categories)
         for item in items {
-            if let ratio = Measures.progressRatio(for: item, measures: measures, days: week.week.days, entries: entries, work: work) {
+            if let ratio = Measures.progressRatio(for: item, measures: measures, days: week.week.days, entries: entries, work: work,
+                                                  excused: excused, workFree: free, workCategories: workCategories) {
                 progress[item.code] = ratio
             }
             worked[item.code] = Measures.workedDays(for: item, measures: measures, days: week.week.days, entries: entries, work: work)
         }
-        let free = Set(days.filter { DayTypes.isWorkFree($0.dayType) }.map(\.day))
         return WeekData(week: week.week, goals: goals, categories: categories, items: items, marks: marksByKey,
                         overrides: overridesByKey, isComplete: Scorer.isComplete(week: week.week, today: today, closed: isClosed),
-                        progress: progress, worked: worked, workFreeDays: free)
+                        progress: progress, worked: worked, workFreeDays: free, excusedDays: excused)
     }
+
+    /// Days without work (Familientag, Erholungstag, Urlaub …).
+    public var workFreeDays: Set<DayKey> { Set(days.filter { DayTypes.isWorkFree($0.dayType) }.map(\.day)) }
+
+    /// Sick and holiday days (v8).
+    public var excusedDays: Set<DayKey> { Set(days.filter { DayTypes.isExcused($0.dayType) }.map(\.day)) }
 }
 
 public enum WeekReport {
@@ -76,10 +85,17 @@ public enum WeekReport {
         out.append("# Wochenbericht \(week.longLabel) (\(week.rangeLabel))")
         if !input.week.title.isEmpty { out.append("Motto: \(input.week.title)") }
         let status = input.isClosed ? "Woche abgeschlossen" : "Woche noch offen (Stand \(input.today.shortLabel))"
-        if let overall = score.overall {
+        if score.isExcused {
+            out.append("**\(WeekScore.excusedText)** · \(status)")
+        } else if let overall = score.overall {
             out.append("**Wochenwertung: \(Format.score(overall))/10** · \(score.coverageText) · gleich gewichtete Jahresziele (je 10 %) · \(status)")
         } else {
             out.append("Noch keine Wertung (Kategorien nicht vollständig ausgefüllt) · \(status)")
+        }
+        let excusedDays = week.days.filter(score.excusedDays.contains)
+        if !excusedDays.isEmpty {
+            let list = excusedDays.map { day in "\(day.weekday.short) \(input.days.first { $0.day == day }?.dayType ?? "")" }
+            out.append("Krank/Urlaub: \(list.joined(separator: ", ")) – diese Tage zählen nicht; was deshalb von einem Wochenziel fehlt, zählt halb.")
         }
         out.append("Hinweis: Die Wertung misst Verhalten, nicht Ergebnisse. Ein Jahresziel bekommt nur eine Wertung, wenn alle seine Kategorien ausgefüllt sind.")
         out.append("")
@@ -103,7 +119,8 @@ public enum WeekReport {
             let info = input.days.first { $0.day == day }
             let overall = score.days[day]
             let journal = journalSymbol(input, data: data, item: journalItem, day: day)
-            out.append("| \(day.shortLabel) | \(info?.dayType ?? "") | \(Format.score(overall?.score, outOf: false)) | \(overall?.coverageText ?? "–") | \(input.closedDays.contains(day) ? "✓" : "–") | \(journal) | \(info?.note ?? "") |")
+            let dayScore = data.isExcused(day) ? "zählt nicht" : Format.score(overall?.score, outOf: false)
+            out.append("| \(day.shortLabel) | \(info?.dayType ?? "") | \(dayScore) | \(overall?.coverageText ?? "–") | \(input.closedDays.contains(day) ? "✓" : "–") | \(journal) | \(info?.note ?? "") |")
         }
         out.append("")
 
@@ -140,7 +157,18 @@ public enum WeekReport {
                 let recordedDays = week.days.filter { Measures.dayValue(measure, on: $0, entries: input.entries, work: input.work) != nil }
                 if measure.period == .week || measure.aggregation == .sum && measure.target == nil {
                     line += "\(shown) in der Woche"
-                    if let target = measure.target, measure.period == .week { line += " (Ziel \(target.label) – \(target.isMet(value) ? "erreicht" : "nicht erreicht"))" }
+                    if let target = measure.target, measure.period == .week {
+                        let share = Measures.targetShare(for: measure, week: week, excused: data.excusedDays, workFree: data.workFreeDays,
+                                                         workCategories: data.workCategories)
+                        if share <= 1e-9 {
+                            // v8: every day of the measurement was a sick or holiday day – not scored.
+                            line += " (Ziel \(target.label) – nicht bewertet, alle Tage Krank/Urlaub)"
+                        } else {
+                            let effective = Measures.effectiveTarget(target, share: share)
+                            let scaled = effective == target ? "" : " anteilig wegen Krank/Urlaub"
+                            line += " (Ziel \(effective.label)\(scaled) – \(effective.isMet(value) ? "erreicht" : "nicht erreicht"))"
+                        }
+                    }
                 } else {
                     let average = measure.aggregation == .sum ? value / Double(max(1, recordedDays.count)) : value
                     line += "Ø \(Format.measure(average, unit: measure.unit))"
@@ -231,7 +259,8 @@ public enum WeekReport {
                     }
                     continue
                 }
-                let missed = input.marks.filter { $0.itemCode == item.code && $0.mark == .missed }.sorted { $0.day < $1.day }
+                let missed = input.marks.filter { $0.itemCode == item.code && $0.mark == .missed && !data.isExcused($0.day) }
+                    .sorted { $0.day < $1.day }
                 if !missed.isEmpty {
                     let notes = missed.map(\.note).filter { !$0.isEmpty }
                     var text = "\(item.title) ✗ \(missed.map(\.day.weekday.short).joined(separator: ", "))"
@@ -241,7 +270,10 @@ public enum WeekReport {
                 }
                 if let target = item.schedule.weeklyTarget, data.isComplete {
                     let used = input.week.week.days.filter { data.mark(item, on: $0)?.counts == true }.count
-                    if used < target { parts.append("\(item.title) \(used) von \(target)/Woche") }
+                    let excused = Scorer.excusedUnits(item, data: data)
+                    let note = excused > 0 ? " (\(Format.number(excused, decimals: 2)) wegen Krank/Urlaub halb gezählt)" : ""
+                    let available = data.plannedDays(item).contains { !data.isExcused($0) }
+                    if used < target, available || data.excusedDays.isEmpty { parts.append("\(item.title) \(used) von \(target)/Woche\(note)") }
                 }
             }
             if !parts.isEmpty { result.append("\(category.label): \(parts.joined(separator: " · "))") }
@@ -313,7 +345,8 @@ public struct PeriodReport: Sendable {
         var missedCounts: [String: (categoryKey: String, count: Int)] = [:]
         for input in sorted {
             let items = Dictionary(input.items.map { ($0.code, $0) }, uniquingKeysWith: { first, _ in first })
-            for mark in input.marks where mark.mark == .missed {
+            let excused = input.excusedDays
+            for mark in input.marks where mark.mark == .missed && !excused.contains(mark.day) {
                 guard let item = items[mark.itemCode] else { continue }
                 let current = missedCounts[item.title]?.count ?? 0
                 missedCounts[item.title] = (categoryKey: item.categoryKey, count: current + 1)
@@ -447,6 +480,7 @@ public enum PlanPrompt {
             "- **Jedes tagesübergreifende Ziel** (8 PH stammloop, 5× Dehnen-Minuten, 100 Seiten, 3 Kontakte …) bekommt immer zwei verknüpfte Zeilen: einen measure mit period woche und target (die Zahl, die ich eintrage oder die aus den Power-Hours kommt) und einen item mit schedule fortschritt und link auf genau diesen measure („An stammloop gearbeitet“). Den Fortschrittspunkt hake ich nicht ab: Thalia leitet ihn aus dem Messwert ab (Tag mit Wert = gearbeitet) und bewertet am Ende – oder sobald das Ziel erreicht ist – rückwirkend nach dem Wochenergebnis. So zeigt die App für jedes Wochenziel einen Fortschrittsbalken mit „heute +x“.",
             "- Gewichtung: Was für meine Ziele wirklich zählt, ist wichtig (Standard). Kleinkram, Journal-Details, Makros und Nice-to-have bekommen in flags „nebensache“: das zählt nur, wenn ich es ausfülle, und die App zeigt es beim schnellen Check-in eingeklappt. Lieber wenige wichtige Punkte als viele gleich laute.",
             "- Freie Tage: Was nur an Arbeitstagen Sinn ergibt (Fokusarbeit, Business, Lernblöcke fürs Geschäft), bekommt flags „arbeit“; an Familien-, Erholungs- und freien Tagen zählt es dann nicht. Was auch an solchen Tagen geht (Mentales, Familie, Hobby, Lesen, Morgenroutine, Dehnen …), bekommt „frei“ oder bleibt ohne Angabe.",
+            "- Krank und Urlaub: Tage mit dem Tagestyp „Krank“ oder „Urlaub“ zählen nicht in die Wochenwertung. Wochenziele werden für diese Tage anteilig gekürzt, was deshalb fehlt, zählt halb. Den Plan dafür nicht umbauen.",
             "- Aktuelle, konkrete Angaben gehen alten, kopierten Sätzen vor. Widersprüche offen auflösen; Annahmen in die description der week-Zeile.",
             "- Schlaf, Familie und geplante Erholung sind keine Reservezeit für Arbeit. Null Arbeit an einem geplanten freien Tag ist richtig – diese Tage bekommen keine Arbeitspunkte.",
             "- Höchstens zwei aktive Hauptprojekte: stammloop und HAEB.",
@@ -465,7 +499,7 @@ public enum PlanPrompt {
         out.append("| type | id | parent | title | description |")
         out.append("|---|---|---|---|---|")
         out.append("| week | \(week.string) | | Wochenmotto | Kontext, Prioritäten, Ausnahmen, Annahmen |")
-        out.append("| day | Datum, z. B. \(week.monday.string) | | Tagestyp: Arbeitstag, Reisetag, Familientag, Erholungstag, Frei, Prüfungstag … | Besonderheit, z. B. „Arbeit endet 15:00“ |")
+        out.append("| day | Datum, z. B. \(week.monday.string) | | Tagestyp: Arbeitstag, Reisetag, Familientag, Erholungstag, Frei, Krank, Urlaub, Prüfungstag … | Besonderheit, z. B. „Arbeit endet 15:00“ |")
         out.append("| measure | stabile id, z. B. aufschlaege | Kategorie-id | Name | Hinweis |")
         out.append("| item | <Kategorie>-<Nr>, z. B. 1.1-01 | Kategorie-id | kurzer Titel als Ja/Nein | was als erledigt zählt |")
         out.append("| goal | 1 … 10 | | Jahresziel | Absicht |")
@@ -567,5 +601,340 @@ public enum PlanPrompt {
                        details: "Persönliche Regel: verletzt → Schlaf heute 0.", knockout: true),
         ]
         return PlanCSV.export(doc)
+    }
+}
+
+/// The prompt for bringing past weeks in from another tracker (v8): photos, PDFs or tables of one or
+/// many weeks go in, one Thalia CSV with a block per week (given item ids, one mark per day) comes out.
+public enum PastWeekPrompt {
+    /// The week id in the template when the weeks come from the attachments.
+    public static let weekPlaceholder = "JJJJ-Wnn"
+
+    /// - Parameters:
+    ///   - weeks: the weeks to bring in; empty = the weeks of the attached photos, PDFs or tables
+    ///     (KW and dates are read from there).
+    ///   - items: the plan to fill in (usually the nearest planned week's items) – the template for every week.
+    ///   - measures: the measurements whose values may come along (entry and work rows).
+    public static func text(weeks: [WeekKey], items: [ItemRecord], categories: [CategoryRecord], goals: [GoalRecord],
+                            measures: [MeasureRecord]) -> String {
+        let sorted = Array(Set(weeks)).sorted()
+        var out: [String] = []
+        out.append(contentsOf: intro(sorted))
+        out.append("")
+        out.append("## Regeln")
+        out.append(contentsOf: rules(sorted))
+        out.append("")
+        out.append("## Ausgabe")
+        out.append("Antworte mit genau einem ```csv-Codeblock für alle Wochen. Die erste Zeile ist exakt:")
+        out.append(PlanCSV.matrixHeader)
+        out.append("Komma als Trennzeichen. Werte mit Komma, Anführungszeichen oder Zeilenumbruch in \"doppelte Anführungszeichen\". Leere Spalten leer lassen. Zahlen mit Dezimalpunkt (2.5). Unter dem Codeblock höchstens fünf Zeilen mit Annahmen, fehlenden Wochen und Punkten, die nicht in der Vorlage stehen.")
+        out.append("")
+        out.append(templateHeading(sorted))
+        out.append("```csv")
+        out.append(template(week: sorted.first, items: items, measures: measures).trimmingCharacters(in: .newlines))
+        out.append("```")
+        out.append("")
+        let sortedGoals = goals.sortedByNumber()
+        if !sortedGoals.isEmpty {
+            out.append("## Meine Struktur")
+            let sortedCategories = categories.sortedByKey()
+            for goal in sortedGoals {
+                let list = sortedCategories.filter { $0.goalKey == goal.key }.map { "\($0.key) \($0.title)" }.joined(separator: " · ")
+                out.append("- \(goal.label): \(list)")
+            }
+            out.append("")
+        }
+        if sorted.count == 1, let week = sorted.first {
+            out.append("## Meine Unterlagen für \(week.label):")
+        } else {
+            out.append("## Meine Unterlagen:")
+        }
+        out.append("")
+        return out.joined(separator: "\n")
+    }
+
+    static func intro(_ weeks: [WeekKey]) -> [String] {
+        let app = "aus meinem alten Tracker in meine Tracking-App „Thalia“ zu übertragen."
+        guard let first = weeks.first else {
+            return ["Du hilfst mir, vergangene Wochen \(app) Ich lege Fotos, PDFs oder Tabellen bei – eine oder viele Wochen. KW und Datum jeder Woche liest du dort ab."]
+        }
+        if weeks.count == 1 {
+            return ["Du hilfst mir, eine vergangene Woche – \(first.longLabel) (\(first.rangeLabel)) – \(app) Ich lege Fotos, PDFs oder Tabellen dazu bei."]
+        }
+        return ["Du hilfst mir, \(weeks.count) vergangene Wochen \(app) Ich lege Fotos, PDFs oder Tabellen dazu bei. Es geht genau um diese Wochen:"]
+            + weeks.map { "- \($0.longLabel) (\($0.rangeLabel)): week-id \($0.string)" }
+    }
+
+    static func rules(_ weeks: [WeekKey]) -> [String] {
+        var lines = [
+            "- Übertrage nur, was in den Unterlagen steht. Leere Felder bleiben leer: keine Markierung für ein leeres Feld, nichts erfinden, nichts schätzen.",
+            "- Eine CSV mit einem Block je Woche, die älteste zuerst: eine week-Zeile, sieben day-Zeilen (Mo … So), die measure-Zeilen, dann die item-Zeilen. Alle Zeilen eines Blocks gehören zur week-Zeile darüber.",
+        ]
+        if weeks.isEmpty {
+            lines.append("- Woche erkennen: id der week-Zeile = Jahr und KW, z. B. 2026-W45 (Woche von Montag bis Sonntag). Steht dort nur ein Datum, id leer lassen und ein Datum dieser Woche in date schreiben (z. B. 2026-11-02). Wochen, die du nicht sicher zuordnen kannst, nenne unter dem Codeblock, statt zu raten.")
+        } else if weeks.count == 1 {
+            lines.append("- Nur diese eine Woche übertragen. Fehlt sie in den Unterlagen, schreib keinen Block und sag es unter dem Codeblock.")
+        } else {
+            lines.append("- Nur die Wochen oben übertragen, mit ihrer week-id. Fehlt eine davon in den Unterlagen, lass ihren Block weg und nenne sie unter dem Codeblock.")
+        }
+        lines.append(contentsOf: [
+            "- Markierungen in den Spalten mo, di, mi, do, fr, sa, so der item-Zeilen: ✓ = erledigt · ½ = teilweise · ✗ = nicht erledigt (auch X) · – = entfällt (auch N/A).",
+            "- Verwende in jedem Block genau die item-Zeilen der Vorlage: ids, Titel, Tage und schedule unverändert lassen, nur mo bis so ausfüllen. Punkte aus meinen Unterlagen, die in der Vorlage fehlen, nenne unter dem Codeblock, statt sie zu erfinden.",
+            "- Fortschrittspunkte (schedule fortschritt) nicht abhaken: sie folgen aus dem Messwert. Zahlen als entry-Zeilen (id = Messwert-id, date, value), Power-Hours als work-Zeilen (parent = Kategorie, date, value = PH).",
+            "- day-Zeilen: id = Wochentag (Mo … So) oder Datum, title = Tagestyp, wenn er bekannt ist (Arbeitstag, Frei, Krank, Urlaub …), description = Besonderheit. Krank- und Urlaubstage zählen nicht in die Wochenwertung. Unbekanntes leer lassen.",
+            "- Ist von einer Woche nur die Gesamtwertung bekannt (z. B. 7.5), schreib für sie nur die week-Zeile mit dieser Zahl in value – ohne day- und item-Zeilen.",
+            "- Alles auf Deutsch mit richtigen Umlauten.",
+        ])
+        return lines
+    }
+
+    static func templateHeading(_ weeks: [WeekKey]) -> String {
+        guard let first = weeks.first else {
+            return "## Vorlage: ein Block (für jede Woche wiederholen, \(weekPlaceholder) durch die Woche ersetzen)"
+        }
+        if weeks.count == 1 { return "## Vorlage für \(first.label) (ausfüllen)" }
+        return "## Vorlage: Block für \(first.label) (für jede Woche wiederholen, nur die id der week-Zeile ändern)"
+    }
+
+    /// The template to fill in: week row, seven day rows (by weekday, so the block fits every week),
+    /// the measurements, the items with empty weekday columns – written by the real column list so it
+    /// never drifts from the format. `week` nil: the placeholder id.
+    static func template(week: WeekKey?, items: [ItemRecord], measures: [MeasureRecord]) -> String {
+        let columns = PlanCSV.columns + PlanCSV.matrixColumns
+        var table: [[String]] = [columns]
+        func row(_ values: [String: String]) { table.append(columns.map { values[$0] ?? "" }) }
+        row(["type": "week", "id": week?.string ?? weekPlaceholder])
+        for weekday in Weekday.allCases { row(["type": "day", "id": weekday.short]) }
+        for measure in measures.sorted(by: { ($0.position, $0.code) < ($1.position, $1.code) }) {
+            row(["type": "measure", "id": measure.code, "parent": measure.categoryKey, "title": measure.title,
+                 "days": measure.days == .everyDay ? "" : measure.days.csv, "unit": measure.unit, "target": measure.target?.raw ?? "",
+                 "period": measure.period.rawValue, "link": measure.source.raw,
+                 "flags": ItemFlags.text(secondary: measure.secondary, dayRule: measure.dayRule)])
+        }
+        for item in items.sortedForSheet() {
+            row(["type": "item", "id": item.code, "parent": item.categoryKey, "title": item.title, "days": item.days.csv,
+                 "schedule": item.schedule.raw, "target": item.target?.raw ?? "", "link": item.measure, "flags": item.flags])
+        }
+        return CSV.write(table)
+    }
+}
+
+/// One week in a report over several weeks (v8, PDF-Bericht).
+public struct WeekLine: Equatable, Sendable {
+    public var week: WeekKey
+    /// The score that counts: stored for closed and paper weeks, live for open ones; nil when none.
+    public var score: Double?
+    public var isClosed: Bool
+    /// Scored with the model before KW42 2026 – not averaged with the others.
+    public var isOldScoring: Bool
+    /// Only a reported score, no plan in the app.
+    public var isPaperOnly: Bool
+    /// Every day with something planned was sick or on holiday: no score.
+    public var isExcused: Bool
+    /// Goal key → the week's goal score.
+    public var goalScores: [String: Double]
+    public var powerHours: Double
+    /// Sum of the weekly power-hour targets as they count (scaled for excused days), nil without targets.
+    public var powerHoursTarget: Double?
+    public var closedDays: Int
+    public var excusedDays: Int
+    public var weeklyTargetsMet: Int
+    public var weeklyTargetsCount: Int
+
+    public init(week: WeekKey, score: Double? = nil, isClosed: Bool = false, isOldScoring: Bool = false, isPaperOnly: Bool = false,
+                isExcused: Bool = false, goalScores: [String: Double] = [:], powerHours: Double = 0, powerHoursTarget: Double? = nil,
+                closedDays: Int = 0, excusedDays: Int = 0, weeklyTargetsMet: Int = 0, weeklyTargetsCount: Int = 0) {
+        self.week = week
+        self.score = score
+        self.isClosed = isClosed
+        self.isOldScoring = isOldScoring
+        self.isPaperOnly = isPaperOnly
+        self.isExcused = isExcused
+        self.goalScores = goalScores
+        self.powerHours = powerHours
+        self.powerHoursTarget = powerHoursTarget
+        self.closedDays = closedDays
+        self.excusedDays = excusedDays
+        self.weeklyTargetsMet = weeklyTargetsMet
+        self.weeklyTargetsCount = weeklyTargetsCount
+    }
+
+    /// A week from its report input, scored with the v8 rules.
+    /// - Parameters:
+    ///   - storedScore: `WeekPlan.historyScore` of a closed or paper week (wins over the live score).
+    ///   - storedGoalScores: `WeekPlan.finalGoalScoreMap` of a closed week (wins when not empty).
+    public init(_ input: WeekReportInput, storedScore: Double? = nil, storedGoalScores: [String: Double] = [:]) {
+        let data = input.weekData
+        let result = Scorer.score(data)
+        let week = input.week.week
+        let paperOnly = input.items.isEmpty && input.week.recordedScore != nil
+        let live: Double? = result.isExcused ? nil : result.overall
+        var goals = storedGoalScores
+        if goals.isEmpty {
+            for (key, goal) in result.goalWeek { if let score = goal.score { goals[key] = score } }
+        }
+        var targets: [Double] = []
+        var met = 0
+        var count = 0
+        for measure in input.measures where measure.period == .week && measure.target != nil {
+            let share = Measures.targetShare(for: measure, week: week, excused: data.excusedDays, workFree: data.workFreeDays,
+                                             workCategories: data.workCategories)
+            guard share > 1e-9, let target = measure.target else { continue }
+            let effective = Measures.effectiveTarget(target, share: share)
+            if measure.isWork { targets.append(effective.scaleMax) }
+            let value = Measures.weekValue(measure, days: week.days, entries: input.entries, work: input.work) ?? 0
+            count += 1
+            if effective.isMet(value) { met += 1 }
+        }
+        self.init(week: week, score: storedScore ?? live ?? input.week.recordedScore, isClosed: input.isClosed,
+                  isOldScoring: input.week.isOldScoring, isPaperOnly: paperOnly, isExcused: result.isExcused, goalScores: goals,
+                  powerHours: WorkTotals(input.work).powerHours, powerHoursTarget: targets.isEmpty ? nil : targets.reduce(0, +),
+                  closedDays: week.days.filter(input.closedDays.contains).count, excusedDays: result.excusedDays.count,
+                  weeklyTargetsMet: met, weeklyTargetsCount: count)
+    }
+
+    /// Counts in averages: has a score, current model, not excused.
+    public var isComparable: Bool { score != nil && !isOldScoring && !isExcused }
+}
+
+/// A report over several weeks (v8, PDF-Bericht): one line per week, the average, every goal's
+/// average and trend, power-hours per area and the totals.
+public struct RangeReport: Equatable, Sendable {
+    public struct GoalLine: Equatable, Sendable {
+        public var key: String
+        public var title: String
+        public var average: Double?
+        /// Average of the first and the last four weeks with a score (the trend).
+        public var firstFour: Double?
+        public var lastFour: Double?
+        /// Weeks with a score for this goal.
+        public var weeks: Int
+
+        public init(key: String, title: String, average: Double? = nil, firstFour: Double? = nil, lastFour: Double? = nil, weeks: Int = 0) {
+            self.key = key
+            self.title = title
+            self.average = average
+            self.firstFour = firstFour
+            self.lastFour = lastFour
+            self.weeks = weeks
+        }
+
+        /// 1 rising, −1 falling, 0 steady (±0,25 like the goal review), nil without both.
+        public var trend: Int? {
+            guard let first = firstFour, let last = lastFour else { return nil }
+            if last - first > 0.25 { return 1 }
+            if first - last > 0.25 { return -1 }
+            return 0
+        }
+
+        /// "↑", "↓", "→", "–".
+        public var trendArrow: String {
+            switch trend {
+            case .some(1): return "↑"
+            case .some(-1): return "↓"
+            case .some: return "→"
+            case .none: return "–"
+            }
+        }
+
+        /// The SF Symbol the goal review uses: "arrow.up.right", "arrow.down.right", "arrow.right", "minus".
+        public var trendSymbol: String {
+            switch trend {
+            case .some(1): return "arrow.up.right"
+            case .some(-1): return "arrow.down.right"
+            case .some: return "arrow.right"
+            case .none: return "minus"
+            }
+        }
+
+        /// "steigend", "fallend", "gleichbleibend", "noch kein Trend".
+        public var trendWord: String {
+            switch trend {
+            case .some(1): return "steigend"
+            case .some(-1): return "fallend"
+            case .some: return "gleichbleibend"
+            case .none: return "noch kein Trend"
+            }
+        }
+    }
+
+    public struct WorkLine: Equatable, Sendable {
+        public var categoryKey: String
+        public var title: String
+        public var powerHours: Double
+
+        public init(categoryKey: String, title: String, powerHours: Double) {
+            self.categoryKey = categoryKey
+            self.title = title
+            self.powerHours = powerHours
+        }
+    }
+
+    /// One line per week, oldest first.
+    public var lines: [WeekLine]
+    /// Average of the comparable weeks (with a score, current model, not excused).
+    public var average: Double?
+    /// Average of the weeks scored with the earlier model, kept apart.
+    public var oldAverage: Double?
+    public var goals: [GoalLine]
+    /// Power-hours per area, largest first.
+    public var work: [WorkLine]
+    public var powerHours: Double
+    /// Sum of the weekly targets of the weeks that have one; nil when none has.
+    public var powerHoursTarget: Double?
+    public var closedWeeks: Int
+    public var closedDays: Int
+    public var excusedDays: Int
+    public var excusedWeeks: Int
+    public var weeklyTargetsMet: Int
+    public var weeklyTargetsCount: Int
+
+    /// - Parameters:
+    ///   - goals: the goals to report (sorted by number).
+    ///   - work: the range's work blocks; `categories` give their titles.
+    public init(lines: [WeekLine], goals: [GoalRecord], work: [WorkRecord], categories: [CategoryRecord] = []) {
+        let sorted = lines.sorted { $0.week < $1.week }
+        self.lines = sorted
+        let comparable = sorted.filter(\.isComparable)
+        average = RangeReport.mean(comparable.compactMap(\.score))
+        oldAverage = RangeReport.mean(sorted.filter { $0.isOldScoring && !$0.isExcused }.compactMap(\.score))
+        self.goals = goals.sortedByNumber().map { goal in
+            let scores = sorted.filter { !$0.isOldScoring && !$0.isExcused }.compactMap { $0.goalScores[goal.key] }
+            return GoalLine(key: goal.key, title: goal.title, average: RangeReport.mean(scores),
+                            firstFour: RangeReport.mean(Array(scores.prefix(4))), lastFour: RangeReport.mean(Array(scores.suffix(4))),
+                            weeks: scores.count)
+        }
+        var titles: [String: String] = [:]
+        for category in categories { titles[category.key] = category.title }
+        var hours: [String: Double] = [:]
+        for block in work { hours[block.categoryKey, default: 0] += block.powerHours }
+        self.work = hours.map { WorkLine(categoryKey: $0.key, title: titles[$0.key] ?? $0.key, powerHours: $0.value) }
+            .sorted { ($0.powerHours, $1.categoryKey) > ($1.powerHours, $0.categoryKey) }
+        powerHours = sorted.reduce(0) { $0 + $1.powerHours }
+        let targets = sorted.compactMap(\.powerHoursTarget)
+        powerHoursTarget = targets.isEmpty ? nil : targets.reduce(0, +)
+        closedWeeks = sorted.filter(\.isClosed).count
+        closedDays = sorted.reduce(0) { $0 + $1.closedDays }
+        excusedDays = sorted.reduce(0) { $0 + $1.excusedDays }
+        excusedWeeks = sorted.filter(\.isExcused).count
+        weeklyTargetsMet = sorted.reduce(0) { $0 + $1.weeklyTargetsMet }
+        weeklyTargetsCount = sorted.reduce(0) { $0 + $1.weeklyTargetsCount }
+    }
+
+    public var start: WeekKey? { lines.first?.week }
+    public var end: WeekKey? { lines.last?.week }
+    /// Weeks that count in the average.
+    public var scoredWeeks: Int { lines.filter(\.isComparable).count }
+
+    /// "KW40–KW47 2026", "KW52 2026 – KW3 2027", "KW45 2026"; "" without weeks.
+    public var title: String {
+        guard let start, let end else { return "" }
+        if start == end { return start.longLabel }
+        if start.year == end.year { return "\(start.label)–\(end.label) \(end.year)" }
+        return "\(start.longLabel) – \(end.longLabel)"
+    }
+
+    static func mean(_ values: [Double]) -> Double? {
+        values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
     }
 }

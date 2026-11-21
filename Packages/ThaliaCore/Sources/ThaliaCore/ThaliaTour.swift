@@ -22,10 +22,11 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 7
+    public static let version = 8
 
-    /// v7: 13 cards in the full tour (welcome, 11 steps, finish); the 8 steps with `since: 7` make up
-    /// "Neu in Thalia". Colours, the "Wofür" rule, weekly goals, sharing and PDF moved into other cards.
+    /// v8: 16 cards in the full tour (welcome, 14 steps, finish); the 3 steps with `since: 8` (Krank &
+    /// Urlaub, Vergangene Wochen, PDF-Bericht) make up "Neu in Thalia" after 1.6. v7 had 13 cards: colours,
+    /// the "Wofür" rule, weekly goals, sharing and PDF moved into other cards then.
     public static let catalog = TourCatalog<ThaliaTourSnapshot>(
         version: version,
         welcome: TourStep(
@@ -51,6 +52,11 @@ public enum ThaliaTour {
                 id: "day", since: 7, symbol: "calendar", title: "Welcher Tag gerade gilt",
                 body: "Oben stehen Datum, Tagestyp und die Besonderheit aus dem Plan. Um Mitternacht springt Thalia selbst auf den neuen Tag. Blätterst du zurück, zeigt die Leiste unten „Zu heute“. Ist gestern noch offen, erinnert dich morgens ein Hinweis mit „Nachtragen“ und „Abschließen“.",
                 macBody: "Oben stehen Datum, Tagestyp und die Besonderheit aus dem Plan. Um Mitternacht springt Thalia selbst auf den neuen Tag, ⇧⌘T führt zu heute. Ist gestern noch offen, steht links unten „Nachtragen“ und „Abschließen“."
+            ),
+            TourStep(
+                id: "excused", since: 8, symbol: "cross.case", title: "Krank & Urlaub",
+                body: "Oben auf den Titel tippen → Tagestyp → „Krank“ oder „Urlaub“ (in der Woche: lange auf den Tag drücken). Der Tag zählt dann nicht in die Wochenwertung: nichts ist fällig, keine Abend-Erinnerung, die Spalte in der Woche ist grau. Was deshalb in der Woche nicht mehr ging, zählt halb – 3× Training, 2 gemacht, ab Freitag krank: das dritte zählt als Teilweise. Wochenziele schrumpfen mit, etwa „4,8 statt 8 PH – 2 Tage krank“.",
+                macBody: "Titelmenü in der Symbolleiste → Tagestyp → „Krank“ oder „Urlaub“ (in der Woche: Rechtsklick auf den Tag). Der Tag zählt dann nicht in die Wochenwertung: nichts ist fällig, keine Abend-Erinnerung, die Spalte in der Woche ist grau. Was deshalb nicht mehr ging, zählt halb – 3× Training, 2 gemacht, ab Freitag krank: das dritte zählt als Teilweise. Wochenziele schrumpfen mit („4,8 statt 8 PH – 2 Tage krank“)."
             ),
             TourStep(
                 id: "mark", since: 7, symbol: "checkmark.circle", title: "Punkte mit einem Tipp",
@@ -94,8 +100,18 @@ public enum ThaliaTour {
                 macBody: "Nach dem Tagesabschluss am Sonntag führt „Weiter: Woche abschließen“ dorthin, ⇧⌘↩ schließt sie ab. Dann „1 · Prompt kopieren“ und „2 · CSV einfügen“; fällt die Planung aus: „Wie KW … wiederholen“."
             ),
             TourStep(
+                id: "past-weeks", since: 8, symbol: "clock.arrow.circlepath", title: "Vergangene Wochen",
+                body: "Woche → … → „Vergangene Woche nachtragen…“, drei Wege: „Plan übernehmen“, dann selbst abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen.",
+                macBody: "Ablage → „Vergangene Woche nachtragen…“, drei Wege: „Plan übernehmen“, dann in der Tabelle abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen."
+            ),
+            TourStep(
                 id: "review", since: 7, symbol: "flag", title: "Ziele über Monate",
                 body: "Im Ziel-Detail zeigt der Verlauf 12 Wochen, ein Halbjahr oder das ganze Zieljahr – mit Messwerten und Ziellinie. Drei Wochen vor der Zielüberprüfung hilft „Zielüberprüfung vorbereiten“, samt aller geparkten Ideen."
+            ),
+            TourStep(
+                id: "range-pdf", since: 8, symbol: "doc.richtext", title: "PDF-Bericht",
+                body: "Rückblick → „PDF-Bericht“ (oder Woche → … → „Mehrere Wochen als PDF…“): Zeitraum wählen – letzte 4, 8 oder 13 Wochen, Zieljahr bis heute oder von–bis – und den Umfang. Thalia baut den Bericht Seite für Seite: Deckblatt mit Ø und Trend je Ziel, eine Zeile je Woche, Power-Hours je Bereich, auf Wunsch jede Woche mit ihren Tabellen. Dann teilen.",
+                macBody: "Ablage → „Zeitraum als PDF…“ (⌥⌘P) oder Rückblick → „PDF-Bericht“: Zeitraum und Umfang wählen. Thalia baut den Bericht Seite für Seite – Deckblatt mit Ø und Trend je Ziel, eine Zeile je Woche, Power-Hours je Bereich, Lesezeichen je Woche. Dann sichern (⌘S), drucken (⌘P) oder teilen."
             ),
             TourStep(
                 id: "everywhere", since: 7, symbol: "applewatch", title: "Überall dabei",
