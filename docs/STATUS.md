@@ -42,9 +42,13 @@ Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v9.md](TASKS-v9.md) ·
 - Nicht umgesetzt (bewusst): die Textabschnitte der alten CSV („Kategoriennoten der Übersicht:“ in `day.note`,
   „Kategorienmittel …“ in `week.note`) werden nicht ausgelesen – der neue Prompt lässt ChatGPT die CSV mit echten
   Notenzeilen neu erstellen. Fehlende Einzelhaken, Arbeitszeiten und Messwerte bleiben unbekannt.
-- Nächste Schritte: CI mit `[screenshots]` (Screens `archive`), Build 1.8.0 für TestFlight (Build-Nr. 56 oder höher),
-  dann TESTING.md „v9“ am Gerät; Prompt neu kopieren und die Scans erneut schicken, CSV mit „Archivdaten dieser
-  Wochen ersetzen“ importieren.
+- `MeasureSource.other`: Quellen, die dieser Build nicht kennt (`app:…`, `list:…` aus 1.9), bleiben beim Speichern
+  unverändert – ein Gerät mit 1.8.0 löscht keine Verknüpfung der nächsten Version.
+- CI-Lauf 36 grün (macOS + iOS + watchOS gebaut, Screenshots `archive` iPhone/Mac angesehen). TestFlight:
+  **1.8.0 (56)** hochgeladen (iOS + watchOS + macOS, `testflight-diagnose.yml` Lauf 6); laut `asc-probe` am
+  22. Nov. 2026 13:10 UTC iOS verarbeitet und `IN_BETA_TESTING`, macOS noch in Verarbeitung. Nächste Build-Nr.: 57.
+- Nächste Schritte: Bini testet TESTING.md „v9“; Prompt neu kopieren, Scans erneut schicken, CSV mit „Archivdaten
+  dieser Wochen ersetzen“ importieren (vorher die Liste „ersetzt“ in der Vorschau prüfen).
 
 ## Stand v8 (Version 1.7.0, Tour-Version 8)
 - Drei Wünsche vom 21. Nov. 2026 aus [TASKS-v8.md](TASKS-v8.md), Pakete P1–P5 umgesetzt:
