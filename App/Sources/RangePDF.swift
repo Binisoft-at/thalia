@@ -128,26 +128,28 @@ enum RangePDFScope: String, CaseIterable, Identifiable {
 
 /// How a week counts in the report: the tag in the table and the colour of its bar.
 enum RangeWeekState: Equatable {
-    case closed, running, open, paper, old, excused, unscored
+    case closed, running, open, paper, archive, old, excused, unscored
 
-    /// "" · "läuft" · "offen" · "Papier" · "vor KW42" · "entschuldigt" · "ohne Wertung".
+    /// "" · "läuft" · "offen" · "Papier" · "Archiv" · "vor KW42" · "entschuldigt" · "ohne Wertung".
     var tag: String {
         switch self {
         case .closed: ""
         case .running: "läuft"
         case .open: "offen"
         case .paper: "Papier"
+        case .archive: "Archiv"
         case .old: "vor KW42"
         case .excused: WeekScore.excusedLabel
         case .unscored: "ohne Wertung"
         }
     }
 
-    /// The same order as the Rückblick: sick/holiday week, running week, paper score, earlier
-    /// model, never closed (R70), no score.
+    /// The same order as the Rückblick: sick/holiday week, running week, archive grades (v9), paper
+    /// score, earlier model, never closed (R70), no score.
     static func of(_ line: WeekLine, context: WeekContext, current: WeekKey) -> RangeWeekState {
         if line.isExcused { return .excused }
         if line.week >= current, !line.isClosed { return .running }
+        if line.isArchive, !context.hasPlan { return .archive }
         if line.isPaperOnly { return .paper }
         if line.isOldScoring { return .old }
         if !line.isClosed, context.plan?.recordedScore == nil { return .open }
@@ -617,8 +619,8 @@ struct RangeCoverPage: View {
         let scored: String = "\(report.scoredWeeks)/\(data.rows.count)"
         var closedWeeks: String = "–"
         var closedDays: String = "–"
-        // Papier-Wochen (nur die Wertung nachgetragen) sind fertig und zählen als abgeschlossen.
-        let paperWeeks: Int = data.rows.filter { $0.state == .paper && !$0.line.isClosed }.count
+        // Papier- und Archiv-Wochen (nur Wertung oder Noten nachgetragen) sind fertig und zählen als abgeschlossen.
+        let paperWeeks: Int = data.rows.filter { RangeCoverPage.isFinishedWithoutPlan($0) }.count
         if planWeeks + paperWeeks > 0 {
             closedWeeks = "\(report.closedWeeks + paperWeeks)/\(planWeeks + paperWeeks)"
         }
@@ -637,6 +639,12 @@ struct RangeCoverPage: View {
         list.append(("Wochenziele erreicht", targets, reach))
         list.append(("Krank/Urlaub", RangeCoverPage.excusedText(report), muted))
         return list
+    }
+
+    /// A paper or archive week that isn't closed: finished all the same (only its score or grades exist).
+    static func isFinishedWithoutPlan(_ row: RangePDFRow) -> Bool {
+        guard !row.line.isClosed else { return false }
+        return row.state == .paper || row.state == .archive
     }
 
     /// "182/224 PH", "182 PH", "–".
@@ -665,7 +673,7 @@ struct RangeOverviewPage: View {
     let page: Int
     let total: Int
 
-    static let legend = "Wertung: gespeichert für abgeschlossene Wochen und Papier-Wochen, sonst die laufende. Ø ohne Wochen vor KW42 und ohne entschuldigte Wochen. Zielfelder: je dunkler, desto höher; grau = nur Krank/Urlaub. Tage: abgeschlossene von den zählenden Tagen. Krank/Urlaub-Tage zählen nicht. Ziele: erreichte Wochenziele. PH: Power-Hours von Wochenziel (anteilig bei Krank/Urlaub)."
+    static let legend = "Wertung: laut Unterlagen, wo es einen Wert gibt, sonst gespeichert für abgeschlossene Wochen, sonst die laufende. Ø ohne Wochen vor KW42 und ohne entschuldigte Wochen. Zielfelder: je dunkler, desto höher; grau = nur Krank/Urlaub. Tage: abgeschlossene von den zählenden Tagen. Krank/Urlaub-Tage zählen nicht. Ziele: erreichte Wochenziele. PH: Power-Hours von Wochenziel (anteilig bei Krank/Urlaub)."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -684,7 +692,7 @@ struct RangeOverviewPage: View {
                 }
                 if isLast, !rows.isEmpty {
                     RangeTableTotal(data: data)
-                    Text(RangeOverviewPage.legend)
+                    Text(legendText)
                         .font(.system(size: 8))
                         .foregroundStyle(muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -699,6 +707,14 @@ struct RangeOverviewPage: View {
         }
         .frame(width: PDFExport.pageSize.width, height: PDFExport.pageSize.height)
         .background(PDFStyle.paper)
+    }
+
+    /// v9 (decision 9): archive weeks get their footnote.
+    static let archiveNote = "Archiv: Wertung laut Unterlagen; Zielfelder laut Unterlagen oder nach heutigen Regeln aus den Kategoriennoten."
+
+    private var legendText: String {
+        guard data.rows.contains(where: { $0.state == .archive }) else { return RangeOverviewPage.legend }
+        return RangeOverviewPage.legend + " " + RangeOverviewPage.archiveNote
     }
 }
 
@@ -1366,7 +1382,7 @@ struct RangePDFSheet: View {
 
     private var pagesFooter: String {
         guard let data, data.pageCount(scope) > 120 else {
-            return "Seitenzahlen laufen durch. Wochen nur mit Papier-Wertung stehen in der Übersicht, ohne eigene Seiten."
+            return "Seitenzahlen laufen durch. Wochen ohne Punkte (Papier-Wertung oder Archiv) stehen in der Übersicht, ohne eigene Seiten."
         }
         return "Viele Seiten – das Erstellen dauert etwas. „Nur Übersicht“ ist schneller."
     }

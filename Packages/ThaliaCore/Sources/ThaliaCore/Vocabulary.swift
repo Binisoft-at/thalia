@@ -392,8 +392,11 @@ public enum MeasureSource: Equatable, Sendable {
     case work(category: String)
     /// Apple Health suggests a value; the person confirms or overrides it.
     case health(HealthKind)
+    /// A source this build doesn't know ("app:nina:kcal", "list:buch", "health:carbs" from a newer build). It
+    /// behaves like `manual`, but the text is kept unchanged, so saving the measure here never erases it.
+    case other(String)
 
-    /// "", "arbeit:3.2", "health:sleep".
+    /// "", "arbeit:3.2", "health:sleep"; unknown "prefix:…" texts are kept as `other`.
     public init(raw: String) {
         let t = raw.trimmingCharacters(in: .whitespaces)
         let lower = t.lowercased()
@@ -401,7 +404,9 @@ public enum MeasureSource: Equatable, Sendable {
             self = .work(category: String(t[t.index(after: t.firstIndex(of: ":")!)...]).trimmingCharacters(in: .whitespaces))
         } else if lower.hasPrefix("health:") || lower.hasPrefix("gesundheit:") {
             let kind = String(lower[lower.index(after: lower.firstIndex(of: ":")!)...])
-            self = HealthKind(token: kind).map(MeasureSource.health) ?? .manual
+            self = HealthKind(token: kind).map(MeasureSource.health) ?? .other(t)
+        } else if t.contains(":") {
+            self = .other(t)
         } else {
             self = .manual
         }
@@ -412,6 +417,7 @@ public enum MeasureSource: Equatable, Sendable {
         case .manual: ""
         case .work(let category): "arbeit:\(category)"
         case .health(let kind): "health:\(kind.rawValue)"
+        case .other(let text): text
         }
     }
 }

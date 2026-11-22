@@ -22,11 +22,11 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 8
+    public static let version = 9
 
-    /// v8: 16 cards in the full tour (welcome, 14 steps, finish); the 3 steps with `since: 8` (Krank &
-    /// Urlaub, Vergangene Wochen, PDF-Bericht) make up "Neu in Thalia" after 1.6. v7 had 13 cards: colours,
-    /// the "Wofür" rule, weekly goals, sharing and PDF moved into other cards then.
+    /// v9: 17 cards in the full tour (welcome, 15 steps, finish); the step with `since: 9` (Archiv-Wochen)
+    /// makes up "Neu in Thalia" after 1.7. v8 added three (Krank & Urlaub, Vergangene Wochen, PDF-Bericht).
+    /// v7 had 13 cards: colours, the "Wofür" rule, weekly goals, sharing and PDF moved into other cards then.
     public static let catalog = TourCatalog<ThaliaTourSnapshot>(
         version: version,
         welcome: TourStep(
@@ -103,6 +103,11 @@ public enum ThaliaTour {
                 id: "past-weeks", since: 8, symbol: "clock.arrow.circlepath", title: "Vergangene Wochen",
                 body: "Woche → … → „Vergangene Woche nachtragen…“, drei Wege: „Plan übernehmen“, dann selbst abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen.",
                 macBody: "Ablage → „Vergangene Woche nachtragen…“, drei Wege: „Plan übernehmen“, dann in der Tabelle abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen."
+            ),
+            TourStep(
+                id: "archive", since: 9, symbol: "archivebox", title: "Archiv-Wochen",
+                body: "Woche → … → „Vergangene Woche nachtragen…“ → „Mit ChatGPT“: Eine alte Woche darf nur den Wochenwert und Noten 0–10 der Kategorien und Jahresziele haben – ohne Punkte ist nichts offen oder verpasst. Die Woche zeigt dann die Karte „Archiv“: Die Wertung laut Unterlagen bleibt, wie sie war; „Nach heutigen Regeln“ rechnet aus den Kategoriennoten, ohne Krank- und Urlaubstage. Alte Bezeichnungen stehen unter „Ohne Zuordnung (Archiv)“. Für einen erneuten Import: „Archivdaten dieser Wochen ersetzen“ – Widerrufen holt alles zurück.",
+                macBody: "Ablage → „Vergangene Woche nachtragen…“ → „Mit ChatGPT“: Eine alte Woche darf nur den Wochenwert und Noten 0–10 der Kategorien und Jahresziele haben – ohne Punkte ist nichts offen oder verpasst. Die Woche zeigt dann „Archiv“ (Noten Mo–So mit Ø (n), rechts beide Wertungen): Die Wertung laut Unterlagen bleibt, wie sie war; „Nach heutigen Regeln“ rechnet aus den Kategoriennoten, ohne Krank- und Urlaubstage. Alte Bezeichnungen stehen unter „Ohne Zuordnung (Archiv)“. Für einen erneuten Import: „Archivdaten dieser Wochen ersetzen“ – Widerrufen (⌘Z) holt alles zurück."
             ),
             TourStep(
                 id: "review", since: 7, symbol: "flag", title: "Ziele über Monate",

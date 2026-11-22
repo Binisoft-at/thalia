@@ -288,3 +288,91 @@ Plan und Regeln: [TASKS-v8.md](TASKS-v8.md). CSV-Format für vergangene Wochen: 
 **Demo und Screenshots (Entscheidung 11)**
 - [ ] CI-Screenshots enthalten „past-import“ und „range-pdf“ für iPhone und Mac (der Bericht ist schon erzeugt und in der Vorschau).
 - [ ] In der Demo-Woche ist Freitag „Krank“: Woche mit grauer Spalte, ohne Markierungen; ein 3×-Punkt zeigt „· ½ krank“.
+
+
+## v9 (ab Version 1.8.0)
+
+Plan und Regeln: [TASKS-v9.md](TASKS-v9.md). CSV-Format: [IMPORT.md](IMPORT.md), Abschnitt „Archiv-Wochen (seit 1.8.0)“.
+Ziel: alte Wochen aus Scans so übernehmen, wie die Unterlagen sie überliefern – ohne erfundene Haken, mit beiden Wertungen getrennt.
+
+**Nach dem Update zuerst**
+- [ ] Einstellungen → Version zeigt 1.8.0.
+- [ ] Die Tour bietet „Neu in Thalia“ mit genau einer Karte an: „Archiv-Wochen“.
+- [ ] Wochen mit Punkten zeigen in Woche, Ziele und Rückblick dieselben Wertungen wie vor dem Update. Ausnahme (Entscheidung 5): eine Woche mit Plan **und** eingetragener „Nur Wertung“ zeigt im Rückblick, Ø 4 Wo., in den Zielen und im PDF jetzt die Wertung laut Unterlagen; die Woche nennt beide.
+- [ ] Hilfe → „Vergangene Wochen“ hat den Schritt „Archiv-Wochen“; „Nur Wertung“ nennt die Wertung laut Unterlagen. „Wie wird gerechnet?“ endet jetzt mit „Neu seit 1.7“.
+
+**Prompt neu schicken (Entscheidung 8)**
+- [ ] Vergangene Woche nachtragen → „Mit ChatGPT“ → „Prompt kopieren“ → in Notizen einfügen: Regeln 1–10 („Nichts erfinden“, „echte 0“), die Kopfzeile mit `count` vor `mo`, ein Beispiel mit zwei Wochen, Jahresziele (id · Name), Kategorien (id · Name · Ziel n), Messwerte, die Vorlage für Einzelhaken; kein KI-Modellname.
+- [ ] Den Prompt mit den alten Scans erneut in ChatGPT geben → die neue CSV hat `category_score`- und `goal_score`-Zeilen statt Noten im `note`-Text; Wochen, für die nur der Wochenwert belegt ist (z. B. KW30, KW31, KW45, KW46), bestehen nur aus ihrer `week`-Zeile; keine erfundenen `item`- oder `entry`-Zeilen.
+- [ ] Eine Woche mit Wochenmittel statt Tagesnoten kommt als `category_score` ohne Datum mit `count`; Jahresziel-Noten stehen je Ziel genau einmal als `goal_score` – nicht auf die Kategorien verteilt.
+
+**Woche nur mit Wochenwert (Entscheidung 1)**
+- [ ] CSV mit nur `week,2026-W30,…,9.19` → Vorschau „KW30 2026 … neu“ mit Kennzeichen „Archiv“ und „Wertung 9,19 laut Unterlagen · wird abgeschlossen“; nach dem Import hat KW30 keine Punkte, nichts ist offen oder ✗, die Woche ist abgeschlossen.
+- [ ] Dieselbe Datei mit „Leere Felder als ✗ zählen“: auch dann kein ✗ in KW30 – selbst wenn die App für KW30 einen Plan hätte.
+- [ ] Woche KW30 öffnen: der Kopf zeigt 9,19 mit „Archiv · Wertung laut Unterlagen“ (Mac: Seitenleiste „… · Wertung laut Unterlagen“), darunter die Karte „Archiv“ statt „Noch kein Plan“; „Nach heutigen Regeln –“ mit „keine Kategoriennoten“.
+- [ ] Eine Woche nur mit `week`- und `day`-Zeilen (z. B. Fr Krank): der Tagestyp ist gesetzt, keine Punkte, nichts verpasst.
+
+**Kategorien- und Zielnoten (Entscheidung 3)**
+- [ ] `category_score` mit Datum → erscheint in der Archiv-Karte im Tag Mo–So; ohne Datum mit `count` 4 → „nur Wochennote“, Ø mit „n = 4“.
+- [ ] „6,5“ und „6.5“ werden beide gelesen; Wert 11 und „abc“ stehen unter „Nicht gelesen“ mit Grund; eine Zeile ohne `title` ebenso.
+- [ ] `id` 9.9 (gibt es nicht) → Warnung „… ist keine Kategorie der App; die Note bleibt ohne Zuordnung im Archiv.“; die Note steht unter „Ohne Zuordnung (Archiv)“.
+- [ ] Vorschau je Woche: „12 Kategoriennoten · 10 Zielnoten · Wertung 9,28 laut Unterlagen“.
+- [ ] Dieselbe Datei zweimal importieren → beim zweiten Mal „unverändert“, nichts ändert sich. Eine geänderte Note ändert nur diese Note.
+- [ ] Einstellungen → „Alles als CSV“ enthält die `category_score`-/`goal_score`-Zeilen, die Spalte `count` und die Quelle in der `week`-Zeile; diese Datei wieder importieren → „unverändert“.
+
+**Mittelwerte (Entscheidung 4)**
+- [ ] Tagesnoten 0, 10, 10 einer Kategorie → Ø 6,67, n = 3 (die echte 0 zählt mit).
+- [ ] Tagesnoten 10, 10, 0, 0 → Ø 5, n = 4.
+- [ ] Nur zwei Tage mit Note, der Rest leer → n = 2; leere Felder zählen nicht.
+- [ ] Die Wertung laut Unterlagen bleibt genau der Wert aus der Datei (9,19 bzw. 9,28), auch wenn die Noten etwas anderes ergeben.
+
+**Zwei Wertungen getrennt (Entscheidung 5)**
+- [ ] Archiv-Karte: „Wertung laut Unterlagen 9,28“ und „Nach heutigen Regeln …“ mit „ohne 1 Urlaubstag“ – zwei Zeilen, klar benannt; fehlt eine, steht „–“ mit kurzem Grund.
+- [ ] Urlaub-Tag mit Note: Samstag „Urlaub“, Note 0 → die Zelle ist blass und durchgestrichen (VoiceOver: „Samstag: 0, Urlaub, zählt heute nicht“); Ø (n) der Unterlagen zählt sie mit, die Zeile „nach heutigen Regeln …“ darunter und „Nach heutigen Regeln“ oben lassen sie aus; die Wertung laut Unterlagen ändert sich nicht.
+- [ ] Samstag zurück auf „Arbeitstag“ → „Nach heutigen Regeln“ zählt die Note wieder; die Wertung laut Unterlagen bleibt.
+- [ ] Rückblick: die Zeile trägt „Archiv“, der Ring zeigt die Wertung laut Unterlagen, darunter „Laut Unterlagen 9,28 · nach heutigen Regeln …“.
+- [ ] Ziele und Zielüberprüfung: die abgeschlossene Archiv-Woche zählt mit ihren Zielwerten nach heutigen Regeln; eine Woche nur mit Wochenwert bleibt dort draußen.
+- [ ] Mac-Seitenleiste einer Archiv-Woche: „Jahresziele · nach heutigen Regeln“ mit den Zielwerten aus den Kategoriennoten (ohne Kategoriennoten: die Zielnote).
+
+**Archivbereich und nichts erfinden (Entscheidung 6)**
+- [ ] Eine alte Zusatz- oder Sammelkategorie ohne `id` (z. B. „Sonderwoche“) steht unter „Ohne Zuordnung (Archiv)“ mit ihrer Bezeichnung und ihren Tagen; „Nach heutigen Regeln“ ändert sich dadurch nicht.
+- [ ] Eine Zielnote steht nur unter „Zielnoten“; die Kategorien dieses Ziels bekommen nichts dazu. Hat das Ziel Kategoriennoten, steht darunter „nach heutigen Regeln … aus den Kategoriennoten“.
+- [ ] Nach dem Import einer Archiv-Woche gibt es in ihr keine Haken, keine Messwerte und keine Power-Hours.
+
+**Erneuter Import mit „Archivdaten dieser Wochen ersetzen“ (Entscheidung 2)**
+- [ ] Ausgangslage: eine vergangene Woche hat aus einem früheren, fehlerhaften Import Punkte und Markierungen. Die neue CSV (nur Wochenwert und Noten) **ohne** Schalter → Warnung „KWnn: in der App noch n Punkte mit m Markierungen – ‚Archivdaten ersetzen‘ nur wählen, wenn sie aus einem fehlerhaften Import stammen; es verschiebt alles ins Archiv.“ (ohne Markierungen: „… n Punkte ohne Markierungen – ‚Archivdaten ersetzen‘ entfernt sie.“); Punkte und Markierungen bleiben.
+- [ ] **Vorsicht bei Wochen, die in der App geführt wurden:** steht so eine Woche in der CSV nur mit ihrem Wochenwert, geht sie mit dem Schalter ebenfalls ins Archiv (Vorschau: „ersetzt“ und „m Markierungen aus der App gehen ins Archiv – die Datei bringt keine Einzelhaken.“). Solche Zeilen vor dem Import aus der CSV löschen oder ohne Schalter importieren; „Widerrufen“ holt sie zurück.
+- [ ] Schalter „Archivdaten dieser Wochen ersetzen“ an (Fußtext: „Alles, was die App für die Wochen der Datei hat, kommt ins Archiv … Wochen, die in der App abgehakt wurden, vorher aus der Datei nehmen. …“) → die Vorschau rechnet neu, Status „ersetzt“, orange Zeile „KWnn wird ersetzt – … gehen ins Archiv.“; „Importieren“ fragt nach („Alles, was die App für diese Wochen hat, kommt ins Archiv: …“).
+- [ ] Danach hat die Woche keine alten Punkte, Markierungen, Werte, Tagestypen und Abschlüsse mehr – nur, was die Datei bringt; die Woche zeigt die Archiv-Karte und ist abgeschlossen.
+- [ ] „Widerrufen“ im Hinweis → alte Punkte, Markierungen, Tagestypen und die frühere Wertung sind wieder da; die Noten der neuen Datei sind weg.
+- [ ] Einstellungen → Archiv: der Eintrag der ersetzten Woche („n Punkte · m Markierungen“ bzw. „ohne Punkte“); „Wiederherstellen“ fragt „Was die Woche jetzt hat, kommt dafür ins Archiv.“ und holt alles zurück.
+- [ ] Die CSV enthält auch diese Woche → Warnung „KWnn: noch nicht vorbei – wird nicht ersetzt, nur ergänzt.“; ihre Einträge bleiben.
+- [ ] Schalter umlegen, ohne neu einzufügen → „Importieren“ geht erst mit der neuen Vorschau.
+- [ ] Dieselbe CSV mit Schalter ein zweites Mal → Vorschau „unverändert“, nichts wird ersetzt; Einstellungen → Archiv bekommt keinen zweiten, gleichen Eintrag.
+- [ ] Nach dem Ersetzen in der Woche etwas ändern (z. B. einen Tag auf „Urlaub“), dann „Widerrufen“ → die alte Woche ist zurück, und der Stand mit der Änderung steht als Eintrag in Einstellungen → Archiv.
+- [ ] Motto und Kontext der Woche bleiben nach dem Import (die CSV schreibt keine); eine `week`-Zeile ohne Wert lässt die Wertung laut Unterlagen stehen (ohne Schalter).
+- [ ] Eine `week`-Zeile für diese Woche mit Wert → Warnung „KWnn: noch nicht vorbei – der Wochenwert wird nicht übernommen.“; Motto und laufende Wertung der Woche bleiben.
+
+**Fehler in der Antwort (Lücken nach v9)**
+- [ ] Ein Dezimalkomma ohne Anführungszeichen (`…,9,28,Scan S. 3,…` in der `week`-Zeile, `…,6,67,…` in einer Note) → keine falsche Wertung: Warnung „Spalten verrutscht … Wochenwert und Quelle nicht übernommen.“ bzw. die Note steht unter „Nicht gelesen“ mit „Spalten verrutscht“.
+- [ ] Ein Wochenwert „ca. 9“ oder „92“ → Warnung „… nicht lesbar – nicht übernommen.“ bzw. „… liegt nicht zwischen 0 und 10 – nicht übernommen.“; die Woche behält ihren Wert.
+- [ ] Eine `day`-Zeile oder Note mit einem Datum aus einer anderen Woche → „Nicht gelesen“ mit „… liegt nicht in KWnn – gehört in den Block seiner Woche“; die andere Woche (z. B. die laufende) bleibt unberührt, offen und wird nicht ersetzt.
+- [ ] Eine Note mit „Mo“ vor der ersten `week`-Zeile → „steht vor der ersten week-Zeile“ (nicht „nicht lesbar“).
+- [ ] `measure`-Zeilen in einer Woche ohne Punkte → Warnung „Messwert „…“ nicht übernommen – eine Woche ohne Punkte bekommt keine Messwerte.“; kein Wochenziel in dieser Woche.
+- [ ] Zwei Bezeichnungen mit derselben `id` am selben Tag → Warnung „KWnn Mo: zwei Noten für 1.1 („…“, „…“) – nur die letzte bleibt …“.
+- [ ] Die ganze Antwort mit zwei CSV-Blöcken eingefügt → Warnung „Die Antwort hat 2 CSV-Blöcke – gelesen wird nur der erste …“.
+- [ ] Den kopierten Prompt selbst als CSV einfügen → keine Woche kommt herein (das Beispiel hat die Platzhalter-Woche `JJJJ-Wnn`), alles unter „Nicht gelesen“.
+- [ ] Deutsche Kopfzeile mit Spalte `quelle` → die Quelle erscheint in der Archiv-Karte.
+
+**Woche, Rückblick und PDF (Entscheidung 9)**
+- [ ] iPhone, Woche einer Archiv-Woche: Abschnitt „Archiv“ mit beiden Wertungen, Kategoriennoten (Bezeichnung aus den Unterlagen, darunter die heutige Kategorie mit Schlüssel, Mo–So, Ø und n), Zielnoten, „Ohne Zuordnung (Archiv)“, Quelle („Quelle: Scan S. 19“) und „Vergangene Woche nachtragen…“.
+- [ ] Mac und iPad quer: die Kategoriennoten stehen in den Spalten der Wochentabelle (Mo–So unter den Tagesköpfen), rechts in der Seitenleiste „Archiv“ mit beiden Wertungen; Seitenleiste ausblenden (⌥⌘0) → die Wertungen stehen in der Karte.
+- [ ] Heute auf einem Tag einer Archiv-Woche (über das Titelmenü in die Woche springen): statt „Noch kein Plan“ steht „KWnn ist eine Archiv-Woche“ mit beiden Wertungen und den Noten des Tages (an einem Urlaubstag blass und durchgestrichen, mit Hinweis); „Archiv-Karte der Woche öffnen“ springt in die Woche.
+- [ ] PDF-Bericht über einen Zeitraum mit einer Archiv-Woche: ihre Zeile trägt „Archiv“ (nicht „Papier“), Wertung laut Unterlagen, Zielfelder gefüllt; unter der Übersicht die Fußnote „Archiv: Wertung laut Unterlagen; Zielfelder laut Unterlagen oder nach heutigen Regeln aus den Kategoriennoten.“
+- [ ] Eine Woche nur mit „Nur Wertung“ und ohne Noten heißt im PDF weiter „Papier“.
+
+**Speicher und Sync (Entscheidung 7)**
+- [ ] Nach dem Import am iPhone zeigt der Mac (nach dem Abgleich) dieselbe Archiv-Karte; ein Ersetzen am Mac kommt am iPhone an.
+
+**Demo und Screenshots (Entscheidung 10)**
+- [ ] CI-Screenshots enthalten „archive“ für iPhone und Mac: die Demo-Archiv-Woche (zwei Wochen vor der aktuellen) mit Archiv-Karte, blassem Urlaub-Samstag, „Sonderwoche“ unter „Ohne Zuordnung (Archiv)“ und 10 Zielnoten; Quelle „Papier-Tracker“.

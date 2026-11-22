@@ -8,6 +8,7 @@ Packages/ThaliaCore   all rules, Foundation only, Swift Testing on Linux:
   Scoring              Scorer (category → goal → week, 10 % per goal, quotas, zero rule, overrides, excused days + rule B3), Pace
   Measures             day/week values, work in PH vs real hours, mark suggestions, targets scaled for excused days
   PlanCSV / ImportPreview   the CSV contract (incl. mo…so matrix columns), validation, import diff incl. removals, preview per week
+  Archive              v9: ArchiveGrade / ArchiveWeek (category_score, goal_score; means, today's recalculation, setting CSV)
   Template / Demo      Bini's 10 goals + 18 categories + template week; deterministic demo data (Friday of this week Krank)
   Reports              WeekReport (Markdown for the planning conversation), PlanPrompt (the prompt for ChatGPT),
                        PastWeekPrompt (past weeks from photos/PDFs/tables), WeekLine + RangeReport (several weeks)
@@ -24,6 +25,7 @@ App/Sources            iOS + macOS app (German UI):
   RootView             iPhone/iPad tabs (Heute, Woche, Ziele, Rückblick) + bottom accessory; Mac split view; sheets; tour
   TodayView            the day: work (+PH, timer), measurements (+, Health), items by category, notes
   WeekView             the weekly sheet: items × Mo–So, week score, ten goal bars, weekly targets with pace
+  ArchiveCard          v9: the week's „Archiv“ card – „Wertung laut Unterlagen“ / „Nach heutigen Regeln“, grades Mo–So, no mapping
   GoalsView / ReviewView   the ten goals (year progress, KW49 review), history across the KW42 change
   CloseDayView / CloseWeekView   the evening review and the weekly closing (report + planning prompt)
   Editors, ImportView, PastImport, SettingsView, Explainers   sheets, import/export, past weeks, settings, in-app explainers

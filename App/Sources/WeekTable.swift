@@ -30,6 +30,10 @@ struct WeekTable: View {
                                 WeekTableCategory(context: context, category: category, detailDay: day)
                             }
                         }
+                        // v9: grades of a planned week (rare) below the table.
+                        if context.archive?.hasGrades ?? false {
+                            archiveCard
+                        }
                         Button {
                             app.sheet = .newItem(context.week, categoryKey: nil)
                         } label: {
@@ -37,6 +41,22 @@ struct WeekTable: View {
                         }
                         .buttonStyle(.borderless)
                         .padding(.vertical, 12)
+                    } else if context.isArchiveWeek {
+                        // v9: a week from old records – its grades instead of "Noch kein Plan".
+                        archiveCard
+                        if context.week < app.today.week {
+                            Button {
+                                app.sheet = .importPast(context.week)
+                            } label: {
+                                Label("Vergangene Woche nachtragen…", systemImage: "clock.arrow.circlepath")
+                            }
+                            .buttonStyle(.bordered)
+                            .padding(.vertical, 8)
+                        } else {
+                            // A week that isn't over keeps the way to its plan, even with grades.
+                            NoPlanView(week: context.week)
+                                .padding(.vertical, 20)
+                        }
                     } else {
                         NoPlanView(week: context.week)
                             .padding(.vertical, 20)
@@ -103,6 +123,18 @@ struct WeekTable: View {
                 .help("Wochenwertung, Ziele und Wochenziele ein- oder ausblenden (⌥⌘0)")
             }
             MainToolbar()
+        }
+    }
+}
+
+extension WeekTable {
+    /// v9: the "Archiv" card on the table's columns, flat like the table; the two scores only while
+    /// the side panel (which shows them) is hidden.
+    var archiveCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+            ArchiveCard(context: context, wide: true, showsScores: !showsSummary)
+                .padding(.vertical, 14)
         }
     }
 }
@@ -421,14 +453,14 @@ private struct WeekSummaryPanel: View {
     var body: some View {
         List {
             Section {
-                HeroCard(title: context.week.label, subtitle: context.week.rangeLabel,
-                         value: Format.score(context.score.overall, outOf: false), caption: "Woche",
-                         progress: (context.score.overall ?? 0) / 10)
+                HeroCard(title: context.week.label, subtitle: heroSubtitle,
+                         value: Format.score(context.heroScore, outOf: false), caption: "Woche",
+                         progress: heroProgress)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(context.coverageLine)
+                        Text(context.archiveCoverageLine)
                             .font(.caption)
                             .foregroundStyle(coverageColor)
                         Button {
@@ -442,11 +474,23 @@ private struct WeekSummaryPanel: View {
                 }
             }
 
-            // R68: one coloured list – each goal with its bar and score.
-            Section("Jahresziele") {
-                ForEach(context.goals) { goal in
-                    GoalScoreLine(goal: goal, week: context.score.goalWeek[goal.key], isExcused: context.isGoalExcused(goal))
+            // v9 (decision 9): both scores of a week with grades or a value laut Unterlagen.
+            if context.showsArchive {
+                Section {
+                    ArchiveScores(context: context)
+                } header: {
+                    Label("Archiv", systemImage: "archivebox")
                 }
+            }
+
+            // R68: one coloured list – each goal with its bar and score.
+            Section {
+                ForEach(context.goals) { goal in
+                    GoalScoreLine(goal: goal, week: context.score.goalWeek[goal.key], isExcused: context.isGoalExcused(goal),
+                                  fallback: archiveGoalScore(goal))
+                }
+            } header: {
+                Text(goalsTitle)
             }
 
             targetsSection
@@ -514,9 +558,30 @@ private struct WeekSummaryPanel: View {
     }
 
     /// Orange while the week isn't fully comparable; a week of only sick or holiday days isn't a gap (v8).
+    /// v9: an archive week isn't a gap either.
     private var coverageColor: Color {
-        if context.score.isComplete || context.score.isExcused { return .secondary }
+        if context.score.isComplete || context.score.isExcused || context.isArchiveWeek { return .secondary }
         return .orange
+    }
+
+    /// v9: "KW45 · Wertung laut Unterlagen" for a week without items.
+    private var heroSubtitle: String {
+        guard let label = context.heroScoreLabel else { return context.week.rangeLabel }
+        return context.week.rangeLabel + " · " + label
+    }
+
+    private var heroProgress: Double {
+        let value: Double = context.heroScore ?? 0
+        return value / 10
+    }
+
+    /// v9: a week without items shows its goals under today's rules.
+    private var goalsTitle: String {
+        context.isArchiveWeek ? "Jahresziele · " + ImportWeekSummary.recalculatedLabel : "Jahresziele"
+    }
+
+    private func archiveGoalScore(_ goal: AnnualGoal) -> Double? {
+        context.hasPlan ? nil : context.shownGoalScore(goal.key)
     }
 
     private var nextWeek: WeekKey { context.week.adding(weeks: 1) }
@@ -555,8 +620,10 @@ private struct GoalScoreLine: View {
     let week: GoalWeek?
     /// v8: everything planned for the goal fell on sick or holiday days.
     var isExcused = false
+    /// v9: the goal's value from archive grades (a week without items).
+    var fallback: Double?
 
-    private var score: Double? { week?.score }
+    private var score: Double? { week?.score ?? fallback }
 
     /// "7,5" · "–"; v8: "entschuldigt".
     private var scoreText: String {

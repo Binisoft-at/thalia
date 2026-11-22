@@ -604,46 +604,77 @@ public enum PlanPrompt {
     }
 }
 
-/// The prompt for bringing past weeks in from another tracker (v8): photos, PDFs or tables of one or
-/// many weeks go in, one Thalia CSV with a block per week (given item ids, one mark per day) comes out.
+/// The prompt for bringing past weeks in from old records (v8; v9: archive weeks): photos, scans,
+/// PDFs or tables of one or many weeks go in, one Thalia CSV with a block per week comes out – only
+/// what the records say: the week's value, day types, category and goal grades (0–10), single marks
+/// and values only where they are really there. Nothing invented, split or multiplied (TASKS-v9 §3).
 public enum PastWeekPrompt {
     /// The week id in the template when the weeks come from the attachments.
     public static let weekPlaceholder = "JJJJ-Wnn"
 
+    /// The answer's columns: the import columns, `count` (grades), the weekday columns (marks).
+    public static let columns = PlanCSV.columns + [PlanCSV.countColumn] + PlanCSV.matrixColumns
+
+    /// `type,id,parent,title,description,days,schedule,unit,target,period,link,flags,date,value,note,count,mo,di,mi,do,fr,sa,so`
+    public static var header: String { columns.joined(separator: ",") }
+
+    /// The example's two week ids: placeholders, so the example – pasted back or copied into an answer –
+    /// never lands in a real week (its rows are skipped as unreadable).
+    static let exampleWeekIDs = [weekPlaceholder, weekPlaceholder]
+
     /// - Parameters:
-    ///   - weeks: the weeks to bring in; empty = the weeks of the attached photos, PDFs or tables
+    ///   - weeks: the weeks to bring in; empty = the weeks of the attached photos, scans, PDFs or tables
     ///     (KW and dates are read from there).
-    ///   - items: the plan to fill in (usually the nearest planned week's items) – the template for every week.
-    ///   - measures: the measurements whose values may come along (entry and work rows).
+    ///   - items: the template for single marks (the week's own plan or the nearest planned week's) –
+    ///     only used where single items are really ticked in the records.
+    ///   - measures: the measurements whose recorded values may come along (entry rows).
     public static func text(weeks: [WeekKey], items: [ItemRecord], categories: [CategoryRecord], goals: [GoalRecord],
                             measures: [MeasureRecord]) -> String {
         let sorted = Array(Set(weeks)).sorted()
         var out: [String] = []
+        out.append("Du überträgst Wochen aus meinen Unterlagen (Fotos, Scans, PDFs, Tabellen) in eine CSV für meine Tracker-App „Thalia“.")
+        out.append("Es ist ein Archiv: Übertrage nur, was in den Unterlagen steht.")
+        out.append("Hast du für diese Unterlagen schon eine CSV erstellt, erstelle sie nach diesen Regeln vollständig neu – übernimm nichts aus ihr, was die Regeln nicht erlauben (etwa Noten als Text in note).")
+        out.append("")
         out.append(contentsOf: intro(sorted))
         out.append("")
         out.append("## Regeln")
-        out.append(contentsOf: rules(sorted))
+        out.append(contentsOf: rules(sorted, hasItems: !items.isEmpty, hasMeasures: !measures.isEmpty))
         out.append("")
-        out.append("## Ausgabe")
-        out.append("Antworte mit genau einem ```csv-Codeblock für alle Wochen. Die erste Zeile ist exakt:")
-        out.append(PlanCSV.matrixHeader)
-        out.append("Komma als Trennzeichen. Werte mit Komma, Anführungszeichen oder Zeilenumbruch in \"doppelte Anführungszeichen\". Leere Spalten leer lassen. Zahlen mit Dezimalpunkt (2.5). Unter dem Codeblock höchstens fünf Zeilen mit Annahmen, fehlenden Wochen und Punkten, die nicht in der Vorlage stehen.")
+        out.append("## Kopfzeile")
+        out.append("Die erste Zeile der CSV ist genau:")
+        out.append(header)
+        out.append("Komma als Trennzeichen, Zahlen mit Dezimalpunkt: ein Dezimalkomma der Unterlage schreibst du als Punkt (9,19 → 9.19) – ein Komma ohne Anführungszeichen verschiebt alle weiteren Spalten. Werte mit Komma, Anführungszeichen oder Zeilenumbruch in \"doppelte Anführungszeichen\". Jede Zeile hat genau so viele Spalten wie die Kopfzeile; leere Spalten leer lassen. Alles auf Deutsch mit richtigen Umlauten.")
         out.append("")
-        out.append(templateHeading(sorted))
+        out.append("## Beispiel (zwei Wochen)")
         out.append("```csv")
-        out.append(template(week: sorted.first, items: items, measures: measures).trimmingCharacters(in: .newlines))
+        out.append(exampleCSV().trimmingCharacters(in: .newlines))
         out.append("```")
+        out.append("\(weekPlaceholder) steht für die echte week-id (z. B. 2026-W43). Erste Woche: Wochenwert mit Quelle; Samstag Urlaub (die Note des Tages wird trotzdem übertragen); \u{201E}Sport / Verein\u{201C} mit Tagesnoten samt echter 0, je Tag eine Zeile; \u{201E}Lesen\u{201C} nur als Mittelwert über 4 gültige Tage; \u{201E}Sonderwoche\u{201C} ohne heutige Kategorie (id leer); eine Zielnote, so wie sie in der Unterlage steht – nicht aus den Kategorien gerechnet. Zweite Woche: nur der Wochenwert. Bezeichnungen, ids und Werte sind nur Beispiele – nimm die ids aus den Listen unten und die Werte aus den Unterlagen; das Beispiel selbst gehört nicht in die Antwort.")
         out.append("")
         let sortedGoals = goals.sortedByNumber()
-        if !sortedGoals.isEmpty {
-            out.append("## Meine Struktur")
-            let sortedCategories = categories.sortedByKey()
-            for goal in sortedGoals {
-                let list = sortedCategories.filter { $0.goalKey == goal.key }.map { "\($0.key) \($0.title)" }.joined(separator: " · ")
-                out.append("- \(goal.label): \(list)")
-            }
-            out.append("")
+        out.append("## Jahresziele (id · Name)")
+        if sortedGoals.isEmpty { out.append("- (keine)") }
+        out.append(contentsOf: sortedGoals.map { "- \($0.key) · \($0.title)" })
+        out.append("")
+        let sortedCategories = categories.sortedByKey()
+        out.append("## Kategorien (id · Name · Jahresziel)")
+        if sortedCategories.isEmpty { out.append("- (keine)") }
+        out.append(contentsOf: sortedCategories.map { "- \($0.key) · \($0.title) · Ziel \($0.goalKey)" })
+        out.append("")
+        out.append("## Messwerte (id · Name · Einheit)")
+        let sortedMeasures = measures.sorted { ($0.position, $0.code) < ($1.position, $1.code) }
+        if sortedMeasures.isEmpty { out.append("- (keine)") }
+        out.append(contentsOf: sortedMeasures.map { "- \($0.code) · \($0.title) · \($0.unit.isEmpty ? "–" : $0.unit)" })
+        out.append("")
+        out.append(templateHeading(items))
+        if !items.isEmpty {
+            out.append("```csv")
+            out.append(template(items: items).trimmingCharacters(in: .newlines))
+            out.append("```")
+            out.append("Nur Zeilen für Punkte, deren Haken in den Unterlagen wirklich stehen – in den Block ihrer Woche, id, parent, title, days und schedule unverändert, nur mo bis so ausfüllen.")
         }
+        out.append("")
         if sorted.count == 1, let week = sorted.first {
             out.append("## Meine Unterlagen für \(week.label):")
         } else {
@@ -653,68 +684,84 @@ public enum PastWeekPrompt {
         return out.joined(separator: "\n")
     }
 
+    /// Which weeks: exactly the given ones, or the weeks of the attachments.
     static func intro(_ weeks: [WeekKey]) -> [String] {
-        let app = "aus meinem alten Tracker in meine Tracking-App „Thalia“ zu übertragen."
         guard let first = weeks.first else {
-            return ["Du hilfst mir, vergangene Wochen \(app) Ich lege Fotos, PDFs oder Tabellen bei – eine oder viele Wochen. KW und Datum jeder Woche liest du dort ab."]
+            return ["Wochen: die Wochen aus den Unterlagen – KW und Datum jeder Woche liest du dort ab (eine Woche geht von Montag bis Sonntag). Eine oder viele Wochen; Wochen, die du nicht sicher zuordnen kannst, nennst du unter dem Codeblock, statt zu raten."]
         }
         if weeks.count == 1 {
-            return ["Du hilfst mir, eine vergangene Woche – \(first.longLabel) (\(first.rangeLabel)) – \(app) Ich lege Fotos, PDFs oder Tabellen dazu bei."]
+            return ["Woche: genau diese – \(first.longLabel) (\(first.rangeLabel)), week-id \(first.string). Fehlt sie in den Unterlagen, schreib keinen Block und sag es unter dem Codeblock."]
         }
-        return ["Du hilfst mir, \(weeks.count) vergangene Wochen \(app) Ich lege Fotos, PDFs oder Tabellen dazu bei. Es geht genau um diese Wochen:"]
+        return ["Wochen: genau diese \(weeks.count) vergangenen Wochen. Nur die Wochen unten übertragen, mit ihrer week-id; fehlt eine in den Unterlagen, lass ihren Block weg und nenne sie unter dem Codeblock:"]
             + weeks.map { "- \($0.longLabel) (\($0.rangeLabel)): week-id \($0.string)" }
     }
 
-    static func rules(_ weeks: [WeekKey]) -> [String] {
-        var lines = [
-            "- Übertrage nur, was in den Unterlagen steht. Leere Felder bleiben leer: keine Markierung für ein leeres Feld, nichts erfinden, nichts schätzen.",
-            "- Eine CSV mit einem Block je Woche, die älteste zuerst: eine week-Zeile, sieben day-Zeilen (Mo … So), die measure-Zeilen, dann die item-Zeilen. Alle Zeilen eines Blocks gehören zur week-Zeile darüber.",
+    /// The rules of TASKS-v9 §3, numbered.
+    static func rules(_ weeks: [WeekKey], hasItems: Bool, hasMeasures: Bool) -> [String] {
+        let weekID = weeks.isEmpty
+            ? "id = Woche (Woche erkennen: Jahr und KW, z. B. 2026-W43; unklar → id leer lassen und date = ein Datum der Woche, z. B. 2026-10-19)"
+            : "id = die week-id oben"
+        let marks = hasItems
+            ? "7. Einzelhaken nur, wenn einzelne Punkte wirklich lesbar abgehakt sind: item-Zeilen aus der Vorlage unten (id, parent, title, days, schedule unverändert) mit den Spalten mo … so: ✓ = erledigt · ½ = teilweise · ✗ = nicht erledigt · – = entfällt. Sonst keine item-Zeilen – fehlende Punkte gelten nicht als verpasst. Aus einer Note folgen keine Haken. Hat eine Woche item-Zeilen, rechnet Thalia sie nach diesen Punkten, und ihre Noten zählen dann nicht mit – einzelne Haken also nur, wenn die Woche damit wirklich belegt ist."
+            : "7. Keine item-Zeilen (die App hat keine Vorlage für Einzelhaken) – fehlende Punkte gelten nicht als verpasst. Aus einer Note folgen keine Haken."
+        let values = hasMeasures
+            ? "8. Messwerte (entry) nur mit belegtem Wert: id = Messwert-id aus der Liste unten, date, value. Aus einer Note folgt kein Messwert, keine Anzahl und keine Arbeitszeit."
+            : "8. Keine entry-Zeilen (keine Messwerte als Vorlage). Aus einer Note folgt kein Messwert, keine Anzahl und keine Arbeitszeit."
+        return [
+            "1. Nichts erfinden. Leere, gestrichene oder unlesbare Felder: keine Zeile. Eine echte 0 schreibst du als 0. Widersprechen sich Unterlagen, nimm die, die ich nenne; nenne ich keine, lass das widersprüchliche Feld weg. Beides erwähnst du unter dem Codeblock.",
+            "2. Je Woche ein Block, älteste zuerst; jeder Block beginnt mit genau einer week-Zeile. Alle Zeilen eines Blocks gehören zu dieser Woche – ein Datum aus einer anderen Woche liest Thalia nicht.",
+            "3. week: \(weekID); value = der Wochenwert genau wie in der Unterlage – nicht selbst berechnen, nicht runden, nur das Dezimalkomma als Punkt (9,19 → 9.19); note = Quelle (z. B. „Scan S. 3“); title und description leer lassen. Ist nur der Wochenwert belegt, besteht der Block nur aus dieser Zeile.",
+            "4. day (nur wenn belegt): id = Datum oder Mo … So, title = Tagestyp (Arbeitstag, Frei, Krank, Urlaub …), description = kurze Notiz. Krank- und Urlaubstage zählen heute nicht in die Wochenwertung – ihre Noten überträgst du trotzdem.",
+            "5. category_score = Note einer Kategorie (0–10): title = Bezeichnung genau wie in der Unterlage; id = heutige Kategorie aus der Liste unten, nur wenn es eindeutig dieselbe ist – sonst leer (alte Sammel- oder Zusatzkategorien nie aufteilen oder umdeuten; zwei Bezeichnungen nie auf dieselbe id); date = der Tag bei einer Tagesnote (Datum oder Mo … So) – je Tagesnote eine eigene Zeile, die Spalten mo … so gibt es nur in item-Zeilen; date leer bei einer Wochennote, die nur als Mittelwert belegt ist (dann count = Anzahl gültiger Tage, wenn angegeben); value = Note; note = Quelle. Mittelwerte rechnet Thalia selbst: zu übertragenen Tagesnoten keine Wochennote derselben Kategorie. Noten nie als Text in note oder description – immer als category_score oder goal_score.",
+            "6. goal_score = Note eines Jahresziels (0–10) für die Woche: id = Jahresziel 1–10 aus der Liste unten (leer, wenn unklar), title = Bezeichnung wie in der Unterlage, value, note = Quelle, count wenn angegeben. Steht in der Unterlage eine Note je Jahresziel (eine Zeile je Ziel), ist das goal_score mit der id des Jahresziels – auch wenn die Unterlage sie Kategorie nennt. Zielnoten nie auf Kategorien verteilen, je Kategorie wiederholen oder aus Kategoriennoten berechnen.",
+            marks,
+            values,
+            "9. Keine score-, measure-, goal-, category- oder work-Zeilen.",
+            "10. Antworte mit genau einem ```csv-Block für alle Wochen; danach in 2–5 Zeilen, was unsicher war (unlesbare Felder, widersprüchliche Angaben, unsichere Zuordnungen, fehlende Wochen).",
         ]
-        if weeks.isEmpty {
-            lines.append("- Woche erkennen: id der week-Zeile = Jahr und KW, z. B. 2026-W45 (Woche von Montag bis Sonntag). Steht dort nur ein Datum, id leer lassen und ein Datum dieser Woche in date schreiben (z. B. 2026-11-02). Wochen, die du nicht sicher zuordnen kannst, nenne unter dem Codeblock, statt zu raten.")
-        } else if weeks.count == 1 {
-            lines.append("- Nur diese eine Woche übertragen. Fehlt sie in den Unterlagen, schreib keinen Block und sag es unter dem Codeblock.")
-        } else {
-            lines.append("- Nur die Wochen oben übertragen, mit ihrer week-id. Fehlt eine davon in den Unterlagen, lass ihren Block weg und nenne sie unter dem Codeblock.")
-        }
-        lines.append(contentsOf: [
-            "- Markierungen in den Spalten mo, di, mi, do, fr, sa, so der item-Zeilen: ✓ = erledigt · ½ = teilweise · ✗ = nicht erledigt (auch X) · – = entfällt (auch N/A).",
-            "- Verwende in jedem Block genau die item-Zeilen der Vorlage: ids, Titel, Tage und schedule unverändert lassen, nur mo bis so ausfüllen. Punkte aus meinen Unterlagen, die in der Vorlage fehlen, nenne unter dem Codeblock, statt sie zu erfinden.",
-            "- Fortschrittspunkte (schedule fortschritt) nicht abhaken: sie folgen aus dem Messwert. Zahlen als entry-Zeilen (id = Messwert-id, date, value), Power-Hours als work-Zeilen (parent = Kategorie, date, value = PH).",
-            "- day-Zeilen: id = Wochentag (Mo … So) oder Datum, title = Tagestyp, wenn er bekannt ist (Arbeitstag, Frei, Krank, Urlaub …), description = Besonderheit. Krank- und Urlaubstage zählen nicht in die Wochenwertung. Unbekanntes leer lassen.",
-            "- Ist von einer Woche nur die Gesamtwertung bekannt (z. B. 7.5), schreib für sie nur die week-Zeile mit dieser Zahl in value – ohne day- und item-Zeilen.",
-            "- Alles auf Deutsch mit richtigen Umlauten.",
-        ])
-        return lines
     }
 
-    static func templateHeading(_ weeks: [WeekKey]) -> String {
-        guard let first = weeks.first else {
-            return "## Vorlage: ein Block (für jede Woche wiederholen, \(weekPlaceholder) durch die Woche ersetzen)"
-        }
-        if weeks.count == 1 { return "## Vorlage für \(first.label) (ausfüllen)" }
-        return "## Vorlage: Block für \(first.label) (für jede Woche wiederholen, nur die id der week-Zeile ändern)"
+    /// "## Vorlage für Einzelhaken (nur bei belegten Haken) – Punkte von KW46"
+    static func templateHeading(_ items: [ItemRecord]) -> String {
+        let heading = "## Vorlage für Einzelhaken (nur bei belegten Haken)"
+        guard let week = items.map(\.week).max() else { return heading + ": keine Punkte in der App" }
+        return heading + " – Punkte von \(week.label)"
     }
 
-    /// The template to fill in: week row, seven day rows (by weekday, so the block fits every week),
-    /// the measurements, the items with empty weekday columns – written by the real column list so it
-    /// never drifts from the format. `week` nil: the placeholder id.
-    static func template(week: WeekKey?, items: [ItemRecord], measures: [MeasureRecord]) -> String {
-        let columns = PlanCSV.columns + PlanCSV.matrixColumns
+    /// The items to copy for single marks: the header and one row per item with empty weekday
+    /// columns – written by the real column list so it never drifts from the format.
+    static func template(items: [ItemRecord]) -> String {
         var table: [[String]] = [columns]
         func row(_ values: [String: String]) { table.append(columns.map { values[$0] ?? "" }) }
-        row(["type": "week", "id": week?.string ?? weekPlaceholder])
-        for weekday in Weekday.allCases { row(["type": "day", "id": weekday.short]) }
-        for measure in measures.sorted(by: { ($0.position, $0.code) < ($1.position, $1.code) }) {
-            row(["type": "measure", "id": measure.code, "parent": measure.categoryKey, "title": measure.title,
-                 "days": measure.days == .everyDay ? "" : measure.days.csv, "unit": measure.unit, "target": measure.target?.raw ?? "",
-                 "period": measure.period.rawValue, "link": measure.source.raw,
-                 "flags": ItemFlags.text(secondary: measure.secondary, dayRule: measure.dayRule)])
-        }
         for item in items.sortedForSheet() {
             row(["type": "item", "id": item.code, "parent": item.categoryKey, "title": item.title, "days": item.days.csv,
                  "schedule": item.schedule.raw, "target": item.target?.raw ?? "", "link": item.measure, "flags": item.flags])
         }
+        return CSV.write(table)
+    }
+
+    /// Two weeks as an example (§3): a week with its value, a holiday Saturday, three labels (one
+    /// without today's category, one only as a mean) and a goal grade that is no mean of the example's
+    /// category grades; a week with only its value. Neutral labels only. The week ids are placeholders,
+    /// so the example never lands in a real week; with real ids (`weekIDs`) it is valid input – a test
+    /// reads it back.
+    static func exampleCSV(weekIDs: [String] = exampleWeekIDs) -> String {
+        let first = weekIDs.first ?? weekPlaceholder
+        let second = weekIDs.dropFirst().first ?? weekPlaceholder
+        var table: [[String]] = [columns]
+        func row(_ values: [String: String]) { table.append(columns.map { values[$0] ?? "" }) }
+        let source = "Scan S. 3"
+        row(["type": "week", "id": first, "value": "8.75", "note": source])
+        row(["type": "day", "id": "Sa", "title": "Urlaub"])
+        for (weekday, value) in [(Weekday.monday, "10"), (.tuesday, "0"), (.saturday, "10")] {
+            row(["type": ArchiveGrade.Kind.category.rawValue, "id": "1.2", "title": "Sport / Verein", "date": weekday.short,
+                 "value": value, "note": source])
+        }
+        row(["type": ArchiveGrade.Kind.category.rawValue, "id": "5", "title": "Lesen", "value": "6.5", "note": source,
+             PlanCSV.countColumn: "4"])
+        row(["type": ArchiveGrade.Kind.category.rawValue, "title": "Sonderwoche", "value": "7", "note": source])
+        row(["type": ArchiveGrade.Kind.goal.rawValue, "id": "1", "title": "Fitness", "value": "8", "note": source])
+        row(["type": "week", "id": second, "value": "7.2", "note": "Scan S. 4"])
         return CSV.write(table)
     }
 }
@@ -740,10 +787,14 @@ public struct WeekLine: Equatable, Sendable {
     public var excusedDays: Int
     public var weeklyTargetsMet: Int
     public var weeklyTargetsCount: Int
+    /// The week has archive grades (v9): Rückblick and PDF say "Archiv" instead of "Papier".
+    public var isArchive: Bool
 
     public init(week: WeekKey, score: Double? = nil, isClosed: Bool = false, isOldScoring: Bool = false, isPaperOnly: Bool = false,
                 isExcused: Bool = false, goalScores: [String: Double] = [:], powerHours: Double = 0, powerHoursTarget: Double? = nil,
-                closedDays: Int = 0, excusedDays: Int = 0, weeklyTargetsMet: Int = 0, weeklyTargetsCount: Int = 0) {
+                closedDays: Int = 0, excusedDays: Int = 0, weeklyTargetsMet: Int = 0, weeklyTargetsCount: Int = 0,
+                isArchive: Bool = false) {
+        self.isArchive = isArchive
         self.week = week
         self.score = score
         self.isClosed = isClosed
@@ -759,20 +810,34 @@ public struct WeekLine: Equatable, Sendable {
         self.weeklyTargetsCount = weeklyTargetsCount
     }
 
+    /// The score a week shows in Rückblick, Ø, Ziele, PDF and widgets (v9, decision 5): the value
+    /// "laut Unterlagen" wins over the calculated one (`WeekPlan.historyScore`).
+    public static func historyScore(recorded: Double?, computed: Double?) -> Double? {
+        recorded ?? computed
+    }
+
     /// A week from its report input, scored with the v8 rules.
     /// - Parameters:
     ///   - storedScore: `WeekPlan.historyScore` of a closed or paper week (wins over the live score).
     ///   - storedGoalScores: `WeekPlan.finalGoalScoreMap` of a closed week (wins when not empty).
-    public init(_ input: WeekReportInput, storedScore: Double? = nil, storedGoalScores: [String: Double] = [:]) {
+    ///   - archive: the week's archive grades (v9): without items, the goals and – without any other
+    ///     score – the week come from their recalculation under today's rules.
+    public init(_ input: WeekReportInput, storedScore: Double? = nil, storedGoalScores: [String: Double] = [:],
+                archive: ArchiveWeek? = nil) {
         let data = input.weekData
         let result = Scorer.score(data)
         let week = input.week.week
         let paperOnly = input.items.isEmpty && input.week.recordedScore != nil
         let live: Double? = result.isExcused ? nil : result.overall
+        let graded = archive?.hasGrades == true
+        let recalculation: ArchiveRecalculation? = graded && input.items.isEmpty
+            ? archive?.recalculated(categories: input.categories, goals: input.goals, excusedDays: input.excusedDays)
+            : nil
         var goals = storedGoalScores
         if goals.isEmpty {
             for (key, goal) in result.goalWeek { if let score = goal.score { goals[key] = score } }
         }
+        if goals.isEmpty, let recalculation { goals = recalculation.goals }
         var targets: [Double] = []
         var met = 0
         var count = 0
@@ -786,11 +851,12 @@ public struct WeekLine: Equatable, Sendable {
             count += 1
             if effective.isMet(value) { met += 1 }
         }
-        self.init(week: week, score: storedScore ?? live ?? input.week.recordedScore, isClosed: input.isClosed,
+        let score = storedScore ?? live ?? WeekLine.historyScore(recorded: input.week.recordedScore, computed: recalculation?.overall)
+        self.init(week: week, score: score, isClosed: input.isClosed,
                   isOldScoring: input.week.isOldScoring, isPaperOnly: paperOnly, isExcused: result.isExcused, goalScores: goals,
                   powerHours: WorkTotals(input.work).powerHours, powerHoursTarget: targets.isEmpty ? nil : targets.reduce(0, +),
                   closedDays: week.days.filter(input.closedDays.contains).count, excusedDays: result.excusedDays.count,
-                  weeklyTargetsMet: met, weeklyTargetsCount: count)
+                  weeklyTargetsMet: met, weeklyTargetsCount: count, isArchive: graded)
     }
 
     /// Counts in averages: has a score, current model, not excused.

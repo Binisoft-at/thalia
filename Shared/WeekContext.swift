@@ -99,10 +99,19 @@ struct WeekContext {
     let workRecords: [WorkRecord]
     let data: WeekData
     let score: WeekScore
+    /// v9: the week's archive grades (setting `archive.<week>`, the newest copy); nil without grades
+    /// and without a source.
+    let archive: ArchiveWeek?
+    /// v9: the archive grades under today's rules ("nach heutigen Regeln", decision 5): without the
+    /// week's sick and holiday days, only categories and goals the app has. Live, so a week that isn't
+    /// closed shows it too; nil without grades.
+    let archiveRecalculation: ArchiveRecalculation?
 
+    /// `settings`: the week's archive setting (`ArchiveWeek.settingKey`), other settings are ignored.
     init(week: WeekKey, today: DayKey, plans: [WeekPlan], goals: [AnnualGoal], categories: [TrackCategory], items: [PlanItem],
          measures: [MeasureDefinition], marks: [ItemMark], days: [PlanDay], entries: [MeasureEntry], health: [HealthValue],
-         work: [WorkBlock], notes: [DayNote], overrides: [ScoreOverride], reflections: [Reflection], changes: [PlanChange] = []) {
+         work: [WorkBlock], notes: [DayNote], overrides: [ScoreOverride], reflections: [Reflection], changes: [PlanChange] = [],
+         settings: [AppSetting] = []) {
         self.week = week
         self.today = today
         let weekString = week.string
@@ -160,10 +169,23 @@ struct WeekContext {
             worked[item.code] = Measures.workedDays(for: item, measures: measureRecords, days: week.days,
                                                     entries: records, work: workRecords)
         }
-        data = WeekData(week: week, goals: self.goals.map(\.record), categories: self.categories.map(\.record),
+        let goalRecords: [GoalRecord] = self.goals.map(\.record)
+        let categoryRecords: [CategoryRecord] = self.categories.map(\.record)
+        data = WeekData(week: week, goals: goalRecords, categories: categoryRecords,
                         items: itemRecords, marks: markValues, overrides: overrideValues, isComplete: isComplete,
                         progress: progress, worked: worked, workFreeDays: free, excusedDays: excused)
         score = Scorer.score(data)
+
+        let archiveKey = ArchiveWeek.settingKey(week)
+        let stored: AppSetting? = settings.filter { $0.key == archiveKey }.max { $0.modifiedAt < $1.modifiedAt }
+        let archived: ArchiveWeek? = stored.map { ArchiveWeek(csv: $0.value, week: week) }
+        let kept: ArchiveWeek? = (archived?.isEmpty ?? true) ? nil : archived
+        archive = kept
+        if let kept, kept.hasGrades {
+            archiveRecalculation = kept.recalculated(categories: categoryRecords, goals: goalRecords, excusedDays: excused)
+        } else {
+            archiveRecalculation = nil
+        }
     }
 
     var hasPlan: Bool { !items.isEmpty }
@@ -718,5 +740,93 @@ extension WeekContext {
             return ExpensePurpose(purpose: spelling.isEmpty ? "ohne Angabe" : spelling, total: group.total, count: group.count)
         }
         return Array(purposes.sorted { ($0.total, $1.purpose) > ($1.total, $0.purpose) }.prefix(limit))
+    }
+}
+
+// MARK: v9 – archive weeks
+
+extension WeekContext {
+    /// The value "laut Unterlagen" (`WeekPlan.recordedScore`): from the week row or "Nur Wertung", never
+    /// calculated (decision 5).
+    var recordedScore: Double? { plan?.recordedScore }
+
+    /// The score "nach heutigen Regeln" (decision 5): for a week with items the Scorer's (the stored one
+    /// once the week is closed), for a week without items the recalculation of its archive grades;
+    /// nil without either.
+    var recalculatedScore: Double? {
+        guard hasPlan else { return archiveRecalculation?.overall }
+        guard isClosed, let stored = plan?.finalScore else { return score.overall }
+        return stored
+    }
+
+    /// The week shows the "Archiv" card (decision 9): archive grades or a value "laut Unterlagen".
+    var showsArchive: Bool {
+        let graded: Bool = archive?.hasGrades ?? false
+        return graded || recordedScore != nil
+    }
+
+    /// The week's day types by day ("Urlaub"), days without a type left out.
+    var dayTypes: [DayKey: String] {
+        var result: [DayKey: String] = [:]
+        for day in week.days {
+            let type = dayType(day)
+            if !type.isEmpty { result[day] = type }
+        }
+        return result
+    }
+
+    /// "ohne 2 Urlaubstage" – the days whose grades don't count under today's rules; nil without.
+    var archiveExcludedText: String? {
+        archiveRecalculation?.excludedText(dayTypes: dayTypes)
+    }
+
+    /// The short line next to "nach heutigen Regeln": why there is no value ("keine Kategoriennoten"),
+    /// else for a week without items the days left out ("ohne 1 Urlaubstag"); nil when there's nothing to say.
+    var recalculatedNote: String? {
+        if recalculatedScore == nil {
+            if hasPlan { return score.isExcused ? WeekScore.excusedText : "noch keine Wertung" }
+            let graded: Bool = archive?.hasGrades ?? false
+            return graded ? "keine Note mit heutiger Kategorie" : "keine Kategoriennoten"
+        }
+        return hasPlan ? nil : archiveExcludedText
+    }
+
+    /// The short line next to "laut Unterlagen" without a value.
+    var recordedNote: String? {
+        recordedScore == nil ? "nicht in den Unterlagen" : nil
+    }
+
+    /// An archive line counts today (decision 6): it has an id and the app has that category or goal.
+    /// Otherwise it belongs under "Ohne Zuordnung (Archiv)".
+    func isMapped(_ line: ArchiveWeek.Line) -> Bool {
+        guard !line.id.isEmpty else { return false }
+        switch line.kind {
+        case .category: return category(line.id) != nil
+        case .goal: return goals.contains { $0.key == line.id }
+        }
+    }
+
+    /// The archive's category lines with a category of the app, in sheet order.
+    var archiveCategoryLines: [ArchiveWeek.Line] {
+        let lines: [ArchiveWeek.Line] = archive?.categoryLines ?? []
+        return lines.filter { isMapped($0) }
+    }
+
+    /// The archive's goal lines with a goal of the app, in sheet order.
+    var archiveGoalLines: [ArchiveWeek.Line] {
+        let lines: [ArchiveWeek.Line] = archive?.goalLines ?? []
+        return lines.filter { isMapped($0) }
+    }
+
+    /// "Ohne Zuordnung (Archiv)": lines without an id or with a category or goal the app doesn't have.
+    /// They are kept with their original label and never count.
+    var archiveUnmappedLines: [ArchiveWeek.Line] {
+        let lines: [ArchiveWeek.Line] = archive?.lines ?? []
+        return lines.filter { !isMapped($0) }
+    }
+
+    /// The goal of an id ("5"), if the app has it.
+    func goal(key: String) -> AnnualGoal? {
+        goals.first { $0.key == key }
     }
 }

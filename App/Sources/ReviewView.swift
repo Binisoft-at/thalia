@@ -37,6 +37,9 @@ struct ReviewContent: View {
     @Query(filter: #Predicate<DayNote> { $0.kindRaw == "idee" && $0.deletedAt == nil }) private var ideaNotes: [DayNote]
     /// v8: "PDF-Bericht ab dieser Woche" from a row's context menu.
     @State private var rangeStart: RangeStart?
+    /// v9: the archive settings (`archive.<week>`), observed so the "Archiv" tag follows an import.
+    /// Settings are few; the others are ignored.
+    @Query private var settings: [AppSetting]
 
     private var weeks: [WeekPlan] {
         Array(plans.latest(by: \.weekKey, modified: \.modifiedAt).values).sorted { $0.weekKey > $1.weekKey }
@@ -91,6 +94,19 @@ struct ReviewContent: View {
         point.isExcused ? "–" : Format.score(point.score)
     }
 
+    /// v9: weeks without items whose archive setting holds grades – their rows say "Archiv" (decision 9),
+    /// as in the PDF report (a week with items is scored by them). Read once per body.
+    private var archivedWeeks: Set<String> {
+        var result: Set<String> = []
+        let stored = settings.filter { $0.key.hasPrefix(ArchiveWeek.settingPrefix) }.latest(by: \.key, modified: \.modifiedAt)
+        for (key, setting) in stored {
+            guard let week = ArchiveWeek.week(settingKey: key) else { continue }
+            guard ArchiveWeek(csv: setting.value, week: week).hasGrades, app.store.items(week).isEmpty else { continue }
+            result.insert(week.string)
+        }
+        return result
+    }
+
     /// v8: the week was all sick or holiday days.
     private func isExcused(_ week: WeekKey, open: UnclosedWeek?, excused: Set<String>) -> Bool {
         if week == current.week { return current.score.isExcused }
@@ -101,6 +117,7 @@ struct ReviewContent: View {
     var body: some View {
         let open: [String: UnclosedWeek] = unclosed
         let excused: Set<String> = excusedClosed
+        let archived: Set<String> = archivedWeeks
         let points: [ScorePoint] = chartPoints(open, excused: excused)
         List {
             if points.count > 0 {
@@ -130,7 +147,7 @@ struct ReviewContent: View {
                 } header: {
                     SectionHeading(title: "Wochenwertungen", symbol: "chart.bar")
                 } footer: {
-                    Text("Grau: vor KW42 (anderes Bewertungsmodell). Orange: nicht abgeschlossen – laufende Wertung. Hellgrau: entschuldigt (krank/Urlaub) – die Woche zählt nicht. Eine steigende Wertung heißt nicht, dass alles besser wurde – Arbeit, Reisen und Erholung waren jede Woche anders.")
+                    Text("Grau: vor KW42 (anderes Bewertungsmodell). Orange: nicht abgeschlossen – laufende Wertung. Hellgrau: entschuldigt (krank/Urlaub) – die Woche zählt nicht. Gibt es eine Wertung laut Unterlagen, zeigt der Balken sie. Eine steigende Wertung heißt nicht, dass alles besser wurde – Arbeit, Reisen und Erholung waren jede Woche anders.")
                 }
             }
 
@@ -175,7 +192,8 @@ struct ReviewContent: View {
                         } label: {
                             WeekHistoryRow(plan: plan, week: week,
                                            liveScore: liveScore(week, unclosed: info),
-                                           isCurrent: week == current.week, isUnclosed: info != nil, isExcused: weekExcused)
+                                           isCurrent: week == current.week, isUnclosed: info != nil, isExcused: weekExcused,
+                                           isArchive: archived.contains(week.string))
                         }
                         .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
@@ -247,8 +265,19 @@ struct WeekHistoryRow: View {
     var isUnclosed = false
     /// v8: the week was all sick or holiday days – "entschuldigt" instead of a missing score.
     var isExcused = false
+    /// v9: the week has archive grades – tagged "Archiv"; its ring shows the value laut Unterlagen.
+    var isArchive = false
 
     private var ringScore: Double? { liveScore ?? plan.historyScore }
+
+    /// v9 (decision 5): both scores where a week has both, clearly named; nil otherwise.
+    private var scoresLine: String? {
+        guard !isCurrent, let recorded = plan.recordedScore, let computed = plan.finalScore else { return nil }
+        return "Laut Unterlagen \(Format.score(recorded)) · \(ImportWeekSummary.recalculatedLabel) \(Format.score(computed))"
+    }
+
+    /// "3/10 Ziele bewertet" – orange for a planned week; for an archive week a plain fact about its grades.
+    private var goalsColor: Color { isArchive ? Color.secondary : Color.orange }
 
     private var ringTint: Color { isUnclosed ? Color.orange : Brand.accent }
 
@@ -273,6 +302,9 @@ struct WeekHistoryRow: View {
                         Text("vor KW42").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                             .padding(.horizontal, 5).background(Color.secondary.opacity(0.12), in: .capsule)
                     }
+                    if isArchive {
+                        ArchiveTag()
+                    }
                     if isExcused {
                         Label(WeekScore.excusedLabel, systemImage: "cross.case")
                             .font(.caption2.weight(.semibold))
@@ -286,10 +318,16 @@ struct WeekHistoryRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if let scoresLine {
+                    Text(scoresLine)
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
                 if plan.finalGoalsScored > 0, plan.finalGoalsScored < 10 {
                     Text("\(plan.finalGoalsScored)/10 Ziele bewertet")
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(goalsColor)
                 }
             }
             Spacer()

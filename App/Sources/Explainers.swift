@@ -223,7 +223,7 @@ struct ExplainerSheet: View {
 }
 
 /// v8: explainers for the three new features. `Explainer` (AppModel) stays as it is; these open from
-/// the "Neu in 1.7" card at the end of "Wie wird gerechnet?" – a NavigationStack is around every explainer.
+/// the "Neu seit 1.7" card at the end of "Wie wird gerechnet?" – a NavigationStack is around every explainer.
 enum FeatureExplainer: String, CaseIterable, Identifiable {
     case excused, pastWeeks, rangePDF
 
@@ -250,7 +250,8 @@ enum FeatureExplainer: String, CaseIterable, Identifiable {
 struct FeatureExplainerLinks: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Neu in 1.7", systemImage: "sparkles")
+            // v9: 1.8 adds "Archiv-Wochen" as a step of "Vergangene Wochen".
+            Label("Neu seit 1.7", systemImage: "sparkles")
                 .font(.headline)
             ForEach(FeatureExplainer.allCases) { feature in
                 NavigationLink {
@@ -347,10 +348,13 @@ struct FeatureExplainerView: View {
                  text: "Die Punkte der nächstgelegenen geplanten Woche kommen in die gewählte Woche, ohne Markierungen. Dann in der Woche abhaken, Krank- und Urlaubstage setzen und die Woche abschließen – erst dann zählt sie. Hat die Woche schon einen Plan, kommt er ins Archiv – „Widerrufen“ holt ihn zurück.",
                  example: "Plan von KW47 übernehmen → KW44")
             Step(number: 3, title: "Mit ChatGPT – auch viele Wochen auf einmal",
-                 text: "„Prompt kopieren“, in ChatGPT Fotos, PDFs oder Tabellen dazulegen. Zurück kommt eine CSV mit einem Block je Woche: Tage (auch Krank/Urlaub), Punkte, Markierungen, oder nur eine Wertung. CSV einfügen oder „Datei…“ → Vorschau je Woche → Importieren. Zeitraum: „Wochen aus den Unterlagen“ oder ein fester Bereich von–bis.",
-                 example: "KW45 2026 (2.–8. Nov.) · neu · 4 Markierungen · 2 Tage Krank/Urlaub")
-            Step(number: 4, title: "Nur Wertung",
-                 text: "Für Wochen, von denen nur die Zahl vom Papier bekannt ist: Woche wählen, Wertung 0–10 eintragen. Sie erscheint im Rückblick; mehrere Wochen nacheinander gehen ohne Schließen.",
+                 text: "„Prompt kopieren“, in ChatGPT Fotos, PDFs oder Tabellen dazulegen. Zurück kommt eine CSV mit einem Block je Woche: Tage (auch Krank/Urlaub), die Wertung laut Unterlagen, Kategorien- und Zielnoten 0–10 und nur belegte Einzelhaken. CSV einfügen oder „Datei…“ → Vorschau je Woche → Importieren. Zeitraum: „Wochen aus den Unterlagen“ oder ein fester Bereich von–bis.",
+                 example: "KW43 2026 · neu · 12 Kategoriennoten · 10 Zielnoten · Wertung 9,28 laut Unterlagen")
+            Step(number: 4, title: "Archiv-Wochen",
+                 text: "Eine Woche nur mit Wertung und Noten bekommt keine Punkte – nichts ist offen oder verpasst. Die Woche zeigt die Karte „Archiv“: die Wertung laut Unterlagen, daneben „Nach heutigen Regeln“ aus den Kategoriennoten (ohne Krank- und Urlaubstage), die Noten Mo–So mit Ø (n) und „Ohne Zuordnung (Archiv)“ für alte Bezeichnungen. Für einen erneuten Import: „Archivdaten dieser Wochen ersetzen“.",
+                 example: "Wertung laut Unterlagen 9,28 · Nach heutigen Regeln 8,93 · ohne 2 Urlaubstage")
+            Step(number: 5, title: "Nur Wertung",
+                 text: "Für Wochen, von denen nur die Zahl vom Papier bekannt ist: Woche wählen, Wertung 0–10 eintragen – die Wertung laut Unterlagen. Sie erscheint im Rückblick; mehrere Wochen nacheinander gehen ohne Schließen.",
                  example: "KW38 · 7,5")
             VStack(alignment: .leading, spacing: 8) {
                 Label("Wichtig", systemImage: "exclamationmark.circle")
@@ -360,6 +364,9 @@ struct FeatureExplainerView: View {
                 Text("• Diese und spätere Wochen werden nicht abgeschlossen; die Vorschau warnt.")
                 Text("• Markierungen auf Punkte, die weder in der Datei noch in der App stehen, meldet die Vorschau.")
                 Text("• Eine ersetzte Woche kommt ins Archiv und lässt sich widerrufen.")
+                Text("• Ein ergänzender Import entfernt nichts. Erst „Archivdaten dieser Wochen ersetzen“ nimmt alte, falsche Punkte und Markierungen dieser Wochen heraus – diese Woche und spätere nie.")
+                Text("• Im Rückblick und im PDF zählt die Wertung laut Unterlagen vor der berechneten.")
+                Text("• Aus Noten macht Thalia nie Haken oder Messwerte; fehlende Einzelhaken, Arbeitszeiten und Messwerte bleiben unbekannt.")
             }
             .font(.subheadline)
             .card()
@@ -395,7 +402,7 @@ struct FeatureExplainerView: View {
                     .font(.headline)
                 Text("• Der Ø zählt nur gleich gewichtete Wochen (ab KW42 2026) mit Wertung; entschuldigte Wochen (krank/Urlaub) fallen weg.")
                 Text("• Trend je Ziel: die letzten vier gegen die ersten vier Wochen; bei mehr als 0,25 Unterschied steigend oder fallend – wie in der Zielüberprüfung.")
-                Text("• Wochen nur mit Papier-Wertung stehen als Zeile in der Übersicht, ohne eigene Seiten.")
+                Text("• Wochen ohne Punkte (Papier-Wertung oder Archiv) stehen als Zeile in der Übersicht, ohne eigene Seiten; ihre Wertung ist die laut Unterlagen.")
             }
             .font(.subheadline)
             .card()

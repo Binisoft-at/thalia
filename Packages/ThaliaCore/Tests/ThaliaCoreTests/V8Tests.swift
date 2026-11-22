@@ -507,7 +507,8 @@ struct V8CSVTests {
         #expect(preview.weekSummaries.map(\.week) == [paper, earlier, week])
         let first = preview.weekSummaries[0]
         #expect(first.isNew && first.recordedScore == 7.5 && first.items == 0 && first.status == "neu")
-        #expect(first.detail == "Wertung 7,5 · wird abgeschlossen", "\(first.detail)")
+        // v9: the week row's value is named "laut Unterlagen" (decision 5).
+        #expect(first.detail == "Wertung 7,5 laut Unterlagen · wird abgeschlossen", "\(first.detail)")
         let second = preview.weekSummaries[1]
         #expect(second.items == 1 && second.marks == 4)
         #expect(second.excusedDays == [earlier.day(.friday), earlier.day(.saturday)])
@@ -539,32 +540,34 @@ struct V8CSVTests {
         return (items, measures)
     }
 
+    /// v9 rewrote the prompt for archive weeks (TASKS-v9 §3): the template is only for single marks
+    /// (item rows, no week, day or measure rows), measurements are a list.
     @Test func pastWeekPromptCarriesIdsAndFormat() {
         let (items, measures) = promptInput()
         let text = PastWeekPrompt.text(weeks: [week], items: items, categories: Template.categories, goals: Template.goals,
                                        measures: measures)
-        #expect(text.contains("KW45 2026 (2.–8. Nov.)"))
-        #expect(text.contains(PlanCSV.matrixHeader))
+        #expect(text.contains("KW45 2026 (2.–8. Nov.), week-id 2026-W45"))
+        #expect(text.contains("\n" + PastWeekPrompt.header + "\n"))
         #expect(text.contains("item,1.1-01,1.1,Protein im Zielbereich"))
         #expect(text.contains("item,3.2-01,3.2,An stammloop gearbeitet"))
-        #expect(text.contains("measure,stammloop_ph,3.2,stammloop"))
-        #expect(text.contains("week,2026-W45"))
-        #expect(text.contains("day,Mo") && text.contains("day,So"))
+        #expect(text.contains("- stammloop_ph · stammloop · PH"))
+        #expect(!text.contains("measure,stammloop_ph"), "no measure rows (rule 9)")
         #expect(text.contains("Krank") && text.contains("Urlaub"))
-        #expect(text.contains("nichts erfinden") && text.contains("keine Markierung für ein leeres Feld"))
-        #expect(text.contains("einem Block je Woche"))
-        #expect(text.contains("nur die week-Zeile mit dieser Zahl in value"))
-        #expect(text.contains("3.2 stammloop"), "the structure")
+        #expect(text.contains("Nichts erfinden") && text.contains("unlesbare Felder: keine Zeile"))
+        #expect(text.contains("Je Woche ein Block"))
+        #expect(text.contains("Ist nur der Wochenwert belegt, besteht der Block nur aus dieser Zeile."))
+        #expect(text.contains("- 3.2 · stammloop · Ziel 3"), "the structure")
         #expect(!text.contains("ChatGPT"))
         #expect(text.hasSuffix("## Meine Unterlagen für KW45:\n"))
-        // The template reads back as the target week's plan.
-        let doc = PlanCSV.parse(PlanCSV.extractCSV(from: text), knownCategories: known)
+        // The template rows read back as the week's items once they stand in its block.
+        var rows = PastWeekPrompt.template(items: items).components(separatedBy: "\n")
+        rows.insert("week,2026-W45", at: 1)
+        let doc = PlanCSV.parse(rows.joined(separator: "\n"), knownCategories: known)
         #expect(doc.skipped.isEmpty, "\(doc.skipped)")
         #expect(doc.items.map(\.code).sorted() == ["1.1-01", "3.2-01"])
         #expect(doc.items.allSatisfy { $0.week == week })
-        #expect(doc.measures.first?.week == week)
-        #expect(doc.days.isEmpty, "empty day rows carry nothing")
-        #expect(doc.marks.isEmpty)
+        #expect(doc.items.first { $0.code == "3.2-01" }?.schedule == .progress, "schedule comes along")
+        #expect(doc.measures.isEmpty && doc.days.isEmpty && doc.marks.isEmpty)
     }
 
     @Test func pastWeekPromptForManyWeeks() {
@@ -572,12 +575,13 @@ struct V8CSVTests {
         let weeks = [week.adding(weeks: 2), week, week.adding(weeks: 1), week]
         let text = PastWeekPrompt.text(weeks: weeks, items: items, categories: Template.categories, goals: Template.goals,
                                        measures: measures)
-        #expect(text.contains("3 vergangene Wochen"))
+        #expect(text.contains("genau diese 3 vergangenen Wochen"))
         #expect(text.contains("- KW45 2026 (2.–8. Nov.): week-id 2026-W45\n- KW46 2026 (9.–15. Nov.): week-id 2026-W46\n- KW47 2026"))
-        #expect(text.contains("Nur die Wochen oben"))
-        #expect(text.contains("## Vorlage: Block für KW45"))
+        #expect(text.contains("Nur die Wochen unten"))
+        #expect(text.contains("id = die week-id oben"))
+        #expect(text.contains("## Vorlage für Einzelhaken (nur bei belegten Haken) – Punkte von KW46"), "the template week")
         #expect(text.hasSuffix("## Meine Unterlagen:\n"))
-        // A filled answer with two blocks: day rows by weekday belong to the week row above.
+        // A filled answer with two blocks (the v8 header still reads): day rows by weekday belong to the week row above.
         let answer = """
         ```csv
         \(PlanCSV.matrixHeader)
@@ -602,15 +606,16 @@ struct V8CSVTests {
         let text = PastWeekPrompt.text(weeks: [], items: items, categories: Template.categories, goals: Template.goals, measures: measures)
         #expect(text.contains("KW und Datum jeder Woche liest du dort ab"))
         #expect(text.contains("Woche erkennen"))
-        #expect(text.contains("week,\(PastWeekPrompt.weekPlaceholder)"))
         #expect(!text.contains("week,2026-W45") && !text.contains("week,2026-W46"), "no real week in the template, not the source week")
         #expect(text.contains("item,1.1-01,1.1,Protein im Zielbereich"))
-        #expect(text.contains("Krank") && text.contains("nichts erfinden") && text.contains("einem Block je Woche"))
+        #expect(text.contains("Krank") && text.contains("Nichts erfinden") && text.contains("Je Woche ein Block"))
         #expect(!text.contains("ChatGPT"))
         #expect(text.hasSuffix("## Meine Unterlagen:\n"))
-        // Pasted back unchanged, nothing lands in a wrong week.
-        let doc = PlanCSV.parse(PlanCSV.extractCSV(from: text), knownCategories: known)
-        #expect(doc.items.isEmpty && doc.weeks.isEmpty && !doc.skipped.isEmpty)
+        // Pasted back unchanged, nothing lands in any week (v9: the example's week ids are placeholders).
+        let doc = PlanCSV.parse(text, knownCategories: known)
+        #expect(doc.items.isEmpty && doc.marks.isEmpty && doc.weeks.isEmpty && doc.grades.isEmpty && doc.days.isEmpty)
+        #expect(!doc.skipped.isEmpty)
+        #expect(doc.warnings.contains { $0.contains("CSV-Blöcke") }, "\(doc.warnings)")
     }
 }
 

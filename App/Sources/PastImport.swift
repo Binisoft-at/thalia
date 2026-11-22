@@ -9,7 +9,10 @@ import ThaliaCore
 ///      the week table and close the week;
 ///   b) one prompt for ChatGPT with photos, PDFs or tables of one or many weeks → one CSV with a block
 ///      per week → preview per week → import. Past weeks and their days with entries are closed
-///      (`Document.closingPast`), so they count in Rückblick, Ziele and Ø 4 Wo.;
+///      (`Document.closingPast`), so they count in Rückblick, Ziele and Ø 4 Wo. v9: a block may hold
+///      only the week's value and category or goal grades (an archive week – no items, nothing open or
+///      missed); "Archivdaten dieser Wochen ersetzen" replaces what the app has for the file's past
+///      weeks (for a repeated import, Undo brings it back);
 ///   c) only a week's score from paper (`WeekPlan.recordedScore`).
 /// The weeks to choose from: last week back to the start of the goal year, at least 52 weeks.
 struct PastWeekImportView: View {
@@ -36,7 +39,7 @@ struct PastWeekImportView: View {
             case .plan:
                 "Die Punkte einer geplanten Woche in die vergangene Woche kopieren – ohne Markierungen. Danach in der Woche abhaken, Tagestypen setzen und die Woche abschließen."
             case .chat:
-                "Fotos, PDFs oder Tabellen einer oder vieler Wochen in ChatGPT geben. Zurück kommt eine CSV mit einem Block je Woche; vergangene Wochen werden beim Import abgeschlossen."
+                "Fotos, PDFs oder Tabellen einer oder vieler Wochen in ChatGPT geben. Zurück kommt eine CSV mit einem Block je Woche – auch nur mit Wochenwert und Noten; vergangene Wochen werden beim Import abgeschlossen."
             case .score:
                 "Nur die Wochenwertung vom Papier eintragen (0 bis 10). Sie erscheint im Rückblick."
             }
@@ -67,8 +70,11 @@ struct PastWeekImportView: View {
     /// The text and switch the current preview was made with (R20).
     @State private var previewText = ""
     @State private var previewBlanks = false
+    @State private var previewReplaces = false
     @State private var preview: ImportPreview?
     @State private var blanksAsMissed = false
+    /// v9: "Archivdaten dieser Wochen ersetzen" – off by default (decision 2).
+    @State private var replacesArchives = false
     @State private var showFilePicker = false
     @State private var confirmingReplace = false
 
@@ -108,6 +114,7 @@ struct PastWeekImportView: View {
             case .chat:
                 promptSection
                 pasteSection
+                replaceSection
                 if let preview {
                     previewSection(preview)
                 }
@@ -138,6 +145,9 @@ struct PastWeekImportView: View {
             refreshTemplate()
         }
         .onChange(of: blanksAsMissed) {
+            if preview != nil { runPreview(text) }
+        }
+        .onChange(of: replacesArchives) {
             if preview != nil { runPreview(text) }
         }
         // The preview follows the text 0.6 s after the last keystroke (R20).
@@ -319,7 +329,7 @@ struct PastWeekImportView: View {
     }
 
     private var promptFooter: String {
-        var parts = ["Der Prompt enthält Ziele und Kategorien, das CSV-Format und die Punkte der Vorlage mit ihren ids."]
+        var parts = ["Der Prompt enthält Ziele, Kategorien und Messwerte mit ihren ids, das CSV-Format mit Kategorien- und Zielnoten und die Punkte der Vorlage – nur für wirklich abgehakte Einzelpunkte."]
         if fixedRange {
             parts.append("Zeitraum: genau \(rangeText).")
         } else {
@@ -327,7 +337,7 @@ struct PastWeekImportView: View {
         }
         parts.append("In ChatGPT einfügen, Fotos, PDFs oder Tabellen dazulegen – zurück kommt eine CSV mit einem Block je Woche.")
         if templateWeek == nil {
-            parts.append("Ohne Woche mit Plan fehlen die Punkte: erst einen Wochenplan importieren.")
+            parts.append("Ohne Woche mit Plan fehlt die Vorlage für Einzelhaken – Wochenwert und Noten gehen trotzdem.")
         }
         return parts.joined(separator: " ")
     }
@@ -354,7 +364,16 @@ struct PastWeekImportView: View {
         } header: {
             Text("2 · CSV einfügen")
         } footer: {
-            Text("Leere Felder bleiben sonst offen. Mit dem Schalter zählen leere Felder fester Punkte als ✗ Nicht erledigt – nie an freien Tagen und an Krank- und Urlaubstagen.")
+            Text("Leere Felder bleiben sonst offen. Mit dem Schalter zählen leere Felder fester Punkte als ✗ Nicht erledigt – nie an freien Tagen, an Krank- und Urlaubstagen und in Wochen nur mit Wertung oder Noten.")
+        }
+    }
+
+    /// v9 (decisions 2 and 9): a repeated import replaces what the app has for the file's past weeks.
+    private var replaceSection: some View {
+        Section {
+            Toggle("Archivdaten dieser Wochen ersetzen", isOn: $replacesArchives)
+        } footer: {
+            Text("Alles, was die App für die Wochen der Datei hat, kommt ins Archiv und wird durch die Datei ersetzt – für einen erneuten Import. Wochen, die in der App abgehakt wurden, vorher aus der Datei nehmen. Widerrufen holt alles zurück. Diese Woche und spätere werden nie ersetzt.")
         }
     }
 
@@ -403,7 +422,7 @@ struct PastWeekImportView: View {
         } header: {
             Text("3 · Vorschau je Woche")
         } footer: {
-            Text("Vergangene Wochen und ihre Tage mit Einträgen werden abgeschlossen – so zählen sie im Rückblick, bei den Zielen und im Ø 4 Wo. Hat eine Woche schon einen anderen Plan, kommt der alte mit Markierungen und Werten ins Archiv.")
+            Text("Vergangene Wochen und ihre Tage mit Einträgen werden abgeschlossen – so zählen sie im Rückblick, bei den Zielen und im Ø 4 Wo. Wochen nur mit Wertung oder Noten bekommen keine Punkte: nichts ist offen oder verpasst. Hat eine Woche schon einen anderen Plan, kommt der alte mit Markierungen und Werten ins Archiv.")
         }
     }
 
@@ -414,7 +433,7 @@ struct PastWeekImportView: View {
     }
 
     private func isCurrent(_ preview: ImportPreview) -> Bool {
-        preview.hasChanges && previewText == text && previewBlanks == blanksAsMissed
+        preview.hasChanges && previewText == text && previewBlanks == blanksAsMissed && previewReplaces == replacesArchives
     }
 
     // MARK: c) Nur Wertung
@@ -426,7 +445,7 @@ struct PastWeekImportView: View {
                 .decimalKeyboard()
                 .onSubmit(saveScore)
             if let paperScore {
-                LabeledContent("Eingetragen", value: Format.score(paperScore, outOf: true))
+                LabeledContent("Laut Unterlagen", value: Format.score(paperScore, outOf: true))
             }
             if let computedScore {
                 Label(computedText(computedScore), systemImage: "info.circle")
@@ -447,13 +466,15 @@ struct PastWeekImportView: View {
         } header: {
             Text("Wochenwertung")
         } footer: {
-            Text("Eine Zahl von 0 bis 10 vom Papier. Sie erscheint im Rückblick und in den Trendzeilen des Planungs-Prompts. Hat die Woche einen abgeschlossenen Plan, zählt dessen berechnete Wertung.")
+            Text("Eine Zahl von 0 bis 10 vom Papier – die Wertung laut Unterlagen. Sie erscheint im Rückblick und in den Trendzeilen des Planungs-Prompts und zählt dort vor einer berechneten Wertung; die Woche zeigt beide.")
         }
     }
 
-    /// "KW45 ist abgeschlossen: berechnet 7,2 – diese Wertung zählt im Rückblick."
+    /// "KW45 ist abgeschlossen: nach heutigen Regeln 7,2 – …" (v9: the value laut Unterlagen counts first).
     private func computedText(_ score: Double) -> String {
-        "\(target.label) ist abgeschlossen: berechnet \(Format.score(score)) – diese Wertung zählt im Rückblick."
+        let computed: String = "\(target.label) ist abgeschlossen: \(ImportWeekSummary.recalculatedLabel) \(Format.score(score))"
+        guard paperScore == nil else { return computed + ". Im Rückblick zählt die Wertung laut Unterlagen." }
+        return computed + " – diese Wertung zählt im Rückblick, bis eine laut Unterlagen eingetragen ist."
     }
 
     /// 0…10, "7,5" or "7.5".
@@ -529,14 +550,16 @@ struct PastWeekImportView: View {
         problem = nil
         previewText = content
         previewBlanks = blanksAsMissed
+        previewReplaces = replacesArchives
         guard !Self.isBlank(content) else {
             preview = nil
             return
         }
-        let result = app.store.pastPreview(content, blanksAsMissed: blanksAsMissed, today: app.today)
+        let result = app.store.pastPreview(content, blanksAsMissed: blanksAsMissed, today: app.today,
+                                           replacingArchives: replacesArchives)
         preview = result
         if result.document.isEmpty && result.document.skipped.isEmpty {
-            problem = "Keine Zeilen gefunden. Die erste Zeile muss die Kopfzeile sein: \(PlanCSV.matrixHeader)"
+            problem = "Keine Zeilen gefunden. Die erste Zeile muss die Kopfzeile sein: \(PastWeekPrompt.header)"
         }
     }
 
@@ -569,6 +592,10 @@ private struct PastWeekSummaryRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(summary.title)
                     .font(.subheadline.weight(.semibold))
+                if summary.isArchive {
+                    // v9: only the week's value, day types and grades – no items, nothing missed.
+                    ArchiveTag()
+                }
                 Spacer(minLength: 8)
                 Text(summary.status)
                     .font(.caption.weight(.semibold))

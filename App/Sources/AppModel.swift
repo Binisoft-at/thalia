@@ -755,6 +755,11 @@ final class AppModel {
             sheet = .importPast(nil)
         case "range-pdf":
             sheet = .rangePDF
+        case "archive":
+            // v9: the demo's archive week with its "Archiv" card (grades, a holiday, "Ohne Zuordnung").
+            tab = .week
+            sidebar = .week
+            selectedWeek = Demo.archiveWeek(today: today)
         case "report":
             sheet = .report(today.week.adding(weeks: -1))
         case "explainer":

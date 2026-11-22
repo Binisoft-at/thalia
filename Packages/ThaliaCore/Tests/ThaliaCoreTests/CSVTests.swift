@@ -241,7 +241,10 @@ struct ContentTests {
         let doc = content.document
         #expect(Demo.sickDay(today: saturday) == friday)
         #expect(doc.days.first { $0.day == friday }?.dayType == "Krank")
-        #expect(doc.days.filter { DayTypes.isExcused($0.dayType) }.map(\.day) == [friday], "only this week's Friday")
+        #expect(doc.days.filter { DayTypes.isExcused($0.dayType) && week.contains($0.day) }.map(\.day) == [friday], "only this week's Friday")
+        // v9: the other excused day is the archive week's holiday Saturday.
+        #expect(doc.days.filter { DayTypes.isExcused($0.dayType) && !week.contains($0.day) }.map(\.day)
+                == [Demo.archiveWeek(today: saturday).day(.saturday)])
         #expect(!doc.marks.contains { $0.day == friday }, "nothing is due on a sick day")
         #expect(!doc.work.contains { $0.day == friday })
         #expect(doc.entries.contains { $0.day == friday }, "values can still be entered")
@@ -343,18 +346,21 @@ struct ContentTests {
 
     @Test func tourCatalogIsValid() {
         #expect(ThaliaTour.catalog.problems().isEmpty)
-        #expect(ThaliaTour.version == 8)
-        // v8: welcome, 14 steps, finish.
-        #expect(ThaliaTour.catalog.allSteps.count == 16)
+        #expect(ThaliaTour.version == 9)
+        // v9: welcome, 15 steps, finish.
+        #expect(ThaliaTour.catalog.allSteps.count == 17)
         #expect(ThaliaTour.catalog.steps(newerThan: 0).first?.id == "welcome")
         #expect(ThaliaTour.catalog.steps(newerThan: ThaliaTour.version).isEmpty)
-        // v7 took the tour → "Neu in Thalia" with the three v8 cards.
+        // v8 took the tour → "Neu in Thalia" with the one v9 card.
+        let v9 = ThaliaTour.catalog.steps(newerThan: 8).map(\.id)
+        #expect(v9 == ["whats-new", "archive", "finish"])
+        // v7 took the tour → the three v8 cards and the v9 card.
         let v8 = ThaliaTour.catalog.steps(newerThan: 7).map(\.id)
-        #expect(v8 == ["whats-new", "excused", "past-weeks", "range-pdf", "finish"])
-        // v6 took the tour → the eight v7 steps and the three v8 cards, in tour order.
+        #expect(v8 == ["whats-new", "excused", "past-weeks", "archive", "range-pdf", "finish"])
+        // v6 took the tour → the eight v7 steps, the three v8 cards and the v9 card, in tour order.
         let v7 = ThaliaTour.catalog.steps(newerThan: 6).map(\.id)
-        #expect(v7 == ["whats-new", "day", "excused", "mark", "work", "measure", "glance", "week", "past-weeks", "review",
-                       "range-pdf", "everywhere", "finish"])
+        #expect(v7 == ["whats-new", "day", "excused", "mark", "work", "measure", "glance", "week", "past-weeks", "archive",
+                       "review", "range-pdf", "everywhere", "finish"])
         // The new cards name the window's three ways and the sick-day rule in the app's words.
         let steps = Dictionary(uniqueKeysWithValues: ThaliaTour.catalog.allSteps.map { ($0.id, $0) })
         let pastWeeks = steps["past-weeks"]?.body ?? ""
@@ -365,7 +371,13 @@ struct ContentTests {
         #expect(steps["excused"]?.body.contains("„Krank“ oder „Urlaub“") == true)
         #expect(steps["excused"]?.body.contains("zählt halb") == true)
         #expect(steps["range-pdf"]?.macBody.contains("⌥⌘P") == true)
-        for step in ThaliaTour.catalog.allSteps where step.since == 8 {
+        // v9: the archive card names the two scores and the replace switch in the app's words.
+        for text in [steps["archive"]?.body ?? "", steps["archive"]?.macBody ?? ""] {
+            for phrase in ["laut Unterlagen", "„Nach heutigen Regeln“", "„Ohne Zuordnung (Archiv)“", "„Archivdaten dieser Wochen ersetzen“"] {
+                #expect(text.contains(phrase), "\(phrase)")
+            }
+        }
+        for step in ThaliaTour.catalog.allSteps where step.since >= 8 {
             #expect(!step.body.contains(" du ") && !step.body.contains("deine"), "\(step.id)")
         }
         // v1 took the tour → everything since v2, but not the unchanged undo step.

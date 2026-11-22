@@ -1,6 +1,50 @@
 # Thalia – Stand (zum Wiedereinstieg nach Kontext-Kompaktierung)
 
-Letzte Aktualisierung: 2026-11-21 · Arbeitsliste: [TASKS-v8.md](TASKS-v8.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v9.md](TASKS-v9.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+
+## Stand v9 (Version 1.8.0, Tour-Version 9)
+- Anlass: fünf Import-Probleme beim Nachtragen alter Wochen aus Scans ([TASKS-v9.md](TASKS-v9.md)). Pakete P1 Core,
+  P2 Shared und P3 App umgesetzt:
+  **Archiv-Wochen** – eine Woche der Datei ohne `item`-Zeilen und ohne Markierungen (nur `week`, `day`, Noten) bekommt
+  keine Punkte, wird nie mit ✗ gefüllt und wie jede vergangene Woche abgeschlossen; **neue Zeilentypen**
+  `category_score` und `goal_score` (Noten 0–10, ursprüngliche Bezeichnung, Quelle, Spalte `count`), gespeichert als
+  CSV im Setting `archive.<Woche>` (keine CloudKit-Schemaänderung), Teil von Backup, Archiv und Widerrufen;
+  **zwei Wertungen** – „Wertung laut Unterlagen“ (`recordedScore`, nie berechnet) und „Nach heutigen Regeln“
+  (`finalScore`, aus den Kategoriennoten ohne Krank-/Urlaubstage); `historyScore = recordedScore ?? finalScore`
+  (bisher umgekehrt); **Mittelwerte** über vorhandene Noten, echte Nullen zählen, erst die Anzeige rundet;
+  **„Ohne Zuordnung (Archiv)“** für alte Bezeichnungen – nichts wird aufgeteilt, vervielfacht oder zu Haken;
+  **„Archivdaten dieser Wochen ersetzen“** (Schalter im Weg „Mit ChatGPT“) für den erneuten Import: alles, was die
+  App für die vergangenen Wochen der Datei hat, kommt ins Archiv, „Widerrufen“ holt es zurück, diese und spätere
+  Wochen nie; **neuer Prompt** (`PastWeekPrompt`, Regeln 1–10, Kopfzeile mit `count`, Beispiel mit zwei Wochen,
+  Ziele/Kategorien/Messwerte mit ids, Vorlage nur für belegte Einzelhaken) – zum erneuten Schicken der Scans.
+- App (P3): neue Datei `App/Sources/ArchiveCard.swift` – Karte „Archiv“ in der Woche (iPhone unter dem Kopf, Mac/iPad
+  in den Spalten der Wochentabelle, beide Wertungen in der Seitenleiste), Wochen-Kopf einer Woche ohne Punkte mit
+  dem Wert laut Unterlagen; Nachtragen-Fenster mit dem Ersetzen-Schalter und „Archiv“ je Woche in der Vorschau;
+  Rückblick-Zeilen mit „Archiv“ und beiden Wertungen; PDF-Bericht mit Kennzeichen „Archiv“ und Fußnote; Archiv-Liste
+  „ohne Punkte“ und „Was die Woche jetzt hat, kommt dafür ins Archiv.“; Erklärungen „Vergangene Wochen“ mit
+  Schritt „Archiv-Wochen“ (die Karte heißt jetzt „Neu seit 1.7“); Heute an einem Tag einer Archiv-Woche zeigt
+  „KWnn ist eine Archiv-Woche“ mit beiden Wertungen und den Noten des Tages statt „Noch kein Plan“.
+- Tour 9: eine Karte `archive` („Archiv-Wochen“, `since: 9`), siehe [TOUR.md](TOUR.md). Demo: die Woche zwei Wochen
+  vor der aktuellen hat 16 Kategoriennoten mit Urlaub-Samstag, eine Note ohne Zuordnung („Sonderwoche“) und
+  10 Zielnoten. CI-Screenshot zusätzlich `archive` (iPhone und Mac).
+- Geprüft lokal: 141 Core-Tests grün (Docker `swift:6.2-noble`), `swiftc -parse` aller App-Dateien; Shared und die
+  nicht-UI-Teile von `ArchiveCard.swift` gegen Stub-SwiftData im Docker typgeprüft und mit Verhaltensprüfungen
+  (Import, Ersetzen, Widerrufen, Demo, Beispiel aus IMPORT.md). SwiftUI-Teile prüft erst CI am Mac.
+- Lücken nach der Durchsicht geschlossen ([TASKS-v9.md](TASKS-v9.md) §5): Zeilen bleiben in ihrem Block (Tag oder
+  Note mit fremdem Datum → übersprungen, nie in eine andere Woche); „Archivdaten ersetzen“ nur für Wochen mit
+  `week`-Zeile und nicht, wenn die Datei genau das bringt, was die App hat; Archiv-Wochen ohne Messwert-Definitionen;
+  Motto, Kontext und Wertung laut Unterlagen bleiben bei leerer Datei-Zeile, laufende Woche ohne Wochenwert;
+  Dezimalkomma ohne Anführungszeichen, Werte außerhalb 0–10 und Unlesbares werden erkannt statt falsch übernommen;
+  Tagesnoten in `mo … so`, deutsche Spalte `quelle`, Warnungen für zwei Bezeichnungen auf einer id und mehrere
+  CSV-Blöcke; Wochenwert exakt im Export; Prompt mit Platzhalter-Beispiel (`JJJJ-Wnn`), Dezimalpunkt-Regel, Regeln für
+  Zielnoten, Widersprüche und „neu erstellen“; Widerrufen behält einen Schnappschuss, wenn die Woche nach dem Import
+  geändert wurde; Rückblick „Archiv“ nur für Wochen ohne Punkte. 156 Core-Tests grün.
+- Nicht umgesetzt (bewusst): die Textabschnitte der alten CSV („Kategoriennoten der Übersicht:“ in `day.note`,
+  „Kategorienmittel …“ in `week.note`) werden nicht ausgelesen – der neue Prompt lässt ChatGPT die CSV mit echten
+  Notenzeilen neu erstellen. Fehlende Einzelhaken, Arbeitszeiten und Messwerte bleiben unbekannt.
+- Nächste Schritte: CI mit `[screenshots]` (Screens `archive`), Build 1.8.0 für TestFlight (Build-Nr. 56 oder höher),
+  dann TESTING.md „v9“ am Gerät; Prompt neu kopieren und die Scans erneut schicken, CSV mit „Archivdaten dieser
+  Wochen ersetzen“ importieren.
 
 ## Stand v8 (Version 1.7.0, Tour-Version 8)
 - Drei Wünsche vom 21. Nov. 2026 aus [TASKS-v8.md](TASKS-v8.md), Pakete P1–P5 umgesetzt:

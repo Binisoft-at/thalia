@@ -169,3 +169,37 @@ Es ist ein Archiv: übertrage nur, was in den Unterlagen steht.
 - **P3 App** (`App/Sources/`): Schalter + Vorschau (PastImport), Archiv-Karte (iPhone + Mac), Wochen-Kopf,
   Rückblick/PDF „Archiv“, Screenshot `archive`, Tour 9, Version 1.8.0, Doku.
 - **Prüfen:** Review gegen diesen Plan, Verifikation jeder Entscheidung, Lücken schließen, `scripts/ci/local-check.sh`.
+
+## 5. Nachträge nach der Durchsicht (Lücken geschlossen)
+
+Abweichungen vom Text oben, damit ein erneuter Import sicher ist:
+
+- **Zeilen bleiben in ihrem Block:** jede Note braucht eine `week`-Zeile davor; ein Datum (bei `day`, `category_score`,
+  `goal_score`) in einer anderen Woche als der des Blocks → übersprungen mit Grund, nie in die Woche des Datums
+  verschoben (bisher: Warnung und Verschieben).
+- **Ersetzen (Entscheidung 2):** nur Wochen mit `week`-Zeile in der Datei; eine Woche, die die Datei genau so bringt,
+  wie die App sie hat, wird nicht noch einmal ersetzt. Warnung ohne Schalter jetzt „KW43: in der App noch 63 Punkte
+  ohne Markierungen – ‚Archivdaten ersetzen‘ entfernt sie.“ bzw. „… 24 Punkte mit 80 Markierungen – ‚Archivdaten
+  ersetzen‘ nur wählen, wenn sie aus einem fehlerhaften Import stammen; es verschiebt alles ins Archiv.“ Mit Schalter
+  zusätzlich „KW45: 80 Markierungen aus der App gehen ins Archiv – die Datei bringt keine Einzelhaken.“
+- **Archiv-Woche (Entscheidung 1):** `measure`-Zeilen einer Woche ohne `item`-Zeilen werden mit Warnung verworfen.
+- **Wochenwert (Entscheidung 5):** unlesbar, außerhalb 0–10 oder bei verrutschten Spalten → nicht übernommen (Warnung);
+  ohne Ersetzen behält eine leere oder unlesbare Datei-Zeile den Wert der App; leeres Motto und leerer Kontext
+  behalten die der App; diese Woche und spätere bekommen keinen Wochenwert aus der Datei. Export schreibt ihn exakt.
+- **Verrutschte Spalten:** Wert und Folgezelle nur Ziffern („9,28“ ohne Anführungszeichen) oder gefüllte Zellen hinter
+  der Kopfzeile → Note übersprungen, Wochenwert nicht übernommen.
+- **Lesen:** Tagesnoten in `mo … so` einer `category_score`-Zeile; Spalte `quelle` (deutsche Kopfzeile) als Quelle;
+  Warnungen für zwei Bezeichnungen auf derselben id und für mehrere CSV-Blöcke; „steht vor der ersten week-Zeile“
+  statt „nicht lesbar“.
+- **Prompt (§3):** das Beispiel nutzt die Platzhalter-Woche `JJJJ-Wnn` (zurück eingefügt landet nichts in einer
+  echten Woche), die Zielnote ist kein Mittel der Beispiel-Noten; neu: „erstelle sie nach diesen Regeln vollständig
+  neu“, Dezimalkomma als Punkt, gleich viele Spalten wie die Kopfzeile, Widerspruch ohne Vorgabe → Feld weglassen,
+  `mo … so` nur in item-Zeilen, Noten nie als Text in `note`/`description`, eine Note je Jahresziel ist `goal_score`
+  (auch wenn die Unterlage sie Kategorie nennt), Zielnoten nie aus Kategoriennoten berechnen, item-Zeilen machen die
+  Noten der Woche für die heutige Berechnung unwirksam.
+- **Widerrufen:** wurde die Woche nach dem Import geändert, bleibt der Schnappschuss dieses Stands im Archiv.
+  „Archivdaten ersetzen“ setzt alle Kopien der Wochenzeile zurück (Sync-Duplikate).
+- **Rückblick:** „Archiv“ nur für Wochen ohne Punkte (wie im PDF).
+- **Fußtext des Schalters:** „Alles, was die App für die Wochen der Datei hat, kommt ins Archiv und wird durch die
+  Datei ersetzt – für einen erneuten Import. Wochen, die in der App abgehakt wurden, vorher aus der Datei nehmen.
+  Widerrufen holt alles zurück. Diese Woche und spätere werden nie ersetzt.“

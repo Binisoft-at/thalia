@@ -152,7 +152,12 @@ struct TodayContent: View {
                                 .listRowBackground(Color.clear)
                         }
                     }
-                    Section { NoPlanView(week: context.week) }
+                    if context.isArchiveWeek, context.week < app.today.week {
+                        // v9: a day of a past week from old records – its scores and grades, not "Noch kein Plan".
+                        Section { ArchiveDayNotice(context: context, day: day) }
+                    } else {
+                        Section { NoPlanView(week: context.week) }
+                    }
                     DayPageSections(context: context, day: day, showsMeasures: true)
                 }
                 .compactListSections()

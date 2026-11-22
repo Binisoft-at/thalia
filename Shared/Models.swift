@@ -63,13 +63,15 @@ final class WeekPlan {
     var weekKey: String = ""
     var title: String = ""
     var details: String = ""
-    /// Score reported for a week tracked outside the app (paper history).
+    /// Score reported for a week tracked outside the app (paper history): "laut Unterlagen", never
+    /// calculated (v9).
     var recordedScore: Double?
     /// "" = equally weighted goals (since KW42 2026), "alt" = earlier model.
     var scoringModel: String = ""
     var closedAt: Date?
     var importedAt: Date?
-    /// The score when the week was closed, so the history doesn't recompute old weeks.
+    /// The score when the week was closed, so the history doesn't recompute old weeks ("nach heutigen
+    /// Regeln"; v9: for a week without items the recalculation of its archive grades).
     var finalScore: Double?
     /// "1=7;2=8.1;…" – the annual goals' scores when the week was closed.
     var finalGoalScores: String = ""
@@ -94,8 +96,9 @@ final class WeekPlan {
     var isClosed: Bool { closedAt != nil }
     var isOldScoring: Bool { record?.isOldScoring ?? false }
 
-    /// Closed score, else the reported paper score.
-    var historyScore: Double? { finalScore ?? recordedScore }
+    /// The score the history shows (v9, decision 5): the value "laut Unterlagen" (`recordedScore`) wins,
+    /// else the score stored when the week was closed ("nach heutigen Regeln").
+    var historyScore: Double? { WeekLine.historyScore(recorded: recordedScore, computed: finalScore) }
 
     var finalGoalScoreMap: [String: Double] {
         var result: [String: Double] = [:]
@@ -433,7 +436,8 @@ final class ScoreOverride {
     }
 }
 
-/// Small synced settings (the goal year, its motto, the review week).
+/// Small synced settings (the goal year, its motto, the review week; v9: the archive grades of a week,
+/// key `archive.2026-W43`, value = their CSV).
 @Model
 final class AppSetting {
     #Index<AppSetting>([\.key])

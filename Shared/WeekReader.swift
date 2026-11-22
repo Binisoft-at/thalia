@@ -24,6 +24,8 @@ struct WeekReader<Content: View>: View {
     @Query private var overrides: [ScoreOverride]
     @Query private var reflections: [Reflection]
     @Query private var changes: [PlanChange]
+    /// v9: the week's archive grades (setting `archive.<week>`).
+    @Query private var settings: [AppSetting]
 
     init(week: WeekKey, today: DayKey, @ViewBuilder content: @escaping (WeekContext) -> Content) {
         self.week = week
@@ -45,13 +47,15 @@ struct WeekReader<Content: View>: View {
         _overrides = Query(filter: #Predicate<ScoreOverride> { dayKeys.contains($0.dayKey) && $0.deletedAt == nil })
         _reflections = Query(filter: #Predicate<Reflection> { $0.scope == key || dayKeys.contains($0.scope) })
         _changes = Query(filter: #Predicate<PlanChange> { $0.weekKey == key })
+        let archiveKey = ArchiveWeek.settingKey(week)
+        _settings = Query(filter: #Predicate<AppSetting> { $0.key == archiveKey })
     }
 
     var body: some View {
         content(WeekContext(
             week: week, today: today, plans: plans, goals: goals, categories: categories, items: items, measures: measures,
             marks: marks, days: days, entries: entries, health: health, work: work, notes: notes, overrides: overrides,
-            reflections: reflections, changes: changes
+            reflections: reflections, changes: changes, settings: settings
         ))
     }
 }

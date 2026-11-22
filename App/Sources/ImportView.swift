@@ -407,11 +407,24 @@ extension ImportPreview {
     }
 
     /// "23 Markierungen und 9 Werte gehen ins Archiv. Das lässt sich danach widerrufen."
+    /// v9, "Archivdaten dieser Wochen ersetzen": everything the weeks have goes, so the message says so.
     var replaceMessage: String {
         let marks: Int = replacements.reduce(0) { $0 + $1.marks }
         let values: Int = replacements.reduce(0) { $0 + $1.values }
-        return "\(Format.count(marks, "Markierung", "Markierungen")) und \(Format.count(values, "Wert", "Werte")) gehen ins Archiv. "
-            + "Das lässt sich danach widerrufen."
+        guard replacements.contains(where: \.isArchiveReplacement) else {
+            return "\(Format.count(marks, "Markierung", "Markierungen")) und \(Format.count(values, "Wert", "Werte")) gehen ins Archiv. "
+                + "Das lässt sich danach widerrufen."
+        }
+        let items: Int = replacements.reduce(0) { $0 + $1.items }
+        let grades: Int = replacements.reduce(0) { $0 + $1.grades }
+        var parts: [String] = []
+        if items > 0 { parts.append(Format.count(items, "Punkt", "Punkte")) }
+        if marks > 0 { parts.append(Format.count(marks, "Markierung", "Markierungen")) }
+        if values > 0 { parts.append(Format.count(values, "Wert", "Werte")) }
+        if grades > 0 { parts.append(Format.count(grades, "Note", "Noten")) }
+        parts.append("Tagestypen, Abschlüsse und Wertungen laut Unterlagen")
+        return "Alles, was die App für diese Wochen hat, kommt ins Archiv: " + parts.joined(separator: ", ") + ". "
+            + "Die Datei ersetzt es. Das lässt sich danach widerrufen."
     }
 
     /// The preview's lines without the replacement sentences (they stand above in orange).

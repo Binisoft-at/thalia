@@ -7,14 +7,16 @@ import ThaliaCore
 // scored once, and one line per week with the same score rule as the Rückblick (R70).
 
 extension TrackerStore {
-    /// The weeks from `start` through `end` that a report shows, oldest first: a plan with items, or a
-    /// stored or reported score (paper weeks). Archived weeks never count.
+    /// The weeks from `start` through `end` that a report shows, oldest first: a plan with items, a
+    /// stored or reported score (paper weeks), or archive grades (v9). Archived weeks (`WeekArchive`)
+    /// never count.
     func rangeWeeks(from start: WeekKey, through end: WeekKey) -> [WeekKey] {
         guard start <= end else { return [] }
         let plans = allPlans().filter { $0.deletedAt == nil }.latest(by: \.weekKey, modified: \.modifiedAt)
+        let graded: Set<WeekKey> = Set(storedArchives().filter { $0.value.hasGrades }.keys)
         let weeks: [WeekKey] = plans.values.compactMap { plan -> WeekKey? in
             guard let week = plan.week, week >= start, week <= end else { return nil }
-            if plan.historyScore != nil { return week }
+            if plan.historyScore != nil || graded.contains(week) { return week }
             return rangeHasItems(week) ? week : nil
         }
         return weeks.sorted()
@@ -30,12 +32,14 @@ extension TrackerStore {
         rangeWeeks(from: start, through: end).map { weekContext(for: $0, today: today) }
     }
 
-    /// One week's line: the stored score of a closed or paper week wins, else the running one – the
-    /// same rule as the Rückblick. Goal scores: stored when the week was closed, else live.
+    /// One week's line: the stored score of a closed or paper week wins (v9: the value "laut
+    /// Unterlagen" first), else the running one – the same rule as the Rückblick. Goal scores: stored
+    /// when the week was closed, else live; a week without items takes them from its archive grades
+    /// (`WeekLine.isArchive` for "Archiv").
     func rangeLine(_ context: WeekContext) -> WeekLine {
         let stored: Double? = context.plan?.historyScore
         let goals: [String: Double] = context.plan?.finalGoalScoreMap ?? [:]
-        return WeekLine(context.reportInput(), storedScore: stored, storedGoalScores: goals)
+        return WeekLine(context.reportInput(), storedScore: stored, storedGoalScores: goals, archive: context.archive)
     }
 
     /// The report over already read weeks (the PDF sheet reads them one by one).

@@ -851,7 +851,7 @@ struct ArchiveView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text((archive.week?.label ?? archive.weekKey) + (archive.title.isEmpty ? "" : " · \(archive.title)"))
                         .font(.body.weight(.medium))
-                    Text("\(archive.itemCount) Punkte · \(archive.markCount) Markierungen · archiviert \(archive.archivedAt.formatted(date: .abbreviated, time: .shortened))")
+                    Text(ArchiveView.detail(archive))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -893,9 +893,17 @@ struct ArchiveView: View {
                 app.toasts.show("\(archive.week?.label ?? "Woche") wiederhergestellt · \(result.summary)", symbol: "arrow.uturn.backward")
             }
         } message: { _ in
-            Text("Der aktuelle Plan dieser Woche kommt dafür ins Archiv.")
+            // v9: a complete restore ("Archivdaten ersetzen") archives more than the plan.
+            Text("Was die Woche jetzt hat, kommt dafür ins Archiv.")
         }
         .navigationTitle("Archiv")
+    }
+
+    /// "24 Punkte · 96 Markierungen · archiviert …"; v9: a week without items "ohne Punkte · …".
+    static func detail(_ archive: WeekArchive) -> String {
+        let date: String = "archiviert " + archive.archivedAt.formatted(date: .abbreviated, time: .shortened)
+        guard archive.itemCount > 0 || archive.markCount > 0 else { return "ohne Punkte · " + date }
+        return "\(archive.itemCount) Punkte · \(archive.markCount) Markierungen · " + date
     }
 }
 

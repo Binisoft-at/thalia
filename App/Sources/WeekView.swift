@@ -51,11 +51,19 @@ struct WeekSheet: View {
 
             targetsSection
 
+            if context.isArchiveWeek {
+                // v9: a week from old records – the two scores and the grades instead of "Noch kein Plan".
+                archiveSection
+            }
+
             if context.hasPlan {
                 ForEach(context.goals) { goal in
                     ForEach(context.categories(of: goal)) { category in
                         categorySection(category)
                     }
+                }
+                if context.showsArchive {
+                    archiveSection
                 }
                 Section {
                     Button {
@@ -66,7 +74,8 @@ struct WeekSheet: View {
                 } footer: {
                     Text("So viele Punkte pro Kategorie wie nötig. Messwerte sind keine Punkte – sie schlagen nur einen Haken vor.")
                 }
-            } else {
+            } else if !context.isArchiveWeek || context.week >= app.today.week {
+                // v9: a week that isn't over keeps the way to its plan, even with grades.
                 Section { NoPlanView(week: context.week) }
             }
         }
@@ -88,8 +97,8 @@ struct WeekSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HeroCard(title: context.week.rangeLabel, subtitle: heroSubtitle,
-                     value: Format.score(context.score.overall, outOf: false), caption: "Woche",
-                     progress: (context.score.overall ?? 0) / 10, facts: heroFacts, compact: true)
+                     value: Format.score(context.heroScore, outOf: false), caption: "Woche",
+                     progress: heroProgress, facts: heroFacts, compact: true)
             goalBars
             dayStrip
             contextLine
@@ -97,9 +106,20 @@ struct WeekSheet: View {
     }
 
     /// v8: a week of only sick or holiday days says "Woche zählt nicht (krank/Urlaub)".
-    private var heroSubtitle: String { context.coverageLine }
+    /// v9: a week without items names its number ("Archiv · Wertung laut Unterlagen").
+    private var heroSubtitle: String {
+        if let label = context.heroScoreLabel { return "Archiv · " + label }
+        return context.isArchiveWeek ? "Archiv" : context.coverageLine
+    }
+
+    private var heroProgress: Double {
+        let value: Double = context.heroScore ?? 0
+        return value / 10
+    }
 
     private var heroFacts: [(String, String)] {
+        // v9: an archive week has no focus or closed days to show – the other score and the grades.
+        if context.isArchiveWeek { return context.archiveHeroFacts }
         let totals: WorkTotals = context.workTotals()
         let focus: String = totals.isEmpty ? "–" : totals.shortText
         // v8: sick and holiday days don't need closing ("3/5 · 2 krank").
@@ -109,7 +129,7 @@ struct WeekSheet: View {
     /// The ten goals in their colours (R68), with the scoring explainer.
     private var goalBars: some View {
         HStack(alignment: .center, spacing: 10) {
-            GoalBars(scores: context.goals.map { context.score.goalWeek[$0.key]?.score }, height: 28,
+            GoalBars(scores: context.goals.map { context.shownGoalScore($0.key) }, height: 28,
                      keys: context.goals.map(\.key))
             Button {
                 app.sheet = .explainer(.scoring)
@@ -168,6 +188,34 @@ struct WeekSheet: View {
             }
             .accessibilityHint(showContext ? "Klappt den Wochenkontext zu" : "Zeigt den ganzen Wochenkontext")
         }
+    }
+
+    // MARK: Archive (v9)
+
+    /// The "Archiv" card (decision 9): both scores, the grades; for a past week the way to import it again.
+    private var archiveSection: some View {
+        Section {
+            ArchiveCard(context: context)
+                .padding(.vertical, 4)
+            if context.week < app.today.week {
+                Button {
+                    app.sheet = .importPast(context.week)
+                } label: {
+                    Label("Vergangene Woche nachtragen…", systemImage: "clock.arrow.circlepath")
+                }
+            }
+        } header: {
+            Label("Archiv", systemImage: "archivebox")
+        } footer: {
+            Text(archiveFooter)
+        }
+    }
+
+    private var archiveFooter: String {
+        guard context.isArchiveWeek else {
+            return "Die Wertung laut Unterlagen bleibt, wie sie war, und zählt im Rückblick. Nach heutigen Regeln rechnet Thalia aus den Punkten dieser Woche."
+        }
+        return "Die Wertung laut Unterlagen bleibt, wie sie war. Nach heutigen Regeln rechnet Thalia aus den Kategoriennoten – ohne Krank- und Urlaubstage. Fehlende Einzelhaken, Arbeitszeiten und Messwerte bleiben unbekannt."
     }
 
     // MARK: Weekly targets

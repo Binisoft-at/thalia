@@ -108,6 +108,7 @@ struct TrackerStore {
     func weekContext(for week: WeekKey, today: DayKey = .today()) -> WeekContext {
         let key = week.string
         let dayKeys = week.days.map(\.string)
+        let archiveKey = ArchiveWeek.settingKey(week)
         return WeekContext(
             week: week, today: today,
             plans: fetch(FetchDescriptor<WeekPlan>(predicate: #Predicate<WeekPlan> { $0.weekKey == key })),
@@ -121,7 +122,8 @@ struct TrackerStore {
             notes: fetch(FetchDescriptor<DayNote>(predicate: #Predicate<DayNote> { dayKeys.contains($0.dayKey) && $0.deletedAt == nil })),
             overrides: fetch(FetchDescriptor<ScoreOverride>(predicate: #Predicate<ScoreOverride> { dayKeys.contains($0.dayKey) && $0.deletedAt == nil })),
             reflections: fetch(FetchDescriptor<Reflection>(predicate: #Predicate<Reflection> { $0.scope == key || dayKeys.contains($0.scope) })),
-            changes: changes(week)
+            changes: changes(week),
+            settings: fetch(FetchDescriptor<AppSetting>(predicate: #Predicate<AppSetting> { $0.key == archiveKey }))
         )
     }
 
@@ -1160,6 +1162,8 @@ struct TrackerStore {
     }
 
     /// R95: the goal review from the start of the goal year through `week` (weeks with a plan only).
+    /// v9: a closed archive week (no items, goal values from its grades, decision 5) counts with its
+    /// stored goal values too; a paper week with only a score has none and stays out.
     func periodReport(period: GoalPeriod, through week: WeekKey) -> PeriodReport {
         let today = DayKey.today()
         let plans = allPlans().filter { $0.deletedAt == nil }.latest(by: \.weekKey, modified: \.modifiedAt)
@@ -1167,9 +1171,10 @@ struct TrackerStore {
         var goalScores: [WeekKey: [String: Double]] = [:]
         var shown = period.start.week
         while shown <= week {
-            if hasItems(shown) {
+            let scores: [String: Double] = plans[shown.string]?.finalGoalScoreMap ?? [:]
+            if hasItems(shown) || !scores.isEmpty {
                 inputs.append(weekContext(for: shown, today: today).reportInput())
-                if let scores = plans[shown.string]?.finalGoalScoreMap, !scores.isEmpty { goalScores[shown] = scores }
+                if !scores.isEmpty { goalScores[shown] = scores }
             }
             shown = shown.adding(weeks: 1)
         }
@@ -1413,12 +1418,13 @@ struct TrackerStore {
         } catch {
             AppLog.error("Save failed: \(error.localizedDescription)", category: "store")
         }
-        // Only a device that reads Apple Health re-scores closed weeks: the Mac and the Watch don't
-        // see Health values and would store a different score (they ping-ponged with the iPhone).
-        guard !touched.isEmpty, HealthDevice.readsHealth else { return }
+        // Only a device that reads Apple Health re-scores closed weeks with items: the Mac and the Watch
+        // don't see Health values and would store a different score (they ping-ponged with the iPhone).
+        // A week without items (v9, archive grades) scores the same everywhere.
+        guard !touched.isEmpty else { return }
         var rescored = false
         for week in touched.sorted() {
-            guard let plan = plan(week), plan.isClosed else { continue }
+            guard let plan = plan(week), plan.isClosed, HealthDevice.readsHealth || !hasItems(week) else { continue }
             if storeFinalScore(plan) { rescored = true }
         }
         if rescored { try? context.save() }
@@ -1436,7 +1442,8 @@ struct TrackerStore {
         if rescored { try? context.save() }
     }
 
-    /// Weeks whose marks, items, measurements, entries, work, own scores or days are about to be saved.
+    /// Weeks whose marks, items, measurements, entries, work, own scores, days or archive grades (v9)
+    /// are about to be saved.
     private func touchedWeeks() -> Set<WeekKey> {
         var weeks: Set<WeekKey> = []
         func add(week key: String) { if let week = WeekKey(key) { weeks.insert(week) } }
@@ -1450,24 +1457,36 @@ struct TrackerStore {
             else if let block = model as? WorkBlock { add(day: block.dayKey) }
             else if let score = model as? ScoreOverride { add(day: score.dayKey) }
             else if let day = model as? PlanDay { add(day: day.dayKey) }
+            else if let setting = model as? AppSetting, let week = ArchiveWeek.week(settingKey: setting.key) { weeks.insert(week) }
         }
         return weeks
     }
 
     /// Stores the week's score as it is now (closing, R11 re-scoring). Returns whether it changed.
+    /// v9: a week without items that has archive grades stores their recalculation under today's rules
+    /// (`ArchiveWeek.recalculated`); the value "laut Unterlagen" (`recordedScore`) is never touched.
     @discardableResult
-    private func storeFinalScore(_ plan: WeekPlan) -> Bool {
+    func storeFinalScore(_ plan: WeekPlan) -> Bool {
         guard let week = plan.week else { return false }
         let closed = weekContext(for: week)
-        let goalScores = closed.goals.compactMap { goal in
-            closed.score.goalWeek[goal.key]?.score.map { "\(goal.key)=\(Format.plain($0))" }
-        }.joined(separator: ";")
-        let overall = closed.score.overall
-        let changed = plan.finalScore != overall || plan.finalGoalsScored != closed.score.goalsScored
-            || plan.finalGoalScores != goalScores
+        let goalScores: String
+        let overall: Double?
+        let goalsScored: Int
+        if closed.items.isEmpty, let recalculation = closed.archiveRecalculation {
+            goalScores = recalculation.goalScoresText
+            overall = recalculation.overall
+            goalsScored = recalculation.goals.count
+        } else {
+            goalScores = closed.goals.compactMap { goal in
+                closed.score.goalWeek[goal.key]?.score.map { "\(goal.key)=\(Format.plain($0))" }
+            }.joined(separator: ";")
+            overall = closed.score.overall
+            goalsScored = closed.score.goalsScored
+        }
+        let changed = plan.finalScore != overall || plan.finalGoalsScored != goalsScored || plan.finalGoalScores != goalScores
         guard changed else { return false }
         plan.finalScore = overall
-        plan.finalGoalsScored = closed.score.goalsScored
+        plan.finalGoalsScored = goalsScored
         plan.finalGoalScores = goalScores
         plan.touch()
         return true

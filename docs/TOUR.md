@@ -11,14 +11,15 @@ itself off once the practice page shows it was done.
 - The coach card is Thalia's own (`TourView.swift`) because the kit's card has English button
   titles; it uses the kit's tour engine (`TourProgress`, `TourSchedule`).
 
-## Steps (tour version 8, app 1.7.0)
+## Steps (tour version 9, app 1.8.0)
 
-Catalog: `Packages/ThaliaCore/Sources/ThaliaCore/ThaliaTour.swift`. 16 cards in the full tour:
-welcome, 14 steps, finish. The 3 steps with `since: 8` make up "Neu in Thalia" for everyone who
-took the tour in 1.6 (`steps(newerThan: 7)`: whats-new, excused, past-weeks, range-pdf, finish).
-Someone who last took it in tour version 6 gets the 8 v7 steps plus the 3 v8 steps, in tour order.
-The three v8 cards tick off with „Weiter“ (no goal: setting a day type, the past-week window and
-the PDF report are not on the practice page).
+Catalog: `Packages/ThaliaCore/Sources/ThaliaCore/ThaliaTour.swift`. 17 cards in the full tour:
+welcome, 15 steps, finish. The step with `since: 9` makes up "Neu in Thalia" for everyone who took
+the tour in 1.7 (`steps(newerThan: 8)`: whats-new, archive, finish). Someone who last took it in
+1.6 (tour version 7) gets the 3 v8 steps plus the v9 step (whats-new, excused, past-weeks, archive,
+range-pdf, finish); tour version 6 gets the 8 v7 steps as well, in tour order.
+The v8 and v9 cards tick off with „Weiter“ (no goal: setting a day type, the past-week window, the
+archive card and the PDF report are not on the practice page).
 
 | # | id | since | Title | Teaches | Ticks off when |
 |---|---|---|---|---|---|
@@ -34,9 +35,10 @@ the PDF report are not on the practice page).
 | 9 | glance | 7 | Heute im Blick | the ring opens it: open items, „Diese Woche noch“, weekly targets with pace, Fokus (8 weeks) and Ausgaben; Mac: right column ⌘0, ⌘5, ⌘6 | the sheet or the Mac column is open (`isGlanceOpen`) |
 | 10 | week | 7 | Sonntag: Woche abschließen und planen | „Weiter: Woche abschließen“, prompt with last week's plan, CSV, „Wie KW … wiederholen“, archive + undo | Weiter |
 | 11 | past-weeks | 8 | Vergangene Wochen | Woche → … (Mac: Ablage) → „Vergangene Woche nachtragen…“ with the window's three ways „Vom Plan“, „Mit ChatGPT“ (photos/PDFs/tables of many weeks, one CSV, preview per week), „Nur Wertung“; imported weeks are closed and count in Rückblick and Ziele | Weiter |
-| 12 | review | 7 | Ziele über Monate | 12 weeks / half-year / goal year in the goal detail, „Zielüberprüfung vorbereiten“ with parked ideas | Weiter |
-| 13 | range-pdf | 8 | PDF-Bericht | Rückblick → „PDF-Bericht“, Woche → … → „Mehrere Wochen als PDF…“, Mac Ablage → „Zeitraum als PDF…“ ⌥⌘P; period (4/8/13 weeks, goal year, from–to) and scope; built page by page (cover with Ø and trend per goal, one row per week, PH per area, optional week pages); Mac: bookmarks, ⌘S, ⌘P | Weiter |
-| 14 | everywhere | 7 | Überall dabei | Watch first page and crown, complication, ticking off in the widget, Siri asks for the area, „Ausgabe in Thalia“ + Transaktion automation; Mac: the menu bar | Weiter |
+| 12 | archive | 9 | Archiv-Wochen | Woche → … (Mac: Ablage) → „Vergangene Woche nachtragen…“ → „Mit ChatGPT“: an old week may hold only its value and grades 0–10 of categories and annual goals – no items, nothing open or missed; the card „Archiv“ with „Wertung laut Unterlagen“ (kept as it was) and „Nach heutigen Regeln“ (from the category grades, without Krank/Urlaub days), „Ohne Zuordnung (Archiv)“ for old labels; „Archivdaten dieser Wochen ersetzen“ for a repeated import, Widerrufen (⌘Z) brings it back | Weiter |
+| 13 | review | 7 | Ziele über Monate | 12 weeks / half-year / goal year in the goal detail, „Zielüberprüfung vorbereiten“ with parked ideas | Weiter |
+| 14 | range-pdf | 8 | PDF-Bericht | Rückblick → „PDF-Bericht“, Woche → … → „Mehrere Wochen als PDF…“, Mac Ablage → „Zeitraum als PDF…“ ⌥⌘P; period (4/8/13 weeks, goal year, from–to) and scope; built page by page (cover with Ø and trend per goal, one row per week, PH per area, optional week pages); Mac: bookmarks, ⌘S, ⌘P | Weiter |
+| 15 | everywhere | 7 | Überall dabei | Watch first page and crown, complication, ticking off in the widget, Siri asks for the area, „Ausgabe in Thalia“ + Transaktion automation; Mac: the menu bar | Weiter |
 | – | finish | – | Bereit | where to replay (Einstellungen → Thalia-Tour, Hilfe → Thalia-Tour) | Fertig |
 
 Removed in v7 (content moved into the cards above): `colours` (words on the buttons → mark),

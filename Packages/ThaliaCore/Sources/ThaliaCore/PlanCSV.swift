@@ -9,6 +9,10 @@ import BinisoftKitCore
 ///
 /// Rows after a `week` row belong to that week. Importing the same file twice changes nothing;
 /// importing a revised plan for a week updates it and removes items the new plan no longer has.
+///
+/// Archive weeks (v9): `category_score` / `goal_score` rows carry grades 0–10 from old records with
+/// the original label, the day (or none for a week grade), the source in `note` and an optional
+/// `count` column (valid days) – see `ArchiveGrade`, `ArchiveWeek`.
 public enum PlanCSV {
     public static let columns = ["type", "id", "parent", "title", "description", "days", "schedule", "unit",
                                  "target", "period", "link", "flags", "date", "value", "note"]
@@ -21,6 +25,10 @@ public enum PlanCSV {
 
     /// The header with the weekday columns: `type,…,note,mo,di,mi,do,fr,sa,so`.
     public static var matrixHeader: String { (columns + matrixColumns).joined(separator: ",") }
+
+    /// Optional column of `category_score` / `goal_score` rows (v9): valid days behind a week grade.
+    /// The writer adds it only when the document has grades, so other files keep today's header.
+    public static let countColumn = "count"
 
     /// Header names read as weekday columns (German short and long, English short and long).
     static let matrixAliases: [(Weekday, [String])] = [
@@ -35,11 +43,19 @@ public enum PlanCSV {
 
     public enum RowType: String, CaseIterable, Sendable {
         case week, day, goal, category, item, measure, mark, entry, work, note, review, score
+        /// A category's grade 0–10 from old records, on a day or for the week (v9, archive weeks).
+        case categoryScore = "category_score"
+        /// An annual goal's grade 0–10 for the week (v9).
+        case goalScore = "goal_score"
 
         public init?(token: String) {
             let t = token.trimmingCharacters(in: .whitespaces).lowercased()
             if let direct = RowType(rawValue: t) { self = direct; return }
             switch t {
+            case "kategorie_note", "kategoriennote", "kategorienote", "categoryscore", "category-score", "kategorie-note":
+                self = .categoryScore
+            case "ziel_note", "zielnote", "goalscore", "goal-score", "ziel-note", "jahresziel_note":
+                self = .goalScore
             case "woche", "kw", "plan": self = .week
             case "tag", "tagestyp": self = .day
             case "ziel", "jahresziel": self = .goal
@@ -64,6 +80,7 @@ public enum PlanCSV {
         "beschreibung": "description", "tage": "days", "rhythmus": "schedule", "einheit": "unit",
         "zielwert": "target", "zeitraum": "period", "verknüpfung": "link", "verknuepfung": "link", "quelle": "link",
         "merkmale": "flags", "datum": "date", "wert": "value", "notiz": "note", "anmerkung": "note",
+        "anzahl": "count", "n": "count",
     ]
 
     /// Everything a file contains.
@@ -91,12 +108,16 @@ public enum PlanCSV {
         /// Closed days and weeks (flag `abgeschlossen` on day and week rows, R27).
         public var closedDays: Set<DayKey> = []
         public var closedWeeks: Set<WeekKey> = []
+        /// Category and goal grades from old records (`category_score`, `goal_score`, v9).
+        public var grades: [ArchiveGrade] = []
+        /// The `note` of a week row: where the week's value comes from ("Scan S. 19", v9).
+        public var weekNotes: [WeekKey: String] = [:]
 
         public init() {}
 
         public var rowCount: Int {
             goals.count + categories.count + weeks.count + days.count + items.count + measures.count + marks.count
-                + entries.count + work.count + notes.count + reviews.count + scores.count
+                + entries.count + work.count + notes.count + reviews.count + scores.count + grades.count
         }
 
         public var isEmpty: Bool { rowCount == 0 }
@@ -114,24 +135,59 @@ public enum PlanCSV {
         return lines[(start + 1)..<end].joined(separator: "\n")
     }
 
+    /// Fenced blocks in a pasted answer that start with a CSV header (a `type` or `typ` column) – only
+    /// the first is read, so more than one gets a warning (v9).
+    public static func csvBlockCount(in text: String) -> Int {
+        var count = 0
+        var inBlock = false
+        var firstLine = true
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
+                inBlock.toggle()
+                firstLine = true
+                continue
+            }
+            guard inBlock, firstLine, !trimmed.isEmpty else { continue }
+            firstLine = false
+            let cells = trimmed.lowercased().split(whereSeparator: { ",;\t|".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }
+            if cells.contains("type") || cells.contains("typ") { count += 1 }
+        }
+        return count
+    }
+
     /// Reads a file. `knownCategories` / `knownMeasures` are what the app already has, so items may
     /// refer to them without repeating the structure. `knownItems`: the app's items (`ItemRecord.key`,
     /// "2026-W45|1.1-01", or bare codes) – marks on items that are neither there nor in the file get
-    /// a warning (v8).
+    /// a warning (v8). `knownGoals`: the app's goal ids – grades of goals that are neither there nor
+    /// in the file stay without mapping (v9; empty: the goals of the known categories).
     public static func parse(_ raw: String, knownCategories: [String: String] = [:], knownMeasures: Set<String> = [],
-                             knownItems: Set<String> = []) -> Document {
+                             knownItems: Set<String> = [], knownGoals: Set<String> = []) -> Document {
         var doc = Document()
         let text = extractCSV(from: raw)
-        let (rawHeader, rawRows) = CSV.records(text)
-        let header = rawHeader.map { headerAliases[$0] ?? $0 }
+        let table = CSV.parse(text)
+        let header = (table.first ?? []).map { cell -> String in
+            let key = cell.lowercased().trimmingCharacters(in: .whitespaces)
+            return headerAliases[key] ?? key
+        }
         guard header.contains("type") else {
             doc.skipped.append("Die erste Zeile braucht die Spalte \u{201C}type\u{201D} (erwartet: \(PlanCSV.header)).")
             return doc
         }
-        let rows = rawRows.map { row -> [String: String] in
+        let blocks = csvBlockCount(in: raw)
+        if blocks > 1 {
+            doc.warnings.append("Die Antwort hat \(blocks) CSV-Blöcke – gelesen wird nur der erste. Alle Wochen gehören in einen Block.")
+        }
+        let cells = Array(table.dropFirst())
+        let rows = cells.map { values -> [String: String] in
             var mapped: [String: String] = [:]
-            for (key, value) in row { mapped[headerAliases[key] ?? key] = value }
+            for (index, key) in header.enumerated() where index < values.count { mapped[key] = values[index] }
             return mapped
+        }
+        // v9: filled cells beyond the header – a comma without quotes (a decimal comma "9,19") shifted
+        // every later column, so the row's value can't be trusted.
+        let overflowing = cells.map { values in
+            values.count > header.count && values[header.count...].contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         }
 
         var currentWeek: WeekKey?
@@ -147,8 +203,26 @@ public enum PlanCSV {
             }
         }
 
+        // v9: a grade by its key (the last row counts). Two different labels the answer mapped to the
+        // same id on the same day get a plain warning under their week.
+        var gradeTitles: [String: String] = [:]
+        func addGrade(_ grade: ArchiveGrade, line: Int) {
+            if let earlier = gradeTitles[grade.key],
+               ImportPlan<ArchiveGrade>.contentKey([earlier]) != ImportPlan<ArchiveGrade>.contentKey([grade.title]) {
+                let place = grade.day.map { "\(grade.week.label) \($0.weekday.short)" } ?? grade.week.label
+                let what = grade.kind == .goal ? "Zielnoten" : (grade.day == nil ? "Wochennoten" : "Noten")
+                doc.warnings.append("\(place): zwei \(what) für \(grade.id) (\u{201E}\(earlier)\u{201C}, \u{201E}\(grade.title)\u{201C}) – nur die letzte bleibt; bei unklarer Zuordnung id leer lassen.")
+            } else {
+                warnDuplicate("grade:\(grade.key)", line: line)
+            }
+            gradeTitles[grade.key] = grade.title
+            doc.grades.removeAll { $0.key == grade.key }
+            doc.grades.append(grade)
+        }
+
         for (offset, row) in rows.enumerated() {
             let line = offset + 2
+            let overflow = overflowing[offset]
             func col(_ name: String) -> String { (row[name] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
             let typeText = col("type")
             if typeText.isEmpty, row.values.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) { continue }
@@ -179,15 +253,44 @@ public enum PlanCSV {
                 if flags.contains("alt") || flags.contains("old") { model = "alt" }
                 else if flags.contains("neu") || flags.contains("new") { model = "" }
                 else { model = week < WeekRecord.scoringChange ? "alt" : "" }
+                // The value as written in the records – "9.192" is 9,192, not 9192 (v9). Unreadable, outside
+                // 0–10 or in a row whose columns shifted: not taken, with a warning (the app keeps its value).
+                let valueText = col("value")
+                var recorded: Double?
+                if overflow || splitDecimal(value: valueText, next: col("note")) {
+                    doc.warnings.append("\(week.label): Zeile \(line) – Spalten verrutscht, ein Komma ohne Anführungszeichen (Dezimalkomma 9,19 statt 9.19?). Wochenwert und Quelle nicht übernommen.")
+                } else if !valueText.isEmpty {
+                    if let value = ArchiveGrade.parseValue(valueText), ArchiveGrade.range.contains(value) {
+                        recorded = value
+                    } else if ArchiveGrade.parseValue(valueText) != nil {
+                        doc.warnings.append("\(week.label): Wochenwert \u{201C}\(valueText)\u{201D} (Zeile \(line)) liegt nicht zwischen 0 und 10 – nicht übernommen.")
+                    } else {
+                        doc.warnings.append("\(week.label): Wochenwert \u{201C}\(valueText)\u{201D} (Zeile \(line)) nicht lesbar – nicht übernommen.")
+                    }
+                }
                 let record = WeekRecord(week: week, title: col("title"), details: col("description"),
-                                        recordedScore: Format.parse(col("value")), scoringModel: model)
+                                        recordedScore: recorded, scoringModel: model)
                 doc.weeks.removeAll { $0.week == week }
                 doc.weeks.append(record)
                 if flagSet(col("flags")).contains(closedFlag) { doc.closedWeeks.insert(week) }
+                // Where the week's value comes from (v9); German headers name it "quelle" (read as link).
+                let shifted = overflow || splitDecimal(value: valueText, next: col("note"))
+                let source = shifted ? "" : (col("note").isEmpty ? col("link") : col("note"))
+                doc.weekNotes[week] = source.isEmpty ? nil : source
 
             case .day:
                 guard let key = day(from: id) ?? day(from: dateText) else {
-                    doc.skipped.append("Zeile \(line): Tag \u{201C}\(id.isEmpty ? dateText : id)\u{201D} nicht lesbar (erwartet 2026-11-02 oder Mo)")
+                    let text = id.isEmpty ? dateText : id
+                    if currentWeek == nil, DayMask.weekday(text.lowercased()) != nil {
+                        doc.skipped.append("Zeile \(line): Tag \u{201C}\(text)\u{201D} steht vor der ersten week-Zeile")
+                    } else {
+                        doc.skipped.append("Zeile \(line): Tag \u{201C}\(text)\u{201D} nicht lesbar (erwartet 2026-11-02 oder Mo)")
+                    }
+                    continue
+                }
+                // v9: a day belongs to its block – a date in another week is never moved there.
+                if let week = currentWeek, key.week != week {
+                    doc.skipped.append("Zeile \(line): Tag \(key.string) liegt nicht in \(week.label) – gehört in den Block seiner Woche")
                     continue
                 }
                 warnDuplicate("day:\(key.string)", line: line)
@@ -403,12 +506,135 @@ public enum PlanCSV {
                 }
                 doc.scores.removeAll { $0.categoryKey == id && $0.day == key }
                 doc.scores.append(ScoreRecord(categoryKey: id, day: key, score: value, reason: col("note")))
+
+            case .categoryScore, .goalScore:
+                // A grade from old records (v9): exactly what the records say, nothing derived. It belongs
+                // to its block: before the first week row or dated in another week it is skipped, never moved.
+                let kind: ArchiveGrade.Kind = type == .categoryScore ? .category : .goal
+                let title = col("title")
+                guard !title.isEmpty else {
+                    doc.skipped.append("Zeile \(line): \(kind.noun) ohne Bezeichnung (title)")
+                    continue
+                }
+                guard !overflow, !splitDecimal(value: col("value"), next: col("note")) else {
+                    doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D} – Spalten verrutscht, ein Komma ohne Anführungszeichen (Dezimalkomma? 9,19 als 9.19 schreiben)")
+                    continue
+                }
+                guard let week = currentWeek else {
+                    doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D} steht vor der ersten week-Zeile")
+                    continue
+                }
+                let source = col("note").isEmpty ? col("link") : col("note")
+                // Day grades in the weekday columns mo … so (a compact form): one per filled cell.
+                let dayCells: [(Weekday, String)] = matrixAliases.compactMap { weekday, names in
+                    names.lazy.map(col).first { !$0.isEmpty }.map { (weekday, $0) }
+                }
+                if !dayCells.isEmpty, kind == .goal {
+                    doc.skipped.append("Zeile \(line): Zielnote \u{201C}\(title)\u{201D}: Noten je Tag (mo … so) gibt es nur für Kategorien – nicht übernommen")
+                } else {
+                    for (weekday, cell) in dayCells {
+                        guard let value = ArchiveGrade.parseValue(cell), ArchiveGrade.range.contains(value) else {
+                            doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D} \(weekday.short) \u{201C}\(cell)\u{201D} nicht lesbar (0 bis 10)")
+                            continue
+                        }
+                        addGrade(ArchiveGrade(week: week, kind: kind, id: id, title: title, day: week.day(weekday), value: value,
+                                              source: source), line: line)
+                    }
+                }
+                let valueText = col("value")
+                // Only the weekday columns: nothing else to read.
+                if valueText.isEmpty, dateText.isEmpty, !dayCells.isEmpty, kind == .category { continue }
+                guard !valueText.isEmpty else {
+                    doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D} ohne Wert")
+                    continue
+                }
+                guard let value = ArchiveGrade.parseValue(valueText) else {
+                    doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D}: Wert \u{201C}\(valueText)\u{201D} nicht lesbar")
+                    continue
+                }
+                guard ArchiveGrade.range.contains(value) else {
+                    doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D}: \(valueText) liegt nicht zwischen 0 und 10")
+                    continue
+                }
+                var gradeDay: DayKey?
+                if !dateText.isEmpty {
+                    guard let key = day(from: dateText) else {
+                        doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D}: Datum \u{201C}\(dateText)\u{201D} nicht lesbar (2026-10-19 oder Mo)")
+                        continue
+                    }
+                    guard key.week == week else {
+                        doc.skipped.append("Zeile \(line): \(kind.noun) \u{201C}\(title)\u{201D}: \(key.string) liegt nicht in \(week.label) – gehört in den Block seiner Woche")
+                        continue
+                    }
+                    // A goal's grade is the week's; its date is only checked.
+                    if kind == .category { gradeDay = key }
+                }
+                var count: Int?
+                let countText = col(countColumn)
+                if !countText.isEmpty, gradeDay == nil {
+                    if let number = Format.parse(countText), number == number.rounded(), (1...7).contains(Int(number)) {
+                        count = Int(number)
+                    } else {
+                        doc.warnings.append("Zeile \(line): Anzahl \u{201C}\(countText)\u{201D} bei \u{201C}\(title)\u{201D} nicht lesbar (1 bis 7 Tage) – ignoriert")
+                    }
+                }
+                addGrade(ArchiveGrade(week: week, kind: kind, id: id, title: title, day: gradeDay, value: value, source: source,
+                                      count: count), line: line)
             }
         }
 
         validate(&doc, knownCategories: knownCategories, knownMeasures: knownMeasures)
+        validateGrades(&doc, knownCategories: knownCategories, knownGoals: knownGoals)
         warnUnknownMarks(&doc, knownItems: knownItems)
         return doc
+    }
+
+    /// "9,28" written without quotes reads as value "9" and note "28" (v9): two cells of only digits.
+    /// A source ("Scan S. 3") is never only digits, so the row's value can't be trusted.
+    static func splitDecimal(value: String, next: String) -> Bool {
+        func digits(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
+        return digits(value) && digits(next)
+    }
+
+    /// Grades whose id is neither a category (goal) of the app nor of the file stay without mapping
+    /// (decision 3): one warning each. Grades without mapping are listed once per week – they stay
+    /// in the archive and never count. Without anything to check against (no known categories or
+    /// goals) the ids stay as they are.
+    static func validateGrades(_ doc: inout Document, knownCategories: [String: String], knownGoals: Set<String>) {
+        guard !doc.grades.isEmpty else { return }
+        let categoryKeys = Set(knownCategories.keys).union(doc.categories.map(\.key))
+        var goalKeys = knownGoals.union(doc.goals.map(\.key)).union(doc.categories.map(\.goalKey))
+        if knownGoals.isEmpty {
+            for key in knownCategories.keys { if let first = key.split(separator: ".").first { goalKeys.insert(String(first)) } }
+        }
+        var unknown: [String] = []
+        var cleared: Set<String> = []
+        for index in doc.grades.indices {
+            let grade = doc.grades[index]
+            guard grade.isMapped else { continue }
+            let keys = grade.kind == .category ? categoryKeys : goalKeys
+            guard !keys.isEmpty, !keys.contains(grade.id) else { continue }
+            let what = grade.kind == .category ? "keine Kategorie" : "kein Jahresziel"
+            let warning = "\(grade.week.label): \u{201C}\(grade.title)\u{201D} – \(grade.id) ist \(what) der App; die Note bleibt ohne Zuordnung im Archiv."
+            if !unknown.contains(warning) { unknown.append(warning) }
+            cleared.insert(grade.week.string + "|" + grade.title)
+            doc.grades[index].id = ""
+        }
+        // Clearing an id can make two rows the same grade: the last one counts.
+        var seenKeys: Set<String> = []
+        var deduplicated: [ArchiveGrade] = []
+        for grade in doc.grades.reversed() where seenKeys.insert(grade.key).inserted { deduplicated.append(grade) }
+        doc.grades = deduplicated.reversed()
+        doc.warnings.append(contentsOf: unknown)
+
+        var unmapped: [WeekKey: [String]] = [:]
+        for grade in doc.grades where !grade.isMapped && !cleared.contains(grade.week.string + "|" + grade.title) {
+            if unmapped[grade.week]?.contains(grade.title) != true { unmapped[grade.week, default: []].append(grade.title) }
+        }
+        for week in unmapped.keys.sorted() {
+            let titles = (unmapped[week] ?? []).map { "\u{201C}\($0)\u{201D}" }.joined(separator: ", ")
+            doc.warnings.append("\(week.label): ohne Zuordnung, nur im Archiv (zählt nicht): \(titles)")
+        }
     }
 
     /// Marks on items that are neither in the file nor in the app (v8): one warning per week. A week
@@ -505,9 +731,11 @@ public enum PlanCSV {
 
     /// Writes a document in the import format (export, backup, the template week).
     public static func export(_ doc: Document) -> String {
-        var table: [[String]] = [columns]
+        // The count column only when there are grades (v9): every other file keeps today's header.
+        let header = doc.grades.isEmpty ? columns : columns + [countColumn]
+        var table: [[String]] = [header]
         func row(_ values: [String: String]) {
-            table.append(columns.map { values[$0] ?? "" })
+            table.append(header.map { values[$0] ?? "" })
         }
         for goal in doc.goals.sortedByNumber() {
             row(["type": "goal", "id": goal.key, "title": goal.title, "description": goal.details])
@@ -523,20 +751,27 @@ public enum PlanCSV {
         }
         for item in doc.items { weeks.insert(item.week) }
         for measure in doc.measures { weeks.insert(measure.week) }
+        for grade in doc.grades { weeks.insert(grade.week) }
+        weeks.formUnion(doc.weekNotes.keys)
 
         for week in weeks.sorted() {
             let record = doc.weeks.first { $0.week == week } ?? WeekRecord(week: week)
             var weekFlags: [String] = record.isOldScoring ? ["alt"] : []
             if doc.closedWeeks.contains(week) { weekFlags.append(closedFlag) }
             row(["type": "week", "id": week.string, "title": record.title, "description": record.details,
-                 "flags": weekFlags.joined(separator: ","), "value": record.recordedScore.map(Format.plain) ?? "",
-                 "date": week.monday.string])
+                 "flags": weekFlags.joined(separator: ","), "value": record.recordedScore.map(ArchiveGrade.csvValue) ?? "",
+                 "date": week.monday.string, "note": doc.weekNotes[week] ?? ""])
             for day in week.days {
                 let info = doc.days.first { $0.day == day }
                 let isClosed = doc.closedDays.contains(day)
                 guard info != nil || isClosed else { continue }
                 row(["type": "day", "id": day.string, "title": info?.dayType ?? "", "description": info?.note ?? "",
                      "flags": isClosed ? closedFlag : ""])
+            }
+            // Grades of old records (v9), in sheet order.
+            for grade in ArchiveWeek(week: week, grades: doc.grades).grades {
+                row(["type": grade.kind.rawValue, "id": grade.id, "title": grade.title, "date": grade.day?.string ?? "",
+                     "value": ArchiveGrade.csvValue(grade.value), "note": grade.source, countColumn: grade.count.map(String.init) ?? ""])
             }
             for measure in doc.measures.filter({ $0.week == week }).sorted(by: { ($0.position, $0.code) < ($1.position, $1.code) }) {
                 row(["type": "measure", "id": measure.code, "parent": measure.categoryKey, "title": measure.title,
@@ -656,9 +891,10 @@ extension PlanCSV.Document {
     /// Blank fields of `weeks` filled with `mark` (the switch "Leere Felder als ✗ zählen"): every fixed,
     /// required item due on a day (not a free day for work items, not an excused day) without a mark.
     /// "n× pro Woche", progress, conditional and secondary items stay blank – the week's rules settle them.
+    /// Archive weeks (no item rows, no marks – v9) are never filled.
     public func fillingBlanks(weeks: Set<WeekKey>, with mark: Mark) -> PlanCSV.Document {
         var doc = self
-        for week in weeks.sorted() {
+        for week in weeks.subtracting(archiveWeeks).sorted() {
             let data = weekData(week)
             for item in data.items.sortedForSheet() where item.schedule == .fixed {
                 for day in week.days where data.isOpenRequired(item, on: day) {
@@ -671,23 +907,26 @@ extension PlanCSV.Document {
     }
 
     /// Past weeks closed (a past week brought in later): every week of the file before
-    /// `today.week` with items, marks or a week row, and its days with a mark or a day type.
+    /// `today.week` with items, marks, grades or a week row – archive weeks too (v9) – and its days
+    /// with a mark, a day type or a day grade.
     /// The current week and later ones stay open, each with a warning ("KW48: noch nicht vorbei – …").
     public func closingPast(today: DayKey) -> PlanCSV.Document {
         var doc = self
         let current = today.week
         var weeks = Set(self.weeks.map(\.week)).union(plannedWeeks)
         for mark in marks { weeks.insert(mark.week) }
+        for grade in grades { weeks.insert(grade.week) }
         let past = weeks.filter { $0 < current }
         for week in weeks.subtracting(past).sorted() {
             doc.warnings.append("\(week.label): noch nicht vorbei – wird nicht abgeschlossen.")
         }
         doc.closedWeeks.formUnion(past)
+        let gradedDays = Set(grades.compactMap(\.day))
         for week in past {
             for day in week.days {
                 let marked = marks.contains { $0.day == day && $0.mark != nil }
                 let typed = days.contains { $0.day == day && !$0.dayType.trimmingCharacters(in: .whitespaces).isEmpty }
-                if marked || typed { doc.closedDays.insert(day) }
+                if marked || typed || gradedDays.contains(day) { doc.closedDays.insert(day) }
             }
         }
         return doc

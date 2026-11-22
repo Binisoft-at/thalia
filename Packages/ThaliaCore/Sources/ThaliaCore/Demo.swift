@@ -61,8 +61,41 @@ public enum Demo {
                 doc.weeks.append(WeekRecord(week: old, title: "", details: "Wertung aus dem Papier-Tracker.", recordedScore: score,
                                             scoringModel: old < WeekRecord.scoringChange ? "alt" : ""))
             }
+            addArchive(&doc, week: archiveWeek(today: today))
         }
         return Content(document: doc, closedDays: closedDays, closedWeeks: closedWeeks)
+    }
+
+    // MARK: An archive week (v9)
+
+    /// The paper week that also has grades from the paper tracker (two weeks before `today`'s):
+    /// a holiday Saturday, day grades of two categories, a week grade with its count, one grade
+    /// without today's category and the goal grades. Only with history.
+    public static func archiveWeek(today: DayKey) -> WeekKey { today.week.adding(weeks: -2) }
+
+    /// The archive week's day type on Saturday.
+    public static let archiveDayType = "Urlaub"
+
+    static func addArchive(_ doc: inout PlanCSV.Document, week: WeekKey) {
+        let source = "Papier-Tracker"
+        doc.weekNotes[week] = source
+        doc.days.append(DayRecord(day: week.day(.saturday), dayType: archiveDayType))
+        let daily: [(String, String, [Double])] = [
+            ("1.1", "Ernährung", [8, 9, 7, 10, 8, 0, 9]),
+            ("1.2", "Training", [10, 0, 10, 5, 10, 10, 0]),
+        ]
+        for (id, title, values) in daily {
+            for (weekday, value) in zip(Weekday.allCases, values) {
+                doc.grades.append(ArchiveGrade(week: week, kind: .category, id: id, title: title, day: week.day(weekday), value: value,
+                                               source: source))
+            }
+        }
+        doc.grades.append(ArchiveGrade(week: week, kind: .category, id: "5", title: "Lesen", value: 6, source: source, count: 5))
+        doc.grades.append(ArchiveGrade(week: week, kind: .category, title: "Sonderwoche", value: 7, source: source))
+        let goalValues: [Double] = [6.5, 7, 6, 8, 6, 7.5, 9, 6.5, 5, 8]
+        for (goal, value) in zip(Template.goals, goalValues) {
+            doc.grades.append(ArchiveGrade(week: week, kind: .goal, id: goal.key, title: goal.title, value: value, source: source))
+        }
     }
 
     // MARK: Generating a believable week
