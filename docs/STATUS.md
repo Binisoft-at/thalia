@@ -2,7 +2,7 @@
 
 Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) · Verbundene Apps: [CONNECTED_APPS.md](CONNECTED_APPS.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
 
-## Stand v10 (Version 1.9.0, Tour-Version 10) – umgesetzt, CI und TestFlight offen
+## Stand v10 (Version 1.9.0, Tour-Version 10)
 - Anlass: „Thalia Korrekturen v8“ vom 22. Nov. 2026 ([TASKS-v10.md](TASKS-v10.md), vor der Umsetzung von drei
   Prüfern gegengelesen): Jahresziele klarer eintragen und abhaken, Bücher erfassen, rückwirkend eintragen,
   Abschnitte als Versionen der Jahresziele, andere Binisoft-Apps liefern Daten. Abweichungen vom Plan stehen dort in
@@ -88,10 +88,15 @@ Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) 
   am Mac bzw. das Gerät.
 - Offene Fragen an Bini ([CONNECTED_APPS.md](CONNECTED_APPS.md) §5): „über 8,0“ ab 8,00 (umgesetzt) oder ab 8,01;
   Finn-Vermögen monatlich oder bei Änderung, Sparquote gewünscht; Darwin-Benachrichtigung zwischen Mac-Apps ungeprüft.
-- Nächste Schritte: CI mit `[screenshots]` (`goal-detail`, `reading`, `connected-apps`) und die Screenshots ansehen;
-  `cloudkit-schema.yml` darf keinen Deploy verlangen (`needs-deploy.txt`); TestFlight 1.9.0 mit Build-Nr. 57 oder höher (1.8.0 (56)
-  ist in TestFlight); nach dem Merge auf `main` die zwei öffentlichen Adressen in den Aufträgen öffnen (sie zeigen auf
-  `main`), dann Bini: Aufgaben aus [CONNECTED_APPS.md](CONNECTED_APPS.md) §2 und TESTING.md „v10“.
+- CI-Lauf 37 grün (macOS + iOS + watchOS gebaut, 207 Core-Tests); Screenshots `goal-detail`, `reading`,
+  `connected-apps` (iPhone) und `goals`, `connected-apps` (Mac) angesehen. Am Mac zeigen `goal-detail` und `reading`
+  die Ziele-Seite (mit „Gerade dabei“), nicht die Unterseite – nur das Bildschirmfoto, kein App-Fehler. Kein
+  CloudKit-Schema-Lauf nötig (`schema.ckdb` und `Shared/Models.swift` unverändert). TestFlight: **1.9.0 (57)**
+  hochgeladen (iOS + watchOS + macOS, `testflight-diagnose.yml` Lauf 7); laut `asc-probe` am 22. Nov. 2026 18:35 UTC
+  iOS verarbeitet und `IN_BETA_TESTING`, macOS noch in Verarbeitung. Die Adressen in den Aufträgen (`main`) sind
+  erreichbar. Nächste Build-Nr.: 58.
+- Nächste Schritte: Bini – Aufgaben aus [CONNECTED_APPS.md](CONNECTED_APPS.md) §2 der Reihe nach, TESTING.md „v10“,
+  die Fragen in §5 beantworten.
 
 ## Stand v9 (Version 1.8.0, Tour-Version 9)
 - Anlass: fünf Import-Probleme beim Nachtragen alter Wochen aus Scans ([TASKS-v9.md](TASKS-v9.md)). Pakete P1 Core,
