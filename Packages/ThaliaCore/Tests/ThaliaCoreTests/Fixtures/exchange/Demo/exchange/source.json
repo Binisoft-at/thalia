@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "source": "demo",
+  "app": "Demo",
+  "appVersion": "1.0",
+  "generatedAt": "2026-11-22T20:00:00+01:00",
+  "refs": [
+    { "id": "tpl-push", "title": "Push", "kind": "workout" },
+    { "id": "grp-projekt", "title": "Projekt", "kind": "group" },
+    { "id": "grp-verein", "title": "Sport / Verein", "kind": "group" }
+  ]
+}

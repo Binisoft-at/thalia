@@ -21,6 +21,9 @@ public struct ExistingState: Sendable {
     public var closedWeeks: Set<WeekKey> = []
     /// The stored archive grades per week (settings `archive.<week>`, v9).
     public var archiveGrades: [WeekKey: ArchiveWeek] = [:]
+    /// The stored v10 records by key (`SettingKeys.all`, the newest copy each) – backups bring them as
+    /// `record` rows.
+    public var records: [String: SettingRow] = [:]
 
     public init() {}
 
@@ -205,14 +208,22 @@ public struct ImportPreview {
     /// only weeks where it changes; an empty one means: remove the setting. Stored grades are updated
     /// by key; a week in `replacingWeeks` has only the file's.
     public let archiveUpdates: [WeekKey: ArchiveWeek]
+    /// v10 records of a backup (`record` rows) by key: a stored record with a newer `modifiedAt` stays
+    /// (counts as unchanged).
+    public let records: ImportPlan<SettingRow>
 
     /// - Parameter replacing: "Archivdaten dieser Wochen ersetzen" – weeks whose data in the app goes to
     ///   the archive first; the preview compares the file with the app as it is afterwards. Weeks the
     ///   app has nothing for are simply new. (`ImportPreview.pastWeeks` picks them: past weeks only.)
-    public init(document: PlanCSV.Document, existing original: ExistingState, replacing: Set<WeekKey> = []) {
+    public init(document file: PlanCSV.Document, existing original: ExistingState, replacing: Set<WeekKey> = []) {
         let replacingSet = replacing.filter { original.hasArchiveContent($0) }
         let existing = original.clearing(replacingSet)
+        // v10: a measure the file gives no source keeps the one it has (this week or the week before).
+        let document = ImportPreview.keepingSources(file, existing: existing)
         self.document = document
+        records = ImportPlan(incoming: document.records.map { row -> (key: String, record: SettingRow) in
+            (row.key, SettingRow.resolved(row, over: existing.records[row.key]))
+        }, existing: existing.records)
         replacingWeeks = replacingSet.sorted()
         grades = ImportPlan(incoming: document.grades.map { ($0.key, $0) }, existing: existing.gradeRecords)
         // The week row's note is kept as the source only where it names one: for a week value or grades.
@@ -381,6 +392,7 @@ public struct ImportPreview {
             ("Eigene Wertungen", scores.creates, scores.updates, scores.unchanged),
             gradeCounts(.category),
             gradeCounts(.goal),
+            ("Datensätze", records.creates, records.updates, records.unchanged),
         ]
     }
 
@@ -439,6 +451,32 @@ public struct ImportPreview {
             }
             return "\(week.longLabel) (\(week.rangeLabel))" + (parts.isEmpty ? "" : ": " + parts.joined(separator: " · "))
         }.joined(separator: "\n")
+    }
+
+    /// v10 (§1.5.4): links stay over the weeks – a measure without a source in the file keeps the source
+    /// the app has for its code (this week, else the nearest earlier week), with one hint per week in
+    /// the warnings ("KW48: bisherige Quelle übernommen …").
+    static func keepingSources(_ document: PlanCSV.Document, existing: ExistingState) -> PlanCSV.Document {
+        guard document.measures.contains(where: { $0.source == .manual }) else { return document }
+        var byCode: [String: [MeasureRecord]] = [:]
+        for measure in existing.measures.values { byCode[measure.code, default: []].append(measure) }
+        guard !byCode.isEmpty else { return document }
+        var doc = document
+        var kept: [WeekKey: [String]] = [:]
+        for index in doc.measures.indices where doc.measures[index].source == .manual {
+            let measure = doc.measures[index]
+            // The app's own measure of the week, else the nearest earlier week's – a manual one stays manual.
+            guard let previous = byCode[measure.code]?.filter({ $0.week <= measure.week }).max(by: { $0.week < $1.week }),
+                  previous.source != .manual else { continue }
+            doc.measures[index].source = previous.source
+            let from = previous.week == measure.week ? "" : ", aus \(previous.week.label)"
+            kept[measure.week, default: []].append("\u{201E}\(measure.title)\u{201C} (\(previous.source.raw)\(from))")
+        }
+        for week in kept.keys.sorted() {
+            let hint = "\(week.label): bisherige Quelle übernommen, die Datei nennt keine – " + (kept[week] ?? []).joined(separator: ", ")
+            if !doc.warnings.contains(hint) { doc.warnings.append(hint) }
+        }
+        return doc
     }
 
     /// The week a plan import is about (to jump there afterwards).

@@ -64,7 +64,7 @@ struct TrackerStore {
     let context: ModelContext
     var trashPolicy = TrashPolicy(keepDays: 30)
 
-    private func fetch<T: PersistentModel>(_ descriptor: FetchDescriptor<T>) -> [T] {
+    func fetch<T: PersistentModel>(_ descriptor: FetchDescriptor<T>) -> [T] {
         (try? context.fetch(descriptor)) ?? []
     }
 
@@ -105,15 +105,18 @@ struct TrackerStore {
     }
 
     /// The week, read and scored (widget snapshot, report, export).
-    func weekContext(for week: WeekKey, today: DayKey = .today()) -> WeekContext {
+    /// v10: `goalYear` false leaves out the goal year's records (segments, results, entries, category week
+    /// scores) – for loops over many weeks that only need the score; the score is the same either way.
+    func weekContext(for week: WeekKey, today: DayKey = .today(), goalYear: Bool = true) -> WeekContext {
         let key = week.string
         let dayKeys = week.days.map(\.string)
-        let archiveKey = ArchiveWeek.settingKey(week)
+        let weekItems = items(week)
+        let weekMeasures = measures(week)
         return WeekContext(
             week: week, today: today,
             plans: fetch(FetchDescriptor<WeekPlan>(predicate: #Predicate<WeekPlan> { $0.weekKey == key })),
-            goals: allGoals(), categories: allCategories(), items: items(week),
-            measures: measures(week),
+            goals: allGoals(), categories: allCategories(), items: weekItems,
+            measures: weekMeasures,
             marks: fetch(FetchDescriptor<ItemMark>(predicate: #Predicate<ItemMark> { $0.weekKey == key })),
             days: fetch(FetchDescriptor<PlanDay>(predicate: #Predicate<PlanDay> { dayKeys.contains($0.dayKey) })),
             entries: fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> { dayKeys.contains($0.dayKey) && $0.deletedAt == nil })),
@@ -123,16 +126,36 @@ struct TrackerStore {
             overrides: fetch(FetchDescriptor<ScoreOverride>(predicate: #Predicate<ScoreOverride> { dayKeys.contains($0.dayKey) && $0.deletedAt == nil })),
             reflections: fetch(FetchDescriptor<Reflection>(predicate: #Predicate<Reflection> { $0.scope == key || dayKeys.contains($0.scope) })),
             changes: changes(week),
-            settings: fetch(FetchDescriptor<AppSetting>(predicate: #Predicate<AppSetting> { $0.key == archiveKey }))
+            settings: weekSettings(week, items: weekItems, measures: weekMeasures, goalYear: goalYear)
         )
+    }
+
+    /// The settings a week reads (v9/v10): its archive grades, the goal year with its segments, results
+    /// and entries and the stored category scores (`goalYear`), the mappings, the known sources and their
+    /// day files of the week; the reading list only when a measure or item of the week reads from it.
+    func weekSettings(_ week: WeekKey, items: [PlanItem], measures: [MeasureDefinition], goalYear: Bool = true) -> [AppSetting] {
+        let sources = settings(keys: [ExchangeInbox.sourcesKey])
+        // Every copy of `x.sources` counts (two devices may have written one each before they synced).
+        let sourceIDs: [String] = ExchangeSourceList.merged(sources.map(\.value)).ids
+        var result = sources + settings(keys: [ArchiveWeek.settingKey(week)] + ExchangeInbox.keys(sources: sourceIDs, week: week))
+        result += settings(prefix: LinkRule.prefix)
+        if goalYear {
+            result += settings(prefix: "goal.") + settings(prefix: GoalTrack.settingPrefix)
+        } else {
+            result += settings(keys: TrackerStore.goalPeriodKeys)
+        }
+        let readsList = measures.contains { MeasureSource(raw: $0.sourceRaw).listKind != nil }
+            || items.contains { MeasureSource(raw: $0.measureCode).listKind != nil }
+        if readsList { result += settings(prefix: "list.") }
+        return result
     }
 
     /// The widget snapshot (R4): today, plus tomorrow written ahead, so the widget can switch at
     /// midnight by itself.
     func widgetSummary(today: DayKey) -> TodaySummary {
         let tomorrow = today.adding(days: 1)
-        let next = weekContext(for: tomorrow.week, today: tomorrow).todaySummary()
-        return weekContext(for: today.week, today: today).todaySummary().with { $0.nextDay = [next] }
+        let next = weekContext(for: tomorrow.week, today: tomorrow, goalYear: false).todaySummary()
+        return weekContext(for: today.week, today: today, goalYear: false).todaySummary().with { $0.nextDay = [next] }
     }
 
     /// Writes the widget snapshot (R4, R84). The Mac never writes, neither do in-memory stores.
@@ -188,13 +211,15 @@ struct TrackerStore {
         let goals = structure.data.goals.isEmpty ? Template.goals : structure.data.goals
         let categories = structure.data.categories.isEmpty ? Template.categories : structure.data.categories
         AppLog.info("Planning prompt built for \(target.string)", category: "import")
+        // v10 (§1.2.5): where the goals' results stand – for information, without Health values.
         return PlanPrompt.text(for: target, goals: goals, categories: categories, measures: measures, lastWeekReport: report,
-                               changes: changes, currentPlan: currentPlan, currentPlanWeek: source, trend: trend)
+                               changes: changes, currentPlan: currentPlan, currentPlanWeek: source, trend: trend,
+                               results: resultLines(today: today))
     }
 
     /// "KW44: Wertung 7,1 · 22 von 28 PH" (without a score "–").
     private func trendLine(_ week: WeekKey, today: DayKey) -> String {
-        let context = weekContext(for: week, today: today)
+        let context = weekContext(for: week, today: today, goalYear: false)
         let score = context.plan?.historyScore ?? context.score.overall
         let worked = context.workTotals().powerHours
         let work: String
@@ -338,6 +363,9 @@ struct TrackerStore {
         plan.finalGoalScores = ""
         plan.finalGoalsScored = 0
         plan.touch()
+        // v10: the computed category scores go with the final score (the week counts live again); those
+        // of a paper week with only a score were never computed and stay.
+        if hasItems(week) || archiveGrades(week) != nil { writeCategoryScores([:], week: week) }
         save()
     }
 
@@ -348,13 +376,13 @@ struct TrackerStore {
         save()
     }
 
-    /// Several copies of one mark (written on two devices before they synced): keep the newest,
-    /// fill its empty value or note from the newest copy that has one, delete the rest. `existing`
-    /// is sorted newest first.
+    /// Several copies of one mark (written on two devices before they synced): keep the newest – its
+    /// value counts, also an empty one (v10: a cleared mark is what keeps a connected app's ✓ away,
+    /// Grundregel 1; every screen already reads the newest copy) – fill only an empty note from the
+    /// newest copy that has one, delete the rest. `existing` is sorted newest first.
     private func collapse(_ existing: [ItemMark]) -> ItemMark? {
         guard let target = existing.first else { return nil }
         for duplicate in existing.dropFirst() {
-            if target.valueRaw.isEmpty, !duplicate.valueRaw.isEmpty { target.valueRaw = duplicate.valueRaw }
             if target.note.isEmpty, !duplicate.note.isEmpty { target.note = duplicate.note }
             context.delete(duplicate)
         }
@@ -382,7 +410,10 @@ struct TrackerStore {
 
     /// R23: only the note – the recorded value stays as it is (a new mark keeps `valueRaw == ""`), so
     /// a note on a free day never writes the derived N/A.
-    func setMarkNote(_ note: String, item: PlanItem, day: DayKey) {
+    /// v10: an own mark – even one without a value – wins over a ✓ from a connected app (Grundregel 1).
+    /// `derived`: the ✓ shown from the app (`WeekContext.isDerivedMark`) – a new mark for the note keeps
+    /// it, so writing a note doesn't take the tick away.
+    func setMarkNote(_ note: String, item: PlanItem, day: DayKey, derived: Mark? = nil) {
         let weekKey = item.weekKey
         let code = item.code
         let dayKey = day.string
@@ -394,6 +425,7 @@ struct TrackerStore {
             target = kept
         } else {
             target = ItemMark(weekKey: weekKey, itemCode: code, dayKey: dayKey)
+            if let derived { target.valueRaw = derived.rawValue }
             context.insert(target)
         }
         target.note = note
@@ -624,15 +656,57 @@ struct TrackerStore {
     }
 
     /// R81: the most recent day value of a measurement in the `lookback` days before `day`.
+    /// v10: the values that count, as in the week (`Measures.merged`): own entries, else a confirmed
+    /// Health value, else the reading list's or a connected app's value.
     func lastValue(code: String, before day: DayKey, lookback: Int = 60) -> Double? {
         let keys = dayKeys(through: day.adding(days: -1), days: lookback)
-        let found = fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> {
+        let own = fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> {
             $0.code == code && $0.deletedAt == nil && keys.contains($0.dayKey)
-        })).filter { $0.value != nil }
-        guard let latestKey = found.map(\.dayKey).max(), let latestDay = DayKey(latestKey) else { return nil }
-        let aggregation = measureDefinition(code: code, day: latestDay)?.record?.aggregation ?? .sum
-        let values = found.filter { $0.dayKey == latestKey }.sorted { $0.recordedAt < $1.recordedAt }.compactMap(\.value)
+        })).compactMap(\.record).filter { $0.value != nil }
+        let health = fetch(FetchDescriptor<HealthValue>(predicate: #Predicate<HealthValue> {
+            $0.code == code && keys.contains($0.dayKey)
+        })).compactMap(\.record)
+        let definitions = fetch(FetchDescriptor<MeasureDefinition>(predicate: #Predicate<MeasureDefinition> {
+            $0.code == code && $0.deletedAt == nil
+        })).latest(by: \.weekKey, modified: \.modifiedAt).compactMapValues(\.record)
+        let computed = computedEntries(code: code, definitions: definitions, days: keys.compactMap { DayKey($0) })
+        let found = Measures.merged(own: own, health: health, external: computed.entries, additive: computed.additive)
+            .filter { $0.value != nil }
+        guard let latestDay = found.map(\.day).max() else { return nil }
+        let aggregation = (definitions[latestDay.week.string] ?? measureDefinition(code: code, day: latestDay)?.record)?.aggregation ?? .sum
+        let values = found.filter { $0.day == latestDay }.sorted { $0.order < $1.order }.compactMap(\.value)
         return aggregation.apply(values)
+    }
+
+    /// v10: the computed day values of a measurement on `days` – the reading list (`list:<art>`) and the
+    /// connected apps (`app:…`) – for the definition of each day's week (else the newest). `additive`:
+    /// spending codes (own spendings add to the app's).
+    func computedEntries(code: String, definitions: [String: MeasureRecord], days: [DayKey]) -> (entries: [EntryRecord], additive: Set<String>) {
+        guard let newest = definitions.values.max(by: { $0.week < $1.week }) else { return ([], []) }
+        let computed = definitions.values.contains { $0.source.listKind != nil || $0.source.appSource != nil }
+        guard computed, let first = days.min(), let last = days.max() else { return ([], []) }
+        var entries: [EntryRecord] = []
+        var additive: Set<String> = []
+        var reading: (items: [ListItem], progress: [ListProgress])?
+        var appValues: [String: [DayKey: Double]] = [:]
+        let categories = Set(liveCategories().map(\.key))
+        for day in days {
+            let record = definitions[day.week.string] ?? newest
+            if record.source.listKind != nil {
+                if reading == nil { reading = (listItems(), listProgress()) }
+                let found = ListMath.entries(for: [record], items: reading?.items ?? [], progress: reading?.progress ?? [], days: [day])
+                entries += found.filter { $0.code == code }
+            } else if let source = record.source.appSource {
+                let cacheKey = source.raw + "|" + record.categoryKey
+                if appValues[cacheKey] == nil {
+                    appValues[cacheKey] = ExchangeDerivation.series(source, inbox: inboxFiles(source: source.source, from: first, through: last),
+                                                                    rules: linkRules(), categoryKey: record.categoryKey, known: categories)
+                }
+                if let value = appValues[cacheKey]?[day] { entries.append(EntryRecord(code: code, day: day, value: value)) }
+                if source.summedKind == .spending { additive.insert(code) }
+            }
+        }
+        return (entries, additive)
     }
 
     /// R41: moves an entry to another day (its time of day stays).
@@ -1113,13 +1187,16 @@ struct TrackerStore {
             $0.code == code && $0.deletedAt == nil
         })).latest(by: \.weekKey, modified: \.modifiedAt).compactMapValues(\.record)
         guard let newest = definitions.values.max(by: { $0.week < $1.week }) else { return [] }
-        var records = fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> {
+        // v10: own entries replace everything else of their day, Health values the computed ones (the
+        // reading list, connected apps) – as in the week (`Measures.merged`).
+        let own = fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> {
             $0.code == code && $0.deletedAt == nil && keys.contains($0.dayKey)
         })).compactMap(\.record)
-        let own = Set(records.map(\.key))
-        records += fetch(FetchDescriptor<HealthValue>(predicate: #Predicate<HealthValue> {
+        let health = fetch(FetchDescriptor<HealthValue>(predicate: #Predicate<HealthValue> {
             $0.code == code && keys.contains($0.dayKey)
-        })).compactMap(\.record).filter { !own.contains($0.key) }
+        })).compactMap(\.record)
+        let computed = computedEntries(code: code, definitions: definitions, days: keys.compactMap { DayKey($0) })
+        let records = Measures.merged(own: own, health: health, external: computed.entries, additive: computed.additive)
         var work: [WorkRecord] = []
         let categories: Set<String> = Set(definitions.values.compactMap { record -> String? in
             if case .work(let category) = record.source { return category }
@@ -1156,7 +1233,7 @@ struct TrackerStore {
         for plan in allPlans().filter({ $0.deletedAt == nil }).latest(by: \.weekKey, modified: \.modifiedAt).values {
             guard let shown = plan.week, shown <= week, plan.historyScore == nil else { continue }
             if let start, shown < start { continue }
-            if weekContext(for: shown, today: today).score.isExcused { result.insert(shown) }
+            if weekContext(for: shown, today: today, goalYear: false).score.isExcused { result.insert(shown) }
         }
         return result
     }
@@ -1164,16 +1241,17 @@ struct TrackerStore {
     /// R95: the goal review from the start of the goal year through `week` (weeks with a plan only).
     /// v9: a closed archive week (no items, goal values from its grades, decision 5) counts with its
     /// stored goal values too; a paper week with only a score has none and stays out.
-    func periodReport(period: GoalPeriod, through week: WeekKey) -> PeriodReport {
+    /// v10 (§1.4.3): `start` – from a segment's first week instead ("Abschnitt" in the goal review).
+    func periodReport(period: GoalPeriod, through week: WeekKey, from start: WeekKey? = nil) -> PeriodReport {
         let today = DayKey.today()
         let plans = allPlans().filter { $0.deletedAt == nil }.latest(by: \.weekKey, modified: \.modifiedAt)
         var inputs: [WeekReportInput] = []
         var goalScores: [WeekKey: [String: Double]] = [:]
-        var shown = period.start.week
+        var shown = max(start ?? period.start.week, period.start.week)
         while shown <= week {
             let scores: [String: Double] = plans[shown.string]?.finalGoalScoreMap ?? [:]
             if hasItems(shown) || !scores.isEmpty {
-                inputs.append(weekContext(for: shown, today: today).reportInput())
+                inputs.append(weekContext(for: shown, today: today, goalYear: false).reportInput())
                 if !scores.isEmpty { goalScores[shown] = scores }
             }
             shown = shown.adding(weeks: 1)
@@ -1233,10 +1311,37 @@ struct TrackerStore {
         for group in marks.values where group.count > 1 {
             if collapse(group.sorted { $0.modifiedAt > $1.modifiedAt }) != nil { merged += 1 }
         }
+        // v10: blocks with the same import id ("Übernehmen" of the same derived block on two devices, the
+        // same imported row twice) count once.
+        let imported = fetch(FetchDescriptor<WorkBlock>(predicate: #Predicate<WorkBlock> { $0.importID != "" && $0.deletedAt == nil }))
+        for group in Dictionary(grouping: imported, by: \.importID).values where group.count > 1 {
+            if mergeWork(group) != nil { merged += 1 }
+        }
         guard merged > 0 else { return 0 }
         save()
-        AppLog.info("Merged \(merged) duplicate day/week/mark record(s)", category: "store")
+        AppLog.info("Merged \(merged) duplicate day/week/mark/work record(s)", category: "store")
         return merged
+    }
+
+    /// The copies of one work block (same `importID`): every device keeps the same one – the oldest – with
+    /// the fields of the most recently changed copy; the others are deleted.
+    @discardableResult
+    private func mergeWork(_ group: [WorkBlock]) -> WorkBlock? {
+        let sorted = group.sorted { ($0.createdAt, $0.uuid.uuidString) < ($1.createdAt, $1.uuid.uuidString) }
+        guard let keeper = sorted.first else { return nil }
+        guard sorted.count > 1 else { return keeper }
+        if let newest = sorted.max(by: { $0.modifiedAt < $1.modifiedAt }), newest !== keeper {
+            keeper.dayKey = newest.dayKey
+            keeper.categoryKey = newest.categoryKey
+            if !newest.task.isEmpty { keeper.task = newest.task }
+            keeper.result = newest.result
+            keeper.nextStep = newest.nextStep
+            keeper.powerHours = newest.powerHours
+            keeper.minutes = newest.minutes
+            keeper.touch()
+        }
+        for duplicate in sorted.dropFirst() { context.delete(duplicate) }
+        return keeper
     }
 
     /// The copies of one day (two devices): the oldest is kept with the merged fields. Returns the
@@ -1290,13 +1395,20 @@ struct TrackerStore {
         var notes: [DayNote] = []
         var entries: [MeasureEntry] = []
         var measures: [MeasureDefinition] = []
-        var isEmpty: Bool { items.isEmpty && work.isEmpty && notes.isEmpty && entries.isEmpty && measures.isEmpty }
-        var count: Int { items.count + work.count + notes.count + entries.count + measures.count }
+        /// v10 (§1.1.3): results, list entries and segments – their entries and readings go and come back with them.
+        var results: [GoalResult] = []
+        var listItems: [ListItem] = []
+        var segments: [GoalSegment] = []
+        var isEmpty: Bool { items.isEmpty && work.isEmpty && notes.isEmpty && entries.isEmpty && measures.isEmpty && recordCount == 0 }
+        var count: Int { items.count + work.count + notes.count + entries.count + measures.count + recordCount }
+        /// The v10 records among them.
+        var recordCount: Int { results.count + listItems.count + segments.count }
     }
 
     /// Everything in "Zuletzt gelöscht", each list newest first (R19).
     func trash() -> Trash {
         func newestFirst(_ a: Date?, _ b: Date?) -> Bool { (a ?? .distantPast) > (b ?? .distantPast) }
+        let records = trashedRecords()
         return Trash(
             items: fetch(FetchDescriptor<PlanItem>(predicate: #Predicate<PlanItem> { $0.deletedAt != nil }))
                 .sorted { newestFirst($0.deletedAt, $1.deletedAt) },
@@ -1307,7 +1419,8 @@ struct TrackerStore {
             entries: fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> { $0.deletedAt != nil }))
                 .sorted { newestFirst($0.deletedAt, $1.deletedAt) },
             measures: fetch(FetchDescriptor<MeasureDefinition>(predicate: #Predicate<MeasureDefinition> { $0.deletedAt != nil }))
-                .sorted { newestFirst($0.deletedAt, $1.deletedAt) }
+                .sorted { newestFirst($0.deletedAt, $1.deletedAt) },
+            results: records.results, listItems: records.listItems, segments: records.segments
         )
     }
 
@@ -1317,6 +1430,7 @@ struct TrackerStore {
         for note in trash.notes { context.delete(note) }
         for entry in trash.entries { context.delete(entry) }
         for measure in trash.measures { context.delete(measure) }
+        purgeRecords(results: trash.results, listItems: trash.listItems, segments: trash.segments)
         save()
     }
 
@@ -1329,8 +1443,10 @@ struct TrackerStore {
         expired.notes = all.notes.filter { trashPolicy.isExpired(deletedAt: $0.deletedAt, now: now) }
         expired.entries = all.entries.filter { trashPolicy.isExpired(deletedAt: $0.deletedAt, now: now) }
         expired.measures = all.measures.filter { trashPolicy.isExpired(deletedAt: $0.deletedAt, now: now) }
-        guard !expired.isEmpty else { return }
-        AppLog.info("Emptied \(expired.count) record(s) from the trash", category: "store")
+        // v10: results, list entries, segments – and single entries, readings and mappings – after 30 days too.
+        let records = purgeExpiredRecords(now: now)
+        guard !expired.isEmpty || records > 0 else { return }
+        AppLog.info("Emptied \(expired.count + records) record(s) from the trash", category: "store")
         purge(expired)
     }
 
@@ -1379,10 +1495,9 @@ struct TrackerStore {
 
     /// Every device that has noted itself, newest first.
     func syncDevices() -> [SyncDevice] {
-        // Few settings exist, so they are filtered in memory (no string-prefix predicate needed).
-        let settings = fetch(FetchDescriptor<AppSetting>()).filter { $0.key.hasPrefix(SyncDevice.keyPrefix) }
+        // v10: a prefix query – the settings now hold the inbox and the goals' records too (§1.1.2).
         var newest: [String: SyncDevice] = [:]
-        for setting in settings {
+        for setting in settings(prefix: SyncDevice.keyPrefix) {
             guard let device = SyncDevice.parse(key: setting.key, value: setting.value) else { continue }
             if let known = newest[device.installID], known.seenAt >= device.seenAt { continue }
             newest[device.installID] = device
@@ -1392,11 +1507,25 @@ struct TrackerStore {
 
     /// The goal year (start, end, review week, motto) – Bini's foundation year unless changed.
     var goalPeriod: GoalPeriod {
+        TrackerStore.goalPeriod(from: settings(keys: TrackerStore.goalPeriodKeys))
+    }
+
+    /// The settings of the goal year.
+    nonisolated static let goalPeriodKeys = ["goal.start", "goal.end", "goal.review", "goal.motto"]
+
+    /// The goal year from its settings (the newest copy of each; others are ignored) – the store and
+    /// `WeekContext` read it the same way.
+    nonisolated static func goalPeriod(from settings: [AppSetting]) -> GoalPeriod {
+        var values: [String: AppSetting] = [:]
+        for setting in settings where goalPeriodKeys.contains(setting.key) {
+            if let current = values[setting.key], current.modifiedAt >= setting.modifiedAt { continue }
+            values[setting.key] = setting
+        }
         var period = GoalPeriod.foundationYear
-        if let start = setting("goal.start").flatMap(DayKey.init) { period.start = start }
-        if let end = setting("goal.end").flatMap(DayKey.init) { period.end = end }
-        if let review = setting("goal.review").flatMap(WeekKey.init) { period.reviewWeek = review }
-        if let motto = setting("goal.motto"), !motto.isEmpty { period.motto = motto }
+        if let start = values["goal.start"].flatMap({ DayKey($0.value) }) { period.start = start }
+        if let end = values["goal.end"].flatMap({ DayKey($0.value) }) { period.end = end }
+        if let review = values["goal.review"].flatMap({ WeekKey($0.value) }) { period.reviewWeek = review }
+        if let motto = values["goal.motto"]?.value, !motto.isEmpty { period.motto = motto }
         return period
     }
 
@@ -1412,7 +1541,15 @@ struct TrackerStore {
     /// Saves, then scores closed weeks this save touched again (R11: a late entry changes the stored
     /// score). The widget snapshot is not written here any more (R84, `WidgetPublisher`).
     func save() {
-        let touched = touchedWeeks()
+        commit(rescoring: [])
+    }
+
+    /// `save()`, scoring `extra` weeks again too (v10: a book's next reading, the weeks of a mapping).
+    /// v10, Grundregel 2: a closed week before the current segment's start is never scored again here
+    /// (only "Neu berechnen", `recompute(_:)`). Returns those weeks – they kept their score.
+    @discardableResult
+    func commit(rescoring extra: Set<WeekKey>) -> Set<WeekKey> {
+        let touched = touchedWeeks().union(extra)
         do {
             try context.save()
         } catch {
@@ -1421,22 +1558,35 @@ struct TrackerStore {
         // Only a device that reads Apple Health re-scores closed weeks with items: the Mac and the Watch
         // don't see Health values and would store a different score (they ping-ponged with the iPhone).
         // A week without items (v9, archive grades) scores the same everywhere.
-        guard !touched.isEmpty else { return }
+        guard !touched.isEmpty else { return [] }
         var rescored = false
+        var frozen: Set<WeekKey> = []
+        var isFrozen: ((WeekKey) -> Bool)?
         for week in touched.sorted() {
             guard let plan = plan(week), plan.isClosed, HealthDevice.readsHealth || !hasItems(week) else { continue }
+            let rule = isFrozen ?? freezeRule()
+            isFrozen = rule
+            if rule(week) {
+                frozen.insert(week)
+                continue
+            }
             if storeFinalScore(plan) { rescored = true }
         }
         if rescored { try? context.save() }
+        if !frozen.isEmpty { AppLog.info("Not scored again (before the current segment): \(frozen.count) week(s)", category: "store") }
+        return frozen
     }
 
     /// iPhone/iPad after a sync: closed weeks of the last few weeks get their score again with
     /// Health values – a week closed (or edited) on the Mac or Watch stored it without them.
+    /// v10: not those before the current segment (Grundregel 2).
     func rescoreRecentClosedWeeks(through week: WeekKey, weeks: Int = 3) {
         guard HealthDevice.readsHealth else { return }
         var rescored = false
+        let isFrozen = freezeRule()
         for offset in 0..<weeks {
-            guard let plan = plan(week.adding(weeks: -offset)), plan.isClosed else { continue }
+            let shown = week.adding(weeks: -offset)
+            guard let plan = plan(shown), plan.isClosed, !isFrozen(shown) else { continue }
             if storeFinalScore(plan) { rescored = true }
         }
         if rescored { try? context.save() }
@@ -1457,18 +1607,28 @@ struct TrackerStore {
             else if let block = model as? WorkBlock { add(day: block.dayKey) }
             else if let score = model as? ScoreOverride { add(day: score.dayKey) }
             else if let day = model as? PlanDay { add(day: day.dayKey) }
-            else if let setting = model as? AppSetting, let week = ArchiveWeek.week(settingKey: setting.key) { weeks.insert(week) }
+            else if let setting = model as? AppSetting, let week = TrackerStore.scoredWeek(settingKey: setting.key) { weeks.insert(week) }
         }
         return weeks
+    }
+
+    /// The week whose score a setting can change: `archive.<week>` (v9) and the dated v10 facts – result
+    /// entries, readings, the inbox's day files (Grundregel 3). Not `score.<week>`: it is the score's
+    /// output, written while scoring.
+    static func scoredWeek(settingKey key: String) -> WeekKey? {
+        guard !key.hasPrefix(GoalTrack.settingPrefix) else { return nil }
+        return SettingKeys.week(of: key)
     }
 
     /// Stores the week's score as it is now (closing, R11 re-scoring). Returns whether it changed.
     /// v9: a week without items that has archive grades stores their recalculation under today's rules
     /// (`ArchiveWeek.recalculated`); the value "laut Unterlagen" (`recordedScore`) is never touched.
+    /// v10 (§1.2.3): the category week scores go to `score.<week>` with it ("Wochen über 8").
     @discardableResult
     func storeFinalScore(_ plan: WeekPlan) -> Bool {
         guard let week = plan.week else { return false }
-        let closed = weekContext(for: week)
+        let closed = weekContext(for: week, goalYear: false)
+        let categoriesChanged: Bool = finalCategoryScores(closed).map { writeCategoryScores($0, week: week) } ?? false
         let goalScores: String
         let overall: Double?
         let goalsScored: Int
@@ -1484,7 +1644,7 @@ struct TrackerStore {
             goalsScored = closed.score.goalsScored
         }
         let changed = plan.finalScore != overall || plan.finalGoalsScored != goalsScored || plan.finalGoalScores != goalScores
-        guard changed else { return false }
+        guard changed else { return categoriesChanged }
         plan.finalScore = overall
         plan.finalGoalsScored = goalsScored
         plan.finalGoalScores = goalScores

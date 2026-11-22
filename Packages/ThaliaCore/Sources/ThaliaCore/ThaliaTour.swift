@@ -22,10 +22,12 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 9
+    public static let version = 10
 
-    /// v9: 17 cards in the full tour (welcome, 15 steps, finish); the step with `since: 9` (Archiv-Wochen)
-    /// makes up "Neu in Thalia" after 1.7. v8 added three (Krank & Urlaub, Vergangene Wochen, PDF-Bericht).
+    /// v10: 21 cards in the full tour (welcome, 19 steps, finish); the four steps with `since: 10`
+    /// (Ergebnisse und Wochen über 8, Leseliste, Abschnitte, Verbundene Apps) make up "Neu in Thalia" after 1.8.
+    /// v9: 17 cards; the step with `since: 9` (Archiv-Wochen) made up "Neu in Thalia" after 1.7. v8 added three
+    /// (Krank & Urlaub, Vergangene Wochen, PDF-Bericht).
     /// v7 had 13 cards: colours, the "Wofür" rule, weekly goals, sharing and PDF moved into other cards then.
     public static let catalog = TourCatalog<ThaliaTourSnapshot>(
         version: version,
@@ -114,6 +116,21 @@ public enum ThaliaTour {
                 body: "Im Ziel-Detail zeigt der Verlauf 12 Wochen, ein Halbjahr oder das ganze Zieljahr – mit Messwerten und Ziellinie. Drei Wochen vor der Zielüberprüfung hilft „Zielüberprüfung vorbereiten“, samt aller geparkten Ideen."
             ),
             TourStep(
+                id: "goal-results", since: 10, symbol: "flag.checkered", title: "Ergebnisse und Wochen über 8",
+                body: "Ziele → ein Ziel → „Ergebnisse“: abhaken, +1 oder einen Wert eintragen – etwa „10 Bücher“ oder „Website online“. Die Zeile zeigt Stand, Ziel und „auf Kurs“ oder „hinten“. Rückwirkend: zum Tag gehen, + → „Jahresziel eintragen“. Eine Kategorie mit einer Wochennote ab 8 ist gut dabei: Die Zielkarte zeigt „✓ über 8“ und „Wochen über 8“ der letzten zwölf Wochen, darunter die Messwerte, die im Ziel stecken.",
+                macBody: "Ziele → ein Ziel → „Ergebnisse“: abhaken, +1 oder einen Wert eintragen – etwa „10 Bücher“ oder „Website online“. Die Zeile zeigt Stand, Ziel und „auf Kurs“ oder „hinten“. Rückwirkend: zum Tag gehen, „Erfassen“ (⇧⌘N) → „Jahresziel eintragen“. Eine Kategorie mit einer Wochennote ab 8 ist gut dabei: Die Zielkarte zeigt „✓ über 8“ und „Wochen über 8“ der letzten zwölf Wochen, darunter die Messwerte, die im Ziel stecken."
+            ),
+            TourStep(
+                id: "reading", since: 10, symbol: "books.vertical", title: "Leseliste",
+                body: "Ziele → „Gerade dabei“ zeigt die laufenden Bücher; ein Tipp trägt den Stand ein – „bis Seite“ oder „+ Seiten“, auch für einen früheren Tag. Von dort und von der Zeile „Bücher 3 von 10“ geht es zur Leseliste: Läuft, Geplant, Fertig, Suche und „+ Buch“. Ist die letzte Seite erreicht, schlägt Thalia „fertig“ vor. Ein Messwert mit der Quelle „Leseliste“ zählt die Seiten von selbst – sie werden nur einmal eingetragen.",
+                macBody: "Ziele → „Gerade dabei“ zeigt die laufenden Bücher; ein Klick trägt den Stand ein – „bis Seite“ oder „+ Seiten“, auch für einen früheren Tag. Von dort und von der Zeile „Bücher 3 von 10“ geht es zur Leseliste: Läuft, Geplant, Fertig, Suche und „+ Buch“. Ist die letzte Seite erreicht, schlägt Thalia „fertig“ vor. Ein Messwert mit der Quelle „Leseliste“ zählt die Seiten von selbst – sie werden nur einmal eingetragen."
+            ),
+            TourStep(
+                id: "segments", since: 10, symbol: "square.split.2x1", title: "Abschnitte",
+                body: "Jahresziele neu festlegen, ohne das Bisherige zu verlieren: Ziele → Jahreskarte → „Neuen Abschnitt beginnen…“ (auch unter Einstellungen → Jahresziele und am Ende der Zielüberprüfung). Startwoche, Titel und Grund wählen, danach Ziele umbenennen und Ergebnisse aktualisieren. Die Karten zählen im aktuellen Abschnitt; ältere stehen unter „Frühere Abschnitte“, ihre Wochen bleiben so gewertet, wie sie waren.",
+                macBody: "Jahresziele neu festlegen, ohne das Bisherige zu verlieren: Ziele → Jahreskarte → „Neuen Abschnitt beginnen…“ (auch unter Einstellungen → Jahresziele und am Ende der Zielüberprüfung). Startwoche, Titel und Grund wählen, danach Ziele umbenennen und Ergebnisse aktualisieren. Die Karten zählen im aktuellen Abschnitt; ältere stehen unter „Frühere Abschnitte“, ihre Wochen bleiben so gewertet, wie sie waren. Widerrufen (⌘Z) nimmt den ganzen Schritt zurück."
+            ),
+            TourStep(
                 id: "range-pdf", since: 8, symbol: "doc.richtext", title: "PDF-Bericht",
                 body: "Rückblick → „PDF-Bericht“ (oder Woche → … → „Mehrere Wochen als PDF…“): Zeitraum wählen – letzte 4, 8 oder 13 Wochen, Zieljahr bis heute oder von–bis – und den Umfang. Thalia baut den Bericht Seite für Seite: Deckblatt mit Ø und Trend je Ziel, eine Zeile je Woche, Power-Hours je Bereich, auf Wunsch jede Woche mit ihren Tabellen. Dann teilen.",
                 macBody: "Ablage → „Zeitraum als PDF…“ (⌥⌘P) oder Rückblick → „PDF-Bericht“: Zeitraum und Umfang wählen. Thalia baut den Bericht Seite für Seite – Deckblatt mit Ø und Trend je Ziel, eine Zeile je Woche, Power-Hours je Bereich, Lesezeichen je Woche. Dann sichern (⌘S), drucken (⌘P) oder teilen."
@@ -122,6 +139,11 @@ public enum ThaliaTour {
                 id: "everywhere", since: 7, symbol: "applewatch", title: "Überall dabei",
                 body: "Auf der Watch stehen Offenes und Zähler auf der ersten Seite, Werte stellst du mit der Krone ein; die Komplikation zeigt Ring, Offenes und PH. Im Widget hakst du offene Punkte direkt ab. Siri fragt bei Power-Hours nach dem Bereich, „Ausgabe in Thalia“ bucht Betrag und Wofür – auf Wunsch automatisch nach jeder Kartenzahlung.",
                 macBody: "Oben in der Menüleiste zeigt Thalia den Tag und erfasst Power-Hours und Ausgaben, ohne das Fenster zu öffnen. Auf iPhone und Watch: Widgets zum Abhaken, Komplikation, Siri."
+            ),
+            TourStep(
+                id: "connected-apps", since: 10, symbol: "arrow.left.arrow.right", title: "Verbundene Apps",
+                body: "Einstellungen → „Verbundene Apps“: Theo, George, Nina oder Finn liefern Erledigtes und Werte auf demselben Gerät. Power-Hours stehen in Heute „aus Theo“ – „Übernehmen“ macht einen eigenen Eintrag daraus. Verknüpfte Punkte bekommen den Haken „⇄ George · Push“, solange kein eigener gesetzt ist; eigene Einträge gewinnen immer. Gruppen ohne Kategorie stehen unter „Ohne Zuordnung“. Werte aus anderen Apps erscheinen, sobald Thalia auf diesem Gerät geöffnet war. Werte aus Apple Health gehen nie in den Austausch.",
+                macBody: "Einstellungen (⌘,) → „Verbundene Apps“: Theo, George, Nina oder Finn liefern Erledigtes und Werte auf demselben Mac. Power-Hours stehen in Heute „aus Theo“ – „Übernehmen“ macht einen eigenen Eintrag daraus. Verknüpfte Punkte bekommen den Haken „⇄ George · Push“, solange kein eigener gesetzt ist; eigene Einträge gewinnen immer. Gruppen ohne Kategorie stehen unter „Ohne Zuordnung“. Werte aus anderen Apps erscheinen, sobald Thalia auf diesem Gerät geöffnet war. Werte aus Apple Health gehen nie in den Austausch."
             ),
         ]
     )

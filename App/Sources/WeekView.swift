@@ -49,6 +49,13 @@ struct WeekSheet: View {
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
 
+            if context.isClosed && context.isFrozen {
+                // v10 (Grundregel 2): a closed week before the current segment – "Neu berechnen".
+                Section {
+                    FrozenWeekNote(context: context)
+                }
+            }
+
             targetsSection
 
             if context.isArchiveWeek {
@@ -307,7 +314,11 @@ struct WeekSheet: View {
             } label: {
                 HStack(spacing: 8) {
                     KeyBadge(key: category.key)
-                    Text(category.title).lineLimit(1)
+                    Text(context.title(of: category)).lineLimit(1)
+                    if context.isGood(category) {
+                        // v10 (§1.2.3): the category's week score is above 8.
+                        GoodWeekBadge()
+                    }
                     Spacer()
                     Text(Format.score(context.score.categoryWeek[category.key], outOf: false))
                         .monospacedDigit()

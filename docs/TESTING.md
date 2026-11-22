@@ -376,3 +376,100 @@ Ziel: alte Wochen aus Scans so übernehmen, wie die Unterlagen sie überliefern 
 
 **Demo und Screenshots (Entscheidung 10)**
 - [ ] CI-Screenshots enthalten „archive“ für iPhone und Mac: die Demo-Archiv-Woche (zwei Wochen vor der aktuellen) mit Archiv-Karte, blassem Urlaub-Samstag, „Sonderwoche“ unter „Ohne Zuordnung (Archiv)“ und 10 Zielnoten; Quelle „Papier-Tracker“.
+
+## v10 (ab Version 1.9.0)
+
+Plan und Regeln: [TASKS-v10.md](TASKS-v10.md) – bei Abweichungen gilt dort „Nachträge (Umsetzung)“. Verbundene Apps,
+deine Aufgaben in der richtigen Reihenfolge und die Aufträge für Theo, George, Nina und Finn:
+[CONNECTED_APPS.md](CONNECTED_APPS.md). CSV: [IMPORT.md](IMPORT.md), Abschnitte „Verbundene Apps und Leseliste“ und
+„Datensätze“.
+Ziel: Jahresziele mit Ergebnissen und „Wochen über 8“, eine Leseliste, Abschnitte als Versionen der Jahresziele und
+Werte aus anderen Binisoft-Apps – ohne CloudKit-Schemaänderung.
+
+**Nach dem Update zuerst**
+- [ ] Alle Geräte auf 1.9.0 (iPhone, iPad, Mac, Watch), *bevor* Ergebnisse, Bücher, Abschnitte oder Quellen `app:…` / `list:…` angelegt werden (CONNECTED_APPS.md, Aufgabe 1). Einstellungen → Version zeigt 1.9.0.
+- [ ] Die Tour bietet „Neu in Thalia“ mit genau vier Karten an: „Ergebnisse und Wochen über 8“, „Leseliste“, „Abschnitte“, „Verbundene Apps“. Jede der vier hat „Ansehen“: öffnet auf der Übungsseite „Jahresziel eintragen“, die Leseliste, „Neuen Abschnitt beginnen…“ bzw. „Verbundene Apps“ mit der Beispielquelle „Demo“ – nach der Tour ist davon nichts im echten Speicher.
+- [ ] Einstellungen → Hilfe hat vier neue Erklärseiten: „Ergebnisse und Wochen über 8“, „Leseliste“, „Abschnitte“, „Verbundene Apps“.
+- [ ] Woche, Ziele, Rückblick und PDF zeigen dieselben Wertungen wie vor dem Update – solange kein Abschnitt, kein Ergebnis und keine verbundene App dazukommt, ändert sich nichts.
+- [ ] Nach dem ersten Start bekommen die abgeschlossenen Wochen des Zieljahrs einmal ihre Kategorie-Wochennoten nachgetragen (Wochen mit Punkten nur auf dem Gerät mit Apple Health, wie bei der Wochenwertung; Archiv-Wochen überall); nach dem Abgleich ist „Wochen über 8“ auf allen Geräten gefüllt – am iPhone zuerst öffnen.
+
+**Ergebnisse (Entscheidung 1.2)**
+- [ ] Ziele → ein Ziel → „Ergebnisse“ → „Ergebnis anlegen“: abhaken (z. B. „Website online“), zählen („10 Bücher“, Ziel `>=10`) und Zielwert (Ziel `<=…` oder `>=…`, mit Startwert); Quelle „Eigene Einträge“, „Leseliste“, „Messwert“ oder „Verbundene App“.
+- [ ] Die Zeile hat „Abhaken“ (danach „Zurücknehmen“), „+1“ oder „Wert eintragen“ (nichts davon, wenn eine Quelle zählt; bei der Quelle „Leseliste“ steht dort „Leseliste“) und zeigt Stand, Ziel und Status („offen“, „auf Kurs“, „hinten“, „erreicht“, nach dem Zeitraum „nicht erreicht“), z. B. „7 von 10 · davon 4 in Abschnitt 1“; ohne Ziel nur den Stand.
+- [ ] „Eintrag mit Datum…“ legt einen Eintrag für einen anderen Tag an; auf der Seite des Ergebnisses ändert das Antippen eines Eintrags („Einträge“) Datum, Wert und Notiz, auch rückwirkend; „Eintrag löschen“ und dann Widerrufen (⌘Z) holen ihn zurück.
+- [ ] Rückwirkend über den bekannten Weg: zu einem früheren Tag gehen, „Erfassen“ → „Jahresziel eintragen“ (auch Ziele → Jahreskarte → ••• → „Jahresziel eintragen…“): das Fenster nennt den Tag, Hinweis „Zählt für Di, 17. Nov.“; der Eintrag trägt dieses Datum.
+- [ ] Ein Ergebnis mit Quelle „Messwert“ zählt beim Zählen die Wochenwerte zusammen und nimmt beim Zielwert den letzten Wert.
+- [ ] „Erfassen“ (iPhone: +, Mac: ⇧⌘N) hat unten die Zeilen „Jahresziel eintragen“ und „Lesen“; beide nehmen den Tag, den Heute gerade zeigt.
+- [ ] Ergebnis löschen → „Zuletzt gelöscht“ zeigt es unter „Ergebnisse“ 30 Tage lang; „Wiederherstellen“ bringt es mit seinen Einträgen zurück. Ebenso ein Buch unter „Leseliste“ (mit seinen Ständen) und ein Abschnitt unter „Abschnitte“; „Leeren“ und „Endgültig löschen“ fragen vorher. Liegt nur so etwas im Papierkorb, steht dort nicht „Nichts gelöscht“.
+
+**Wochen über 8 und die Messwerte im Ziel (Entscheidung 1.2.3–1.2.4)**
+- [ ] Zielkarte: an einer Kategorie-Zeile steht „✓ über 8“, wenn ihre Note der laufenden Woche gerundet mindestens 8,00 ist (7,99 nicht); darunter „Wochen über 8: 1.1 9/12 · 1.2 7/12“ für die letzten 12 gewerteten Wochen im aktuellen Abschnitt.
+- [ ] Zielseite: „Diese Woche gut dabei – jede Kategorie über 8“ nur, wenn jede gewertete Kategorie des Ziels über 8 ist; der Verlauf hat eine Linie bei 8 und gefüllte Punkte ab 8 (keine zweite Punktreihe). Woche: dasselbe Abzeichen am Kategorie-Kopf.
+- [ ] Eine ganz entschuldigte Woche (krank/Urlaub) zählt bei „Wochen über 8“ nicht mit.
+- [ ] Zielkarte: bis zu drei Messwert-Chips, dann „+2“; Zielseite „Messwerte diese Woche“ mit Wochenwert und Ziel (ohne Plan diese Woche: die Liste der letzten Woche mit Plan, mit Hinweis). Ein Messwert, der ein Ergebnis speist, trägt „zählt für Ziel 5 · Bücher 3/10“ – auch in Heute unter „Wochenziele“, im Fenster „Wochenziele“ (Abschnitt „Zählt für Jahresziele“) und im Messwert-Editor (Abschnitt „Jahresziele“). Ein Messwert ohne Ergebnis zeigt nichts davon.
+
+**Planung (Entscheidung 1.2.5, 1.5.4)**
+- [ ] Woche abschließen → Prompt kopieren → in Notizen einfügen: Block „Jahresziel-Ergebnisse (nur zur Info – nichts unaufgefordert steigern)“ mit Stand, Ziel und Status, ohne Health-Werte; die Regel, Verknüpfungen (`app:…`, `list:…`) aus dem Ausgangsplan unverändert zu übernehmen.
+- [ ] Plan-CSV, in der ein Messwert mit Quelle aus der Vorwoche keinen `link` hat → Hinweis in der Vorschau „KWnn: bisherige Quelle übernommen, die Datei nennt keine – …“; die Quelle bleibt.
+- [ ] Links `app:…` und `list:…` (auch direkt an einem Punkt) erzeugen in der Vorschau keine Warnung.
+
+**Leseliste (Entscheidung 1.3)**
+- [ ] Ziele → „Gerade dabei“ zeigt die laufenden Bücher; Antippen → „bis Seite“ oder „+ Seiten“, Datum änderbar, auch rückwirkend; Hinweis mit dem Buch, dem Stand und dem Tag.
+- [ ] „Leseliste“ (Jahreskarte → •••, die Karte „Gerade dabei“ – sie erscheint ab dem ersten Buch – und unter einem Ergebnis mit Quelle „Leseliste“): Läuft, Geplant, Fertig (nach Abschnitt), Abgebrochen, Suche „Titel oder Autor:in“, + („Buch hinzufügen“). Auf iPhone und Mac gleich, kein eigener Eintrag in der Seitenleiste.
+- [ ] Buch-Fenster: Titel, Autor:in, Seiten, Art (Buch, Hörbuch, Kurs …), „Zählt für“, Beginn und Ende (rückwirkend), abgebrochen; „bis Seite“ gleich der Seitenzahl schlägt „fertig“ vor.
+- [ ] Einen Stand rückwirkend zwischen zwei andere setzen oder auf ein anderes Datum verschieben → die gelesenen Seiten je Tag stimmen, nie negativ.
+- [ ] Messwert mit Quelle „Leseliste“ (`list:buch`): Tageswert = gelesene Seiten; ein verknüpfter Punkt „20 Seiten lesen“ bekommt Vorschlag und Fortschritt wie bisher; in Heute zeigt der Messwert die Seiten des Tages, „aus der Leseliste“ und den Knopf „Lesen“ statt − / + – er öffnet „Lesen“ für diesen Tag, Seiten nur einmal eintragen. Im Kontextmenü gibt es „Lesen…“, aber kein „Wert leeren“.
+- [ ] Rückwirkend: zu einem Tag der Vorwoche gehen, „Erfassen“ → „Lesen“ → „bis Seite“ eintragen → der Messwert zeigt die Seiten an jenem Tag, der Tag danach nur den Zuwachs darüber; ist die Woche abgeschlossen und im aktuellen Abschnitt, wird sie neu gewertet, sonst bleibt sie (Hinweis „KWnn bleibt, wie sie war“).
+- [ ] Ergebnis „Bücher“ mit Quelle „Leseliste“ zählt die fertigen Bücher; ein Buch, das in Abschnitt 1 fertig wurde, zählt dort („davon … in Abschnitt 1“).
+
+**Abschnitte (Entscheidung 1.4)**
+- [ ] „Neuen Abschnitt beginnen…“ geht aus der Jahreskarte (•••), aus Einstellungen → Jahresziele und am Ende der Zielüberprüfung.
+- [ ] Startwoche („Beginnt mit“): Standard nächste Woche, frühestens eine Woche nach dem Start des aktuellen; eine vergangene Woche (rückwirkend) geht. Titel und Grund (optional), „Beginnen“ → gleich danach Einstellungen → Jahresziele: Ziele umbenennen und beschreiben, neue Ziele und Kategorien; im Ergebnis-Fenster „Ziel in Abschnitt 2 (ab KW…, optional)“, solange der neue noch nicht begonnen hat (sonst „Ziel in Abschnitt 2 (optional)“ für den laufenden), und unter „Abschnitte“ „Gilt ab“ und „Beendet nach“; die Seite des Ergebnisses zeigt „Je Abschnitt“ den Beitrag jedes Abschnitts. Kategorien werden dort nicht umgehängt oder gelöscht.
+- [ ] Widerrufen (⌘Z) gleich danach nimmt den ganzen Schritt zurück.
+- [ ] Jahreskarte: „Abschnitt 2 · seit KW50 · Woche 3“; die Karten zählen im aktuellen Abschnitt, ältere Werte grau; darunter „Frühere Abschnitte“ (Titel, Wochen, Ø Wertung, Kategorie-Wochen über 8, Ergebnisse erreicht) → Seite mit den damaligen Zielen und Werten.
+- [ ] Rückblick: Abschnittsgrenze als Linie mit Namen; Zielseite → Zeitraum „Abschnitt“ (nur mit mehr als einem Abschnitt); Zielüberprüfung: Auswahl Abschnitt oder Zieljahr; PDF-Bericht: Zeitraum „Aktueller Abschnitt“.
+- [ ] Eingefroren (Grundregel 2): in einer abgeschlossenen Woche vor dem aktuellen Abschnitt etwas ändern → die Wertung bleibt (die Woche direkt davor erst ab der zweiten Woche des Abschnitts); die Woche zeigt „Vor Abschnitt 2 (seit KWnn): KWmm wird nicht mehr von selbst neu gewertet – …“ mit „Neu berechnen“ → Hinweis „KWmm neu berechnet“ bzw. „KWmm: Wertung unverändert“.
+- [ ] Abschnitt löschen (Einstellungen → Jahresziele) → seine Wochen zählen wieder zum Abschnitt davor, gespeicherte Wertungen bleiben; „Zuletzt gelöscht“ holt ihn zurück.
+
+**Verbundene Apps (Entscheidung 1.5) – erst nach den Builds der anderen Apps**
+- [ ] Vorher: Einstellungen → Tracking → „Verbundene Apps“ (Mac: ⌘, → „Verbundene Apps“) zeigt „Noch keine verbundene App gesehen“, darüber den Hinweis „Werte aus anderen Apps erscheinen, sobald Thalia auf diesem Gerät geöffnet war.“, der Schalter „Thalia-Katalog bereitstellen“ ist an. Unter „Auf diesem Gerät“ steht nach ein paar Sekunden „Zuletzt nachgesehen: …“ und „Jetzt nachsehen“. Eine echte Quelle „Demo“ gibt es nie.
+- [ ] Mac: bleibt es bei „Noch nichts gelesen …“, fehlt der signierten App die App Group (CONNECTED_APPS.md, Aufgabe 3).
+- [ ] Nach CONNECTED_APPS.md Aufgaben 3–6: je App ein Abschnitt mit „Zuletzt gesehen: …“, „Format v1“ und „n Meldungen an m Tagen · letzte 30 Tage“; „Was kommt an · letzte 7 Tage“ zeigt jede Meldung mit Tag, App und Wirkung („Aufgabe · Arbeit/Kunden → 3.2“, „1,5 PH · ohne Zuordnung“, „Workout · Push“), nur zum Ansehen.
+- [ ] „Ohne Zuordnung · Theo“: je Gruppe „Kategorie wählen“ → Hinweis „Arbeit/Kunden → 3.2“ mit „Widerrufen“; die Gruppe steht danach im Abschnitt der App mit „Zuordnung in Thalia“ (Auswahl änderbar, nach links wischen bzw. Rechtsklick → „Zuordnung entfernen“). Eine in Theo gewählte Zuordnung steht dort als „Zuordnung aus Theo“ und ist hier nicht änderbar.
+- [ ] Eigene geleerte Markierung bleibt: ein Punkt mit ✓ „⇄ George · Push“ → in Heute auf „Erledigt“ tippen (wird leer) → George liefert danach eine neuere Tagesdatei für denselben Tag → der Punkt bleibt leer. Ein eigenes ✗ bleibt ebenso.
+- [ ] Notiz zu einem Punkt mit abgeleitetem ✓ (Details → Notiz) → der Haken bleibt, jetzt als eigener; das Detailfenster zeigt vorher „⇄ George · Push – eine eigene Markierung geht vor“.
+- [ ] Theo: eine Aufgabe einer zugeordneten Gruppe erledigen → Thalia auf demselben Gerät öffnen → ein Messwert `app:theo:task` der Kategorie zählt sie, der verknüpfte Punkt bekommt ✓ „⇄ Theo · …“. Aufgabe wieder öffnen → Haken weg (ohne eigene Markierung).
+- [ ] Theo von einem anderen Gerät: Aufgabe am Mac erledigen, Theo am iPhone synchronisiert, Thalia am iPhone öffnen → kommt an.
+- [ ] Power-Hours aus Theo: in Heute unter „Power-Hours heute“ ein Block „aus Theo“ in der Kategorie (nur lesen, zählt für das Wochenziel, auch in Fokus unter „Aus anderen Apps“); „Übernehmen“ → ein eigener Block, der abgeleitete verschwindet; „Widerrufen“ im Hinweis bringt den abgeleiteten zurück. Auf zwei Geräten übernommen → nach dem Abgleich nur ein Block.
+- [ ] Power-Hours ohne Kategorie stehen in Heute auf der Seite „Abschluss & Notizen“ unter „Aus anderen Apps · ohne Zuordnung“ und zählen nirgends; „Übernehmen in …“ → Kategorie → eigener Block dort.
+- [ ] Gruppe ohne Kategorie → „Ohne Zuordnung“ → Kategorie wählen → die Wirkung erscheint, Herkunft „in Thalia“; mit der Wahl in Theo „aus Theo“; „Zuordnung prüfen“, wenn der Kategorie-Titel nicht mehr passt.
+- [ ] George: Workout aus einer Vorlage → `app:george:workout=<id>` zählt es, der verknüpfte Punkt bekommt ✓ „⇄ George · <Vorlage>“; ein eigenes ✗ oder eine geleerte Markierung bleibt (eigenes gewinnt). Ein Watch-Workout kommt, sobald es in Georges iPhone-App ist und Thalia am iPhone offen war.
+- [ ] Nina: Kalorien und Makros erscheinen als Tageswert mit „aus Nina“ unter dem Namen; ein eigener Eintrag für denselben Tag ersetzt ihn („aus Nina“ verschwindet), „Wert leeren“ bringt den Wert aus Nina zurück. Ohne eigenen Eintrag bietet das Kontextmenü kein „Wert leeren“.
+- [ ] Finn: Ausgaben einer eingeschalteten Gruppe erscheinen in Heute und im Fenster „Ausgaben“ als „aus Finn – in Finn ändern“ (nicht bearbeitbar, kein Löschen), eigene Ausgaben kommen dazu und lassen sich wie bisher ändern; Tag, Woche und „Nach Zweck“ zählen beides. Ein Ergebnis mit Quelle `app:finn:net_worth` zeigt den letzten Stand.
+- [ ] Kein abgeleiteter Haken an einem Krank-/Urlaubstag oder an einem Tag, an dem der Punkt nicht gilt; späte Tatsachen ändern eine eingefrorene Woche nicht.
+- [ ] Mac: Theo oder George am Mac, Thalia am Mac offen → kommt spätestens nach 5 Minuten an (ob die Sofort-Meldung zwischen Mac-Apps wirkt, ist offen: CONNECTED_APPS.md §5).
+- [ ] Watch: zeigt die abgeleiteten Haken und Werte nach dem Abgleich.
+- [ ] Nichts aus Apple Health: „Was kommt an“ zeigt keine Health-Werte; Thalias eigene Health-Werte bleiben auf dem Gerät.
+- [ ] „Thalia-Katalog bereitstellen“ aus → Theo bietet nach Thalias nächstem Nachsehen keine Thalia-Kategorien mehr an; wieder an → wieder da.
+
+**Messwert- und Punkt-Editor (Entscheidung 1.5.4)**
+- [ ] Messwert bearbeiten → Abschnitt „Quelle“: Manuell, Power-Hours (→ Bereich), Apple Health (→ Wert), Leseliste (→ Art), Verbundene App → App → Art → Eintrag (aus den Vorlagen, Gruppen und Kennzahlen der App, „alle“ für alle); darunter z. B. „George · Workouts · Push“. Die Einheit folgt der Quelle („Seiten“, „Stück“, „kcal“), Sichern geht erst mit App und Art. Ohne gesehene App: Textfelder für App, Art und Eintrag.
+- [ ] Einen Messwert sichern, ohne die Quelle anzufassen → die Quelle bleibt genau, wie sie war (auch eine unbekannte, „Andere Quelle“).
+- [ ] Punkt bearbeiten → „Messwert“: die Zeile „Verknüpfung“ nennt den Messwert und seine Quelle („Workouts · George · Workouts · Push“) mit dem Hinweis, dass der Haken von selbst kommt; ein Punkt, der direkt auf `app:…` oder `list:…` verweist, zeigt diese Verknüpfung als Auswahl. Das Detailfenster eines Punkts zeigt „Quelle“ unter „Messwert“.
+
+**Speicher, Sync und Sicherung (Entscheidung 1.1)**
+- [ ] Ergebnis, Eintrag, Buch, Stand und Abschnitt am iPhone anlegen → am Mac nach dem Abgleich da, umgekehrt ebenso.
+- [ ] Am selben Tag auf iPhone und Mac je einen Stand für dasselbe Buch eintragen (eins davon offline) → nach dem Abgleich sind beide da.
+- [ ] Ein rückwirkender Stand in einer abgeschlossenen Woche des aktuellen Abschnitts mit verknüpftem Punkt → die Woche wird neu gewertet; vor dem aktuellen Abschnitt nicht.
+- [ ] Einstellungen → „Alles als CSV“: am Ende `record`-Zeilen (`goal.…`, `list.…`, `link.rule.…`, `x.…`, `score.…`); dieselbe Datei wieder importieren → Vorschau „Datensätze“, nichts ändert sich. „Diese Woche als CSV“ und der Export für ChatGPT haben keine `record`-Zeilen.
+- [ ] Ein Gerät mit 1.8.0 (falls noch eins da ist): einen Messwert mit Quelle `app:…` dort sichern → die Quelle bleibt; nach dem Update wirkt sie.
+- [ ] Zwei Geräte mit verschiedenen Apps (z. B. iPhone mit Theo, Mac mit Finn), beide vor dem Abgleich geöffnet → danach kennt jedes Gerät beide Quellen (Verbundene Apps), und die Werte beider erscheinen in der Woche.
+- [ ] Einen abgeleiteten Haken „⇄ George · …“ leeren, „Alles als CSV“ sichern und in einen frischen Speicher (zweites Gerät, Demo nicht) einlesen → der Haken bleibt leer. Ein älteres Backup einlesen → später verbundene Apps bleiben bekannt.
+- [ ] Abschnitt für nächste Woche beginnen → im Ergebnis-Fenster „Ziel in Abschnitt 2 (ab KW…, optional)“; ein neues Ergebnis erscheint auf der Zielseite mit „Gilt ab Abschnitt 2 (KW…)“. „Neuen Abschnitt beginnen…“ noch einmal → frühestens die Woche danach, Titel „Abschnitt 3“.
+- [ ] Mac schließt die Woche am Sonntag ab (mit Schritten aus Apple Health im Ziel), am Montag beginnt ein neuer Abschnitt → das iPhone wertet die Woche nach dem Abgleich noch mit den Health-Werten (erst ab der zweiten Woche des Abschnitts eingefroren).
+- [ ] Watch: ein Messwert mit Quelle Leseliste zeigt nur den Wert und „mit „Lesen“ am iPhone eintragen“; am iPhone führt „Messwert eintragen“ für ihn zu „Lesen“, der Kurzbefehl „Messwert eintragen“ lehnt ab.
+
+**Demo und Screenshots (Entscheidung 1.7.2–1.7.3)**
+- [ ] CI-Screenshots enthalten „goal-detail“, „reading“ und „connected-apps“ für iPhone und Mac: zwei Abschnitte (Abschnitt 2 seit fünf Wochen), die Ergebnisse „Bücher gelesen“, „Website online“ und einen Zielwert, drei Bücher („Kleine Schritte“ fertig, „Klarer Kopf“ läuft, „Lange Wege“ geplant), die Quelle „Demo“ mit dem Workout „Push“, zwei Power-Hours (eine „ohne Zuordnung“ – im Screenshot „connected-apps“ unter „Ohne Zuordnung · Demo“), Kalorien und Protein. Der Fußtext unter „Auf diesem Gerät“ sagt dort „Beispieldaten der Quelle „Demo“ – hier liest Thalia keine anderen Apps.“
+- [ ] Einstellungen → Version zeigt 1.9.0 (`Config/Base.xcconfig`).
+- [ ] Nach der Tour hat der echte Speicher keine Beispieldaten: keine Quelle „Demo“ unter Verbundene Apps, keine Demo-Bücher, keine Demo-Ergebnisse.

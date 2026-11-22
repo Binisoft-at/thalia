@@ -188,7 +188,10 @@ struct CloseWeekForm: View {
 
     private func copyReport() {
         saveAnswers()
-        Clipboard.copy(WeekReport.markdown(app.store.weekContext(for: week, today: context.today).reportInput()))
+        let store: TrackerStore = app.store
+        // v10 (§1.2.5): with the block "Jahresziel-Ergebnisse".
+        let input: WeekReportInput = store.weekContext(for: week, today: context.today).reportInput(results: store.resultLines(today: context.today))
+        Clipboard.copy(WeekReport.markdown(input))
         copiedReport = true
     }
 

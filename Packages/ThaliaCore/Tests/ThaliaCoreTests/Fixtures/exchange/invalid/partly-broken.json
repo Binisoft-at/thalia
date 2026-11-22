@@ -1,0 +1,6 @@
+{"v":1,"source":"theo","day":"2026-11-22","generatedAt":"2026-11-22T18:04:05+01:00","extra":"ignored","facts":[
+  {"id":"task-1","kind":"task.done","ref":"grp-91AB","refTitle":"Arbeit/Kunden","origin":"app"},
+  {"kind":"task.done","ref":"grp-91AB","origin":"app"},
+  "not a fact",
+  {"id":"sleep-1","kind":"sleep.logged","ref":"night","value":7.5,"origin":"app"},
+  {"id":"task-2","kind":"task.done","ref":"grp-91AB","origin":"app","value":"2,5"}]}

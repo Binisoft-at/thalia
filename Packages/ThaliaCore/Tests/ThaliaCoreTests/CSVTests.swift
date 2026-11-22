@@ -346,21 +346,26 @@ struct ContentTests {
 
     @Test func tourCatalogIsValid() {
         #expect(ThaliaTour.catalog.problems().isEmpty)
-        #expect(ThaliaTour.version == 9)
-        // v9: welcome, 15 steps, finish.
-        #expect(ThaliaTour.catalog.allSteps.count == 17)
+        // v10 (TASKS-v10 §1.7.1): four new cards, tour version 10.
+        #expect(ThaliaTour.version == 10)
+        // v10: welcome, 19 steps, finish.
+        #expect(ThaliaTour.catalog.allSteps.count == 21)
         #expect(ThaliaTour.catalog.steps(newerThan: 0).first?.id == "welcome")
         #expect(ThaliaTour.catalog.steps(newerThan: ThaliaTour.version).isEmpty)
-        // v8 took the tour → "Neu in Thalia" with the one v9 card.
+        // v9 took the tour → "Neu in Thalia" with the four v10 cards.
+        let v10 = ThaliaTour.catalog.steps(newerThan: 9).map(\.id)
+        #expect(v10 == ["whats-new", "goal-results", "reading", "segments", "connected-apps", "finish"])
+        // v8 took the tour → the v9 card and the v10 cards.
         let v9 = ThaliaTour.catalog.steps(newerThan: 8).map(\.id)
-        #expect(v9 == ["whats-new", "archive", "finish"])
-        // v7 took the tour → the three v8 cards and the v9 card.
+        #expect(v9 == ["whats-new", "archive", "goal-results", "reading", "segments", "connected-apps", "finish"])
+        // v7 took the tour → the three v8 cards, the v9 card and the v10 cards.
         let v8 = ThaliaTour.catalog.steps(newerThan: 7).map(\.id)
-        #expect(v8 == ["whats-new", "excused", "past-weeks", "archive", "range-pdf", "finish"])
-        // v6 took the tour → the eight v7 steps, the three v8 cards and the v9 card, in tour order.
+        #expect(v8 == ["whats-new", "excused", "past-weeks", "archive", "goal-results", "reading", "segments", "range-pdf",
+                       "connected-apps", "finish"])
+        // v6 took the tour → the eight v7 steps, the three v8 cards, the v9 card and the v10 cards, in tour order.
         let v7 = ThaliaTour.catalog.steps(newerThan: 6).map(\.id)
         #expect(v7 == ["whats-new", "day", "excused", "mark", "work", "measure", "glance", "week", "past-weeks", "archive",
-                       "review", "range-pdf", "everywhere", "finish"])
+                       "review", "goal-results", "reading", "segments", "range-pdf", "everywhere", "connected-apps", "finish"])
         // The new cards name the window's three ways and the sick-day rule in the app's words.
         let steps = Dictionary(uniqueKeysWithValues: ThaliaTour.catalog.allSteps.map { ($0.id, $0) })
         let pastWeeks = steps["past-weeks"]?.body ?? ""

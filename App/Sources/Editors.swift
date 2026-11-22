@@ -453,6 +453,8 @@ struct MeasureForm: View {
                 workSection
             } else if isExpense {
                 expenseSection
+            } else if isList {
+                listSection
             } else {
                 entrySection
             }
@@ -566,6 +568,24 @@ struct MeasureForm: View {
             Text("Ausgaben \(day.shortLabel)")
         } footer: {
             Text("Jede Ausgabe mit „Wofür“. Ein Tipp auf eine Ausgabe ändert sie.")
+        }
+    }
+
+    /// v10 (§1.3.3): the reading list's pages are entered once, in "Lesen" – an own value here would
+    /// hide the readings of the day.
+    private var isList: Bool { record?.isList ?? false }
+
+    private var listSection: some View {
+        Section {
+            Button {
+                app.sheet = .reading(day, itemID: nil)
+            } label: {
+                Label("Lesen…", systemImage: "book")
+            }
+        } header: {
+            Text("Leseliste")
+        } footer: {
+            Text("Dieser Messwert zählt die Seiten der Leseliste. Eingetragen wird über „Lesen“ – so zählen sie nur einmal.")
         }
     }
 
@@ -811,9 +831,10 @@ struct ItemDetailForm: View {
 
     private var isProgress: Bool { item.schedule == .progress }
 
-    /// "Liegestütze ≥ 20" or "Liegestütze (erfasst)".
+    /// "Liegestütze ≥ 20" or "Liegestütze (erfasst)"; v10: an item linked to an `app:` / `list:` text directly
+    /// names its source ("George · Workouts · Push ≥ 1").
     private var measureLine: String {
-        let title: String = context.measure(code: item.measureCode)?.title ?? item.measureCode
+        let title: String = context.measureRecord(code: item.measureCode)?.title ?? item.measureCode
         guard !item.targetRaw.isEmpty else { return "\(title) (erfasst)" }
         let label: String = Target.parse(item.targetRaw)?.label ?? ""
         return "\(title) \(label)"
@@ -859,6 +880,9 @@ struct ItemDetailForm: View {
                 }
                 if !item.measureCode.isEmpty {
                     LabeledContent("Messwert", value: measureLine)
+                    if let source = linkSource {
+                        LabeledContent("Quelle", value: source)
+                    }
                 }
                 if item.isKnockout {
                     Label("Persönliche Null-Regel: „Nicht erledigt“ setzt die Kategorie an diesem Tag auf 0. Die Daten bleiben erhalten.", systemImage: "exclamationmark.octagon")
@@ -869,6 +893,10 @@ struct ItemDetailForm: View {
 
             Section {
                 markButtons(mark: mark)
+                if let derived = context.derivedMarkLabel(item, on: day) {
+                    // v10 (§1.5.3): an own mark – also clearing this one – always wins.
+                    DerivedMarkNote(label: derived + " – eine eigene Markierung geht vor")
+                }
                 if let suggestion = context.suggestion(item, on: day) {
                     Button {
                         app.setMark(suggestion, item: item, day: day)
@@ -990,10 +1018,23 @@ struct ItemDetailForm: View {
         }
     }
 
-    /// R23: only the note – the mark stays as it is stored.
+    /// R23: only the note – the mark stays as it is stored. v10: a note on a day with a ✓ from a connected
+    /// app keeps that ✓ (the new own mark takes it over), so writing a note never removes it.
     private func saveNote() {
         guard !isDeleted, note != context.markNote(item, on: day) else { return }
-        app.store.setMarkNote(note, item: item, day: day)
+        app.store.setMarkNote(note, item: item, day: day, derived: derivedMark)
+    }
+
+    /// The ✓ shown from a connected app that day (no own mark yet); nil otherwise.
+    private var derivedMark: Mark? {
+        guard context.isDerivedMark(item, on: day) else { return nil }
+        return context.mark(item, on: day)
+    }
+
+    /// v10: "George · Workouts · Push" – where the linked measure's value comes from; nil for manual ones.
+    private var linkSource: String? {
+        guard let record = context.measureRecord(code: item.measureCode) else { return nil }
+        return LinkTexts.sourceLabel(record.source, sources: context.exchangeSources)
     }
 
     /// R13: deleting closes the sheet; the toast with Undo shows on the layer below.
@@ -1027,6 +1068,8 @@ struct ItemEditor: View {
     @State private var dayRule: DayRule
     /// The fields as the sheet opened (R14); set once on appear.
     @State private var initialFields: [String]? = nil
+    /// v10: the connected apps seen, for the link's label ("George · Workouts · Push").
+    @State private var exchangeSources = ExchangeSourceList()
     @Query(filter: #Predicate<MeasureDefinition> { $0.deletedAt == nil }) private var allMeasures: [MeasureDefinition]
 
     init(week: WeekKey, item: PlanItem?, presetCategory: String? = nil) {
@@ -1071,6 +1114,33 @@ struct ItemEditor: View {
         let key = week.string
         return Array(allMeasures.filter { $0.weekKey == key }.latest(by: \.code, modified: \.modifiedAt).values)
             .sorted { $0.title < $1.title }
+    }
+
+    /// The measure the item is linked to; v10: also a link straight to "app:…" / "list:…" (from the plan),
+    /// and below it what the item is linked to and where its tick comes from (§1.5.4).
+    @ViewBuilder
+    private var measurePicker: some View {
+        Picker("Messwert", selection: $measureCode) {
+            Text("keiner").tag("")
+            ForEach(weekMeasures) { measure in
+                Text(measure.title).tag(measure.code)
+            }
+            if let direct = directLinkTitle {
+                Text(direct).tag(measureCode)
+            }
+        }
+        ItemLinkRow(code: measureCode, measure: linkedMeasure, sources: exchangeSources)
+    }
+
+    /// v10: the week's measure the item is linked to.
+    private var linkedMeasure: MeasureRecord? {
+        weekMeasures.first { $0.code == measureCode }?.record
+    }
+
+    /// v10: the item links to an `app:` / `list:` text directly (no measure of the week has that code).
+    private var directLinkTitle: String? {
+        guard !measureCode.isEmpty, linkedMeasure == nil else { return nil }
+        return LinkTexts.itemLink(code: measureCode, measure: nil, sources: exchangeSources)
     }
 
     /// Everything the form edits, to see whether something changed (R14).
@@ -1120,12 +1190,7 @@ struct ItemEditor: View {
                         Stepper("\(weeklyCount)× pro Woche", value: $weeklyCount, in: 1...7)
                     }
                     if scheduleKind == "fortschritt" || !measureCode.isEmpty {
-                        Picker("Messwert", selection: $measureCode) {
-                            Text("keiner").tag("")
-                            ForEach(weekMeasures) { measure in
-                                Text(measure.title).tag(measure.code)
-                            }
-                        }
+                        measurePicker
                     }
                     Toggle("Persönliche Null-Regel (Nicht erledigt → Kategorie 0)", isOn: $knockout)
                     Toggle("Nebensache (zählt nur, wenn ausgefüllt)", isOn: $secondary)
@@ -1158,6 +1223,7 @@ struct ItemEditor: View {
                 let category: String = categoryKey.isEmpty ? (sortedCategories.first?.key ?? "") : categoryKey
                 categoryKey = category
                 if initialFields == nil { initialFields = fields(category: category) }
+                exchangeSources = app.store.exchangeSources()
             }
         }
         .unsavedInput(isDirty, in: app)
@@ -1216,12 +1282,18 @@ struct MeasureDefinitionEditor: View {
     @State private var confirmsDelete = false
     @State private var secondary: Bool
     @State private var dayRule: DayRule
+    /// v10 (§1.5.4): "Quelle" – Manuell, Power-Hours, Apple Health, Leseliste, Verbundene App.
+    @State private var sourceDraft: MeasureSourceDraft
+    /// v10: the connected apps seen (`x.sources`) with their refs, for the pickers.
+    @State private var exchangeSources = ExchangeSourceList()
     /// The fields as the sheet opened (R14); set once on appear.
     @State private var initialFields: [String]? = nil
     /// The unit the measurement had – still offered when it is no longer a standard choice.
     private let initialUnit: String
     /// The stored target was a time of day.
     private let initialTimeTarget: Bool
+    /// v10: the source as stored – saved back unchanged unless "Quelle" changes it.
+    private let initialSource: MeasureSource
 
     init(week: WeekKey, measure: MeasureDefinition?, presetCategory: String? = nil) {
         self.week = week
@@ -1246,6 +1318,9 @@ struct MeasureDefinitionEditor: View {
         _dayRule = State(initialValue: measure?.record?.dayRule ?? .auto)
         initialUnit = unit
         initialTimeTarget = isTimeTarget
+        let source: MeasureSource = MeasureSource(raw: measure?.sourceRaw ?? "")
+        initialSource = source
+        _sourceDraft = State(initialValue: MeasureSourceDraft(source, categoryKey: measure?.categoryKey ?? presetCategory ?? ""))
     }
 
     /// A number for the value field ("8", "2,5", "1.200"); empty for times and missing values.
@@ -1265,9 +1340,12 @@ struct MeasureDefinitionEditor: View {
             .sorted { CategoryRecord.sortKey($0.key).lexicographicallyPrecedes(CategoryRecord.sortKey($1.key)) }
     }
 
-    /// R77: the standard units without "PH" – plus the unit the measurement already had.
+    /// R77: the standard units without "PH" – plus the unit the measurement already had (v10: and the one a
+    /// source suggested, e.g. "kcal").
     private var unitChoices: [String] {
-        Units.choices.contains(initialUnit) ? Units.choices : Units.choices + [initialUnit]
+        var choices: [String] = Units.choices
+        for extra in [initialUnit, unit] where !choices.contains(extra) { choices.append(extra) }
+        return choices
     }
 
     private var comparison: Target.Comparison? {
@@ -1303,9 +1381,9 @@ struct MeasureDefinitionEditor: View {
         comparison != nil && target == nil
     }
 
+    /// Counted from power-hours (v10: also when "Quelle" was just set to Power-Hours).
     private var isWork: Bool {
-        if let measure, case .work = MeasureSource(raw: measure.sourceRaw) { return true }
-        return false
+        sourceDraft.choice == .work
     }
 
     /// Everything the form edits, to see whether something changed (R14).
@@ -1313,7 +1391,17 @@ struct MeasureDefinitionEditor: View {
         let dayLetters: String = Weekday.allCases.filter { days.contains($0) }.map(\.short).joined(separator: ",")
         let times: String = "\(DayKey.minutes(of: lowerTime).rounded(.down))-\(DayKey.minutes(of: upperTime).rounded(.down))"
         return [category, title, details, unit, comparisonRaw, lowerText, upperText, times, period.rawValue, dayLetters,
-                String(secondary), dayRule.rawValue]
+                String(secondary), dayRule.rawValue] + sourceDraft.fields
+    }
+
+    /// v10: a new source suggests its unit ("Seiten", "kcal", "Stück"); leaving power-hours drops "PH".
+    private func sourceChanged(from old: MeasureSourceDraft, to new: MeasureSourceDraft) {
+        guard old.choice != new.choice || old.appKind != new.appKind || old.listKind != new.listKind else { return }
+        if let suggested = new.suggestedUnit, new.choice != .work {
+            unit = suggested
+        } else if old.choice == .work, new.choice != .work, Units.normalized(unit) == "ph" {
+            unit = ""
+        }
     }
 
     private var isDirty: Bool {
@@ -1339,65 +1427,15 @@ struct MeasureDefinitionEditor: View {
                     TextField("Beschreibung (optional)", text: $details, axis: .vertical)
                         .lineLimit(1...4)
                 }
-                Section {
-                    if isWork {
-                        LabeledContent("Einheit", value: "PH aus den Einträgen")
-                    } else {
-                        Picker("Einheit", selection: $unit) {
-                            ForEach(unitChoices, id: \.self) { choice in
-                                Text(unitLabel(choice)).tag(choice)
-                            }
-                        }
-                    }
-                    Picker("Ziel", selection: $comparisonRaw) {
-                        Text("kein Ziel").tag("")
-                        ForEach(Target.Comparison.choices, id: \.self) { choice in
-                            Text(choice.choiceLabel).tag(choice.rawValue)
-                        }
-                    }
-                    if comparison != nil {
-                        targetFields
-                    }
-                    if let target {
-                        Text(target.sentence(period: period, unit: unit))
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    } else if targetIncomplete {
-                        Label("Bitte einen Wert für das Ziel eintragen.", systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                    Picker("Zeitraum", selection: $period) {
-                        Text("pro Tag").tag(TargetPeriod.day)
-                        Text("pro Woche").tag(TargetPeriod.week)
-                    }
-                    .pickerStyle(.segmented)
-                    HStack(spacing: 4) {
-                        ForEach(Weekday.allCases, id: \.self) { day in
-                            Button(day.short) {
-                                if days.contains(day) { days.remove(day) } else { days.insert(day) }
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(days.contains(day) ? Brand.accent : .secondary)
-                            .frame(maxWidth: .infinity)
-                        }
-                    }
-                    Toggle("Nebensache (eingeklappt)", isOn: $secondary)
-                    DayRulePicker(rule: $dayRule)
-                } header: {
-                    Text("Ziel")
-                }
+                MeasureSourceSection(draft: $sourceDraft, categories: sortedCategories, sources: exchangeSources)
+                goalSection
                 Section {
                     Toggle("Auch in den nächsten Wochen", isOn: $carryOver)
                 } footer: {
                     Text(carryOver ? "Der nächste Planungs-Prompt übernimmt die Änderung dauerhaft."
                          : "Gilt nur für diese Woche – der Prompt sagt der KI, dass sie nicht übernommen wird.")
                 }
-                if measure != nil {
-                    Section {
-                        Button("Messwert löschen", systemImage: "trash", role: .destructive) { confirmsDelete = true }
-                    }
-                }
+                existingSections
             }
             .formStyle(.grouped)
             .navigationTitle(measure == nil ? "Neuer Messwert" : "Messwert bearbeiten")
@@ -1406,19 +1444,89 @@ struct MeasureDefinitionEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sichern", action: save)
-                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || days.isEmpty || targetIncomplete)
+                        .disabled(cannotSave)
                 }
             }
+            .onChange(of: sourceDraft) { old, new in sourceChanged(from: old, to: new) }
             .confirmationDialog("„\(title)“ löschen?", isPresented: $confirmsDelete, titleVisibility: .visible) {
                 Button("Löschen – auch künftig weglassen", role: .destructive) { delete(carryOver: true) }
                 Button("Nur diese Woche löschen", role: .destructive) { delete(carryOver: false) }
             }
             .onAppear {
                 if initialFields == nil { initialFields = fields(category: categoryKey) }
+                exchangeSources = app.store.exchangeSources()
             }
         }
         .unsavedInput(isDirty, in: app)
         .thaliaSheetFrame(width: 480, height: 680)
+    }
+
+    /// Unit, target, period, days (a section of its own, so the body stays small for the type checker).
+    private var goalSection: some View {
+        Section {
+            if isWork {
+                LabeledContent("Einheit", value: "PH aus den Einträgen")
+            } else {
+                Picker("Einheit", selection: $unit) {
+                    ForEach(unitChoices, id: \.self) { choice in
+                        Text(unitLabel(choice)).tag(choice)
+                    }
+                }
+            }
+            Picker("Ziel", selection: $comparisonRaw) {
+                Text("kein Ziel").tag("")
+                ForEach(Target.Comparison.choices, id: \.self) { choice in
+                    Text(choice.choiceLabel).tag(choice.rawValue)
+                }
+            }
+            if comparison != nil {
+                targetFields
+            }
+            if let target {
+                Text(target.sentence(period: period, unit: unit))
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.secondary)
+            } else if targetIncomplete {
+                Label("Bitte einen Wert für das Ziel eintragen.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            Picker("Zeitraum", selection: $period) {
+                Text("pro Tag").tag(TargetPeriod.day)
+                Text("pro Woche").tag(TargetPeriod.week)
+            }
+            .pickerStyle(.segmented)
+            HStack(spacing: 4) {
+                ForEach(Weekday.allCases, id: \.self) { day in
+                    Button(day.short) {
+                        if days.contains(day) { days.remove(day) } else { days.insert(day) }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(days.contains(day) ? Brand.accent : .secondary)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            Toggle("Nebensache (eingeklappt)", isOn: $secondary)
+            DayRulePicker(rule: $dayRule)
+        } header: {
+            Text("Ziel")
+        }
+    }
+
+    /// An existing measure: v10's "zählt für Ziel 5 · Bücher 3/10" (§1.2.4) and deleting.
+    @ViewBuilder
+    private var existingSections: some View {
+        if let measure {
+            MeasureCountsForSection(week: week, measure: measure)
+            Section {
+                Button("Messwert löschen", systemImage: "trash", role: .destructive) { confirmsDelete = true }
+            }
+        }
+    }
+
+    /// A name, a day, a complete target and (v10) a complete source are needed.
+    private var cannotSave: Bool {
+        title.trimmingCharacters(in: .whitespaces).isEmpty || days.isEmpty || targetIncomplete || sourceDraft.isIncomplete
     }
 
     /// R77: the target's value – a number, or a time of day; "zwischen" needs a second one.
@@ -1449,14 +1557,20 @@ struct MeasureDefinitionEditor: View {
 
     private func save() {
         let mask = DayMask(Array(days))
+        let source: MeasureSource = sourceDraft.resolved(original: initialSource)
         if let measure, var record = measure.record {
             record.categoryKey = categoryKey
             record.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
             record.details = details
             if !isWork {
                 record.unit = unit
-                record.aggregation = .default(forUnit: unit)
+                record.aggregation = sourceDraft.aggregation(unit: unit)
+            } else if !record.isWork {
+                // v10: newly counted from power-hours – always in PH (R77).
+                record.unit = "PH"
+                record.aggregation = .sum
             }
+            record.source = source
             record.target = target
             record.period = period
             record.days = mask
@@ -1464,11 +1578,18 @@ struct MeasureDefinitionEditor: View {
             record.dayRule = dayRule
             app.store.update(measure, with: record, carryOver: carryOver)
         } else {
-            let added = app.store.addMeasure(week: week, categoryKey: categoryKey, title: title, details: details, unit: unit,
-                                             target: target, period: period, days: mask, carryOver: carryOver)
-            if (secondary || dayRule != .auto), var record = added.record {
+            let added = app.store.addMeasure(week: week, categoryKey: categoryKey, title: title, details: details,
+                                             unit: isWork ? "PH" : unit, target: target, period: period, days: mask,
+                                             carryOver: carryOver)
+            // v10: a source other than the one `addMeasure` picks (manual, or PH → power-hours of the category).
+            let needsSource: Bool = source != .manual && added.record?.source != source
+            if (secondary || dayRule != .auto || needsSource), var record = added.record {
                 record.secondary = secondary
                 record.dayRule = dayRule
+                if needsSource {
+                    record.source = source
+                    if !isWork { record.aggregation = sourceDraft.aggregation(unit: unit) }
+                }
                 app.store.update(added, with: record, carryOver: carryOver)
             }
         }
@@ -1661,6 +1782,11 @@ struct ThaliaCreateSheet: View {
                          symbol: "ruler.fill", tint: .teal) { app.sheet = .measure(code: "", day: day) },
             CreateOption(id: "note", title: "Notiz", subtitle: NoteKind.listText,
                          symbol: "note.text", tint: .indigo) { app.sheet = .note(nil, day) },
+            // v10 (§1.2.6, §1.3): on the day shown – also back in time.
+            CreateOption(id: "goal-entry", title: "Jahresziel eintragen", subtitle: "Abhaken, +1 oder Wert – auch rückwirkend",
+                         symbol: "flag.checkered", tint: .orange, isFeatured: false) { app.sheet = .goalEntry(day, resultID: nil) },
+            CreateOption(id: "reading", title: "Lesen", subtitle: "Bis Seite oder + Seiten – für das laufende Buch",
+                         symbol: "book", tint: .brown, isFeatured: false) { app.sheet = .reading(day, itemID: nil) },
             CreateOption(id: "close", title: "Tag abschließen", subtitle: "Offenes ergänzen, Journal abhaken, Wertung sehen",
                          symbol: "moon.stars.fill", tint: .purple, isFeatured: false) { app.sheet = .closeDay(app.dayToClose(showing: day)) },
             CreateOption(id: "item", title: "Punkt anlegen", subtitle: "Ein bewerteter Punkt für diese Woche",

@@ -29,6 +29,9 @@ enum WatchMeasureKind: Equatable {
     case expense
     /// Apple Health: read on the iPhone only, never "missing" here (H1).
     case health
+    /// v10 (§1.3.3): pages from the reading list (`list:<art>`) – entered once, with "Lesen" on the
+    /// iPhone or Mac; the watch only shows the day's amount (an own value would hide the readings).
+    case list
     /// Power-hours, times and texts stay on the phone.
     case hidden
 
@@ -37,8 +40,12 @@ enum WatchMeasureKind: Equatable {
         if record.isWork || record.isTime || record.isText { return .hidden }
         if context.isExpense(measure) { return .expense }
         if record.isHealth { return .health }
+        if record.isList { return .list }
         return .value
     }
+
+    /// "mit „Lesen“ am iPhone eintragen"
+    static let listHint = "mit \u{201E}Lesen\u{201C} am iPhone eintragen"
 
     /// Page-1 counters (R34): day measurements that add up (water, pages …), no "Nebensache".
     static func isCounter(_ measure: MeasureDefinition, in context: WeekContext) -> Bool {
@@ -74,6 +81,8 @@ struct WatchMeasureRow: View {
             expenseRow
         case .health:
             healthRow
+        case .list:
+            listRow
         case .value, .hidden:
             valueRow
         }
@@ -133,6 +142,24 @@ struct WatchMeasureRow: View {
                     .font(.headline.monospacedDigit())
             }
             Text("am iPhone erfassen")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// v10: pages from the reading list – only shown; "Lesen" on the iPhone or Mac enters them once.
+    private var listRow: some View {
+        let text = WatchMeasureRow.valueText(context.dayValue(measure, on: context.today), unit: measure.unit)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(measure.title)
+                    .font(.footnote)
+                Spacer(minLength: 4)
+                Text(text)
+                    .font(.headline.monospacedDigit())
+            }
+            Text(WatchMeasureKind.listHint)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

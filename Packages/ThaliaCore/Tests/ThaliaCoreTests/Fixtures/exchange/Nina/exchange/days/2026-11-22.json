@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "source": "nina",
+  "day": "2026-11-22",
+  "generatedAt": "2026-11-22T21:15:00.500+01:00",
+  "facts": [
+    { "id": "kcal-1", "kind": "value", "ref": "kcal", "refTitle": "Kalorien", "metric": "kcal", "value": 650, "unit": "kcal",
+      "at": "2026-11-22T07:15:00.250+01:00", "origin": "app" },
+    { "id": "kcal-2", "kind": "value", "ref": "kcal", "refTitle": "Kalorien", "metric": "kcal", "value": 1450, "unit": "kcal",
+      "at": "2026-11-22T19:00:00+01:00", "origin": "app" },
+    { "id": "protein-1", "kind": "value", "ref": "protein_g", "refTitle": "Protein", "metric": "protein_g", "value": 140, "unit": "g",
+      "at": "2026-11-22T19:00:00+01:00", "origin": "app" },
+    { "id": "fiber-1", "kind": "value", "ref": "fiber_g", "refTitle": "Ballaststoffe", "metric": "fiber_g", "value": 28, "unit": "g",
+      "origin": "app" },
+    { "id": "kcal-hk", "kind": "value", "ref": "kcal", "refTitle": "Kalorien", "metric": "kcal", "value": 300, "unit": "kcal",
+      "origin": "health" }
+  ]
+}

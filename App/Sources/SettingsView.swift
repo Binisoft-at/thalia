@@ -54,6 +54,12 @@ struct SettingsView: View {
                 } label: {
                     Label("Jahresziele und Zieljahr", systemImage: "target")
                 }
+                // v10 (§1.5.5): Theo, George, Nina, Finn … on the same device.
+                NavigationLink {
+                    ConnectedAppsView()
+                } label: {
+                    Label("Verbundene Apps", systemImage: "arrow.left.arrow.right")
+                }
             } header: {
                 Text("Tracking")
             }
@@ -484,9 +490,49 @@ struct GoalYearSettingsView: View {
     @State private var period = GoalPeriod.foundationYear
     @State private var loaded = false
     @State private var editingCategory: TrackCategory?
+    /// v10 (§1.4.2): the goal year's records (`goal.`: segments, results, entries) – live.
+    @Query private var goalRecords: [AppSetting]
+    /// v10: the segment wizard, a segment, a result, a new goal or category.
+    @State private var structureSheet: GoalStructureSheet?
+    /// v10: opened right after "Neuen Abschnitt beginnen…" – a short note on top, no second wizard.
+    let afterSegmentStart: Bool
+
+    init(afterSegmentStart: Bool = false) {
+        self.afterSegmentStart = afterSegmentStart
+        let prefix = "goal."
+        _goalRecords = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: prefix) })
+    }
+
+    /// The goal year's segments, gapless (one "Abschnitt 1" without stored ones).
+    private var segments: Segments {
+        Segments.resolve(SettingRecords.decode(GoalSegment.self, from: goalRecords.map(\.stored)), period: period)
+    }
+
+    private var storedSegments: [GoalSegment] {
+        SettingRecords.decode(GoalSegment.self, from: goalRecords.map(\.stored))
+    }
+
+    /// Stored segments that don't count – a second one on the same week (two devices, or begun twice);
+    /// listed so they can be deleted.
+    private var hiddenSegments: [GoalSegment] {
+        Segments.hidden(storedSegments, period: period)
+    }
+
+    private var results: [GoalResult] {
+        SettingRecords.decode(GoalResult.self, from: goalRecords.map(\.stored))
+            .filter { $0.periodStart == nil || $0.periodStart == period.start }
+            .sorted(by: TrackerStore.resultOrder)
+    }
 
     var body: some View {
+        let resolved: Segments = segments
         Form {
+            if afterSegmentStart {
+                Section {
+                    Label(GoalStructureSheet.afterStartText(resolved, today: app.today), systemImage: "flag.2.crossed.fill")
+                        .font(.subheadline)
+                }
+            }
             Section {
                 DatePicker("Beginn", selection: dayBinding(\.start), displayedComponents: .date)
                     .thaliaDateLocale()
@@ -505,35 +551,10 @@ struct GoalYearSettingsView: View {
                 Text("Bis zur Zielüberprüfung werden Ziele nicht automatisch schwerer – auch nach einer guten Woche nicht.")
             }
 
-            Section {
-                if goals.isEmpty {
-                    Button("Meine Struktur einrichten (10 Ziele, 18 Kategorien)", systemImage: "plus") { app.store.seedStructure() }
-                }
-                ForEach(sortedGoals) { goal in
-                    NavigationLink {
-                        GoalDetailView(goalKey: goal.key)
-                    } label: {
-                        LabeledContent("\(goal.key) \(goal.title)", value: "\(categories.filter { $0.goalKey == goal.key && $0.deletedAt == nil }.count)")
-                    }
-                }
-            } header: {
-                Text("Jahresziele")
-            } footer: {
-                Text("Die Zahl rechts sind die Kategorien darunter. Ein Ziel mit mehr Kategorien wiegt nicht mehr.")
-            }
-
-            Section("Kategorien") {
-                ForEach(sortedCategories) { category in
-                    Button {
-                        editingCategory = category
-                    } label: {
-                        HStack {
-                            KeyBadge(key: category.key)
-                            Text(category.title).foregroundStyle(.primary)
-                        }
-                    }
-                }
-            }
+            segmentsSection(resolved)
+            goalsSection
+            resultsSection(resolved)
+            categoriesSection
         }
         .formStyle(.grouped)
         .navigationTitle("Jahresziele")
@@ -547,6 +568,135 @@ struct GoalYearSettingsView: View {
         }
         .sheet(item: $editingCategory) { category in
             CategoryEditor(category: category).environment(app)
+        }
+        .sheet(item: $structureSheet) { sheet in
+            GoalStructureSheetContent(sheet: sheet)
+                .thaliaLocalSheet(app)
+        }
+    }
+
+    /// v10: the goals and the categories as sections of their own (the body stays small for the type checker).
+    private var goalsSection: some View {
+        Section {
+            if goals.isEmpty {
+                Button("Meine Struktur einrichten (10 Ziele, 18 Kategorien)", systemImage: "plus") { app.store.seedStructure() }
+            }
+            ForEach(sortedGoals) { goal in
+                NavigationLink {
+                    GoalDetailView(goalKey: goal.key)
+                } label: {
+                    LabeledContent("\(goal.key) \(goal.title)", value: "\(categories.filter { $0.goalKey == goal.key && $0.deletedAt == nil }.count)")
+                }
+            }
+            if !goals.isEmpty {
+                Button("Jahresziel hinzufügen", systemImage: "plus") { structureSheet = .newGoal }
+            }
+        } header: {
+            Text("Jahresziele")
+        } footer: {
+            Text("Die Zahl rechts sind die Kategorien darunter. Ein Ziel mit mehr Kategorien wiegt nicht mehr. Antippen öffnet das Ziel: umbenennen, Beschreibung, Ergebnisse.")
+        }
+    }
+
+    private var categoriesSection: some View {
+        Section {
+            ForEach(sortedCategories) { category in
+                Button {
+                    editingCategory = category
+                } label: {
+                    HStack {
+                        KeyBadge(key: category.key)
+                        Text(category.title).foregroundStyle(.primary)
+                    }
+                }
+            }
+            if !goals.isEmpty {
+                Button("Kategorie hinzufügen", systemImage: "plus") { structureSheet = .newCategory }
+            }
+        } header: {
+            Text("Kategorien")
+        } footer: {
+            Text("Kategorien werden hier umbenannt und ergänzt; umhängen oder löschen geht über den Wochenplan.")
+        }
+    }
+
+    // MARK: v10 – segments and results (§1.4.2)
+
+    /// "Abschnitte": every segment of the goal year, the running one marked; "Neuen Abschnitt beginnen…".
+    private func segmentsSection(_ resolved: Segments) -> some View {
+        let current: SegmentSpan? = resolved.current(today: app.today)
+        return Section {
+            ForEach(resolved.spans, id: \.id) { span in
+                if span.isStored {
+                    Button {
+                        openSegment(span, resolved: resolved)
+                    } label: {
+                        GoalStructureRow(title: span.title, detail: GoalStructureSheet.segmentDetail(span),
+                                         tag: GoalStructureSheet.runningTag(span, current: current))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    GoalStructureRow(title: span.title, detail: GoalStructureSheet.segmentDetail(span),
+                                     tag: GoalStructureSheet.runningTag(span, current: current))
+                }
+            }
+            ForEach(hiddenSegments, id: \.id) { segment in
+                Button {
+                    structureSheet = .segment(segment, isFirst: false)
+                } label: {
+                    GoalStructureRow(title: segment.title.isEmpty ? "Abschnitt" : segment.title,
+                                     detail: GoalStructureSheet.hiddenDetail(segment), tag: "doppelt")
+                }
+                .buttonStyle(.plain)
+            }
+            if !afterSegmentStart {
+                Button("Neuen Abschnitt beginnen…", systemImage: "flag.2.crossed") { structureSheet = .wizard }
+            }
+        } header: {
+            Text("Abschnitte")
+        } footer: {
+            Text("Ein Abschnitt ist eine Version der Jahresziele. Frühere Abschnitte bleiben mit ihren Werten erhalten; abgeschlossene Wochen davor werden nicht automatisch neu gewertet.")
+        }
+    }
+
+    /// A stored segment opens its editor; the implicit "Abschnitt 1" has nothing to edit yet.
+    private func openSegment(_ span: SegmentSpan, resolved: Segments) {
+        guard span.isStored, let stored = storedSegments.first(where: { $0.id == span.id }) else { return }
+        structureSheet = .segment(stored, isFirst: span.number == 1)
+    }
+
+    /// "Ergebnisse": per goal its results with the targets; the current segment's own target ("aktualisiert"),
+    /// new from / ended after a segment.
+    private func resultsSection(_ resolved: Segments) -> some View {
+        let current: SegmentSpan? = resolved.hasSeveral ? resolved.current(today: app.today) : nil
+        // Right after "Neuen Abschnitt beginnen…" (for next week) the targets are set for the new one.
+        let upcoming: SegmentSpan? = resolved.hasSeveral ? resolved.upcoming(today: app.today) : nil
+        let targetSegment: SegmentSpan? = upcoming ?? current
+        return Section {
+            if results.isEmpty {
+                Text("Noch keine Ergebnisse – zum Beispiel „10 Bücher“, „Website online“ oder ein Zielwert.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(results, id: \.id) { result in
+                Button {
+                    structureSheet = .result(result, goalKey: result.goalKey)
+                } label: {
+                    GoalStructureRow(title: ResultTexts.choiceLabel(result),
+                                     detail: GoalStructureSheet.resultDetail(result, segment: targetSegment, segments: resolved),
+                                     tag: GoalStructureSheet.resultTag(result, segment: current, segments: resolved))
+                }
+                .buttonStyle(.plain)
+            }
+            if !goals.isEmpty {
+                Button("Ergebnis anlegen", systemImage: "plus") {
+                    structureSheet = .result(nil, goalKey: sortedGoals.first?.key ?? "")
+                }
+            }
+        } header: {
+            Text("Ergebnisse")
+        } footer: {
+            Text(GoalStructureSheet.resultsFooter(targetSegment))
         }
     }
 
@@ -692,6 +842,7 @@ struct TrashView: View {
                     }
                 }
             }
+            recordSections
         }
         .overlay {
             if trash.isEmpty {
@@ -720,6 +871,39 @@ struct TrashView: View {
             Text("Das lässt sich nicht widerrufen.")
         }
         .onAppear(perform: reload)
+    }
+
+    /// v10 (§1.1.3): results, reading-list entries and segments – their entries and readings go and
+    /// come back with them.
+    @ViewBuilder
+    private var recordSections: some View {
+        if !trash.results.isEmpty {
+            Section("Ergebnisse") {
+                ForEach(trash.results, id: \.id) { result in
+                    row(TrashRecordTexts.result(result), deletedAt: result.deletedAt, purge: TrackerStore.Trash(results: [result])) {
+                        _ = app.store.restore(result)
+                    }
+                }
+            }
+        }
+        if !trash.listItems.isEmpty {
+            Section("Leseliste") {
+                ForEach(trash.listItems, id: \.id) { item in
+                    row(TrashRecordTexts.book(item), deletedAt: item.deletedAt, purge: TrackerStore.Trash(listItems: [item])) {
+                        _ = app.store.restore(item)
+                    }
+                }
+            }
+        }
+        if !trash.segments.isEmpty {
+            Section("Abschnitte") {
+                ForEach(trash.segments, id: \.id) { segment in
+                    row(TrashRecordTexts.segment(segment), deletedAt: segment.deletedAt, purge: TrackerStore.Trash(segments: [segment])) {
+                        _ = app.store.restore(segment)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Asking before deleting for good

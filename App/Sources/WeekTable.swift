@@ -244,12 +244,16 @@ private struct WeekTableCategory: View {
                 HStack(spacing: 8) {
                     KeyBadge(key: category.key)
                         .fixedSize()
-                    Text(category.title)
+                    Text(context.title(of: category))
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
+                    if context.isGood(category) {
+                        // v10 (§1.2.3): the category's week score is above 8.
+                        GoodWeekBadge()
+                    }
                 }
-                .help("\(category.key) \(category.title)")
+                .help("\(category.key) \(context.title(of: category))")
             } cell: { day in
                 WeekTableCategoryDay(entry: context.score.category(category.key, on: day), isExcused: context.isExcused(day))
             } total: {
@@ -474,6 +478,13 @@ private struct WeekSummaryPanel: View {
                 }
             }
 
+            if context.isClosed && context.isFrozen {
+                // v10 (Grundregel 2): a closed week before the current segment – "Neu berechnen".
+                Section {
+                    FrozenWeekNote(context: context)
+                }
+            }
+
             // v9 (decision 9): both scores of a week with grades or a value laut Unterlagen.
             if context.showsArchive {
                 Section {
@@ -487,7 +498,7 @@ private struct WeekSummaryPanel: View {
             Section {
                 ForEach(context.goals) { goal in
                     GoalScoreLine(goal: goal, week: context.score.goalWeek[goal.key], isExcused: context.isGoalExcused(goal),
-                                  fallback: archiveGoalScore(goal))
+                                  fallback: archiveGoalScore(goal), title: context.title(of: goal))
                 }
             } header: {
                 Text(goalsTitle)
@@ -622,8 +633,11 @@ private struct GoalScoreLine: View {
     var isExcused = false
     /// v9: the goal's value from archive grades (a week without items).
     var fallback: Double?
+    /// v10 (§1.4.1): the goal's title in this week (a week of an earlier segment: the one of then).
+    var title: String?
 
     private var score: Double? { week?.score ?? fallback }
+    private var goalTitle: String { title ?? goal.title }
 
     /// "7,5" · "–"; v8: "entschuldigt".
     private var scoreText: String {
@@ -637,9 +651,9 @@ private struct GoalScoreLine: View {
     }
 
     private var spokenText: String {
-        if score == nil && isExcused { return "\(goal.key) \(goal.title): \(WeekScore.excusedLabel), krank oder Urlaub" }
-        guard let score else { return "\(goal.key) \(goal.title): noch keine Wertung" }
-        return "\(goal.key) \(goal.title): Wertung \(Format.score(score))"
+        if score == nil && isExcused { return "\(goal.key) \(goalTitle): \(WeekScore.excusedLabel), krank oder Urlaub" }
+        guard let score else { return "\(goal.key) \(goalTitle): noch keine Wertung" }
+        return "\(goal.key) \(goalTitle): Wertung \(Format.score(score))"
     }
 
     var body: some View {
@@ -647,7 +661,7 @@ private struct GoalScoreLine: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 KeyBadge(key: goal.key)
-                Text(goal.title)
+                Text(goalTitle)
                     .font(.caption)
                     .lineLimit(1)
                 Spacer(minLength: 4)

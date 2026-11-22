@@ -876,6 +876,8 @@ struct WeeklyGoalsPage: View {
                 Section {
                     WeeklyTargetsList(context: context)
                 }
+                // v10 (§1.2.4): the measures that feed a result – "zählt für Ziel 5 · Bücher 3/10".
+                WeeklyCountsForSection(context: context)
             }
             .compactListSections()
         }

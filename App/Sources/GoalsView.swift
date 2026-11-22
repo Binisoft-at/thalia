@@ -26,8 +26,35 @@ struct GoalsContent: View {
 
     private var period: GoalPeriod { app.store.goalPeriod }
 
+    /// v10: the year card's menu and the capture sheets opened from here.
+    @State private var sheet: GoalsSheet?
+    /// v10: "Leseliste" and "Jahresziele bearbeiten" from the year card's menu (and the CI screens).
+    @State private var showsReadingList = false
+    @State private var showsGoalSettings = false
+    @State private var launchGoal: String?
+    /// v10 (§1.2.4): the measures of the latest week with definitions, when this week has none.
+    @State private var fallbackMeasures: [MeasureRecord] = []
+
     var body: some View {
         let excused: Set<WeekKey> = excusedWeeks
+        ResultSeriesReader(results: context.activeResults, context: context) { table in
+            page(table, excused: excused)
+        }
+        .background(Color.groupedBackground)
+        .navigationDestination(isPresented: $showsReadingList) { ReadingListView() }
+        .navigationDestination(isPresented: $showsGoalSettings) { GoalYearSettingsView() }
+        .navigationDestination(item: $launchGoal) { key in GoalDetailView(goalKey: key) }
+        .sheet(item: $sheet) { sheet in
+            GoalsSheetContent(sheet: sheet)
+                .thaliaLocalSheet(app)
+        }
+        .task(id: context.measures.isEmpty) { loadFallbackMeasures() }
+        .onAppear(perform: openLaunchScreen)
+    }
+
+    /// The page: the year card, "Gerade dabei", the goal cards, earlier segments, the weighting (v10: a
+    /// function of its own, so the reader's closure stays small for the type checker).
+    private func page(_ table: ResultProgressTable, excused: Set<WeekKey>) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 yearCard
@@ -37,16 +64,14 @@ struct GoalsContent: View {
                                    symbol: "target", createTitle: "Meine Struktur einrichten",
                                    onCreate: { app.store.seedStructure() }, onImport: { app.sheet = .importPlan(prompt: true) })
                 } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
-                        ForEach(context.goals) { goal in
-                            NavigationLink {
-                                GoalDetailView(goalKey: goal.key)
-                            } label: {
-                                GoalCard(goal: goal, context: context, history: history(for: goal.key, excused: excused),
-                                         recentAverage: recentAverage(for: goal.key))
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    if !context.listItems.isEmpty {
+                        // v10 (§1.3.4): the books being read – a tap enters the progress.
+                        CurrentlyReadingCard(context: context)
+                    }
+                    goalGrid(table, excused: excused)
+                    if !context.segments.earlier(today: context.today).isEmpty {
+                        // v10 (§1.4.3): earlier segments apart, below the current one.
+                        EarlierSegmentsCard(context: context)
                     }
                     weightingCard
                 }
@@ -55,7 +80,53 @@ struct GoalsContent: View {
             .frame(maxWidth: 1100)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.groupedBackground)
+    }
+
+    /// The goal cards – read only, each opens its goal page.
+    private func goalGrid(_ table: ResultProgressTable, excused: Set<WeekKey>) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
+            ForEach(context.goals) { goal in
+                NavigationLink {
+                    GoalDetailView(goalKey: goal.key)
+                } label: {
+                    GoalCard(goal: goal, context: context, history: history(for: goal.key, excused: excused),
+                             recentAverage: recentAverage(for: goal.key), resultLine: table.cardLine(goal),
+                             measureTitles: measureTitles(goal))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// v10 (§1.2.4): "Gewicht · Protein · Schritte" – the goal's measures (this week's, else the latest week's).
+    private func measureTitles(_ goal: AnnualGoal) -> [String] {
+        if !context.measures.isEmpty { return context.goalMeasures(goal).map(\.title) }
+        return GoalResult.measures(of: goal.key, categories: context.data.categories, measures: fallbackMeasures,
+                                   results: context.activeResults).map(\.title)
+    }
+
+    private func loadFallbackMeasures() {
+        guard context.measures.isEmpty else {
+            fallbackMeasures = []
+            return
+        }
+        fallbackMeasures = app.store.latestMeasureRecords(through: context.week)
+    }
+
+    /// CI screenshots (`-DemoScreen goal-detail` / `reading`): the goal page of the books result, the reading list.
+    private func openLaunchScreen() {
+        guard app.launch.isDemo, !app.isSandbox, !GoalsLaunch.handled else { return }
+        switch app.launch.screen {
+        case "goal-detail":
+            GoalsLaunch.handled = true
+            let books: GoalResult? = context.results.first { ResultSourceType($0.resultSource) == .list }
+            launchGoal = books?.goalKey ?? context.results.first?.goalKey ?? context.goals.first?.key
+        case "reading":
+            GoalsLaunch.handled = true
+            showsReadingList = true
+        default:
+            break
+        }
     }
 
     /// v8: past weeks (last half year – the cards show 12 points) that were all sick or holiday days
@@ -80,13 +151,21 @@ struct GoalsContent: View {
         } else if context.score.isExcused {
             points.append(ScorePoint(week: context.week, score: 10, isExcused: true))
         }
+        // v10 (§1.4.3): weeks of an earlier segment stay visible, greyed like "vor KW42".
+        if context.segments.hasSeveral, let start = context.currentSegment?.startWeek {
+            for index in points.indices where points[index].week < start { points[index].isEarlierSegment = true }
+        }
         return Array(points.sorted { $0.week < $1.week }.suffix(12))
     }
 
     /// R93: "Ø 4 Wo." – the mean of the goal's last four closed weeks, while this week has no score yet.
+    /// v10 (§1.4.3): the cards count in the current segment – its weeks only, when there are several.
     private func recentAverage(for goalKey: String) -> Double? {
         guard !plans.isEmpty, context.score.goalWeek[goalKey]?.score == nil else { return nil }
-        let closed: [WeekScorePoint] = app.store.goalScoreHistory(goalKey: goalKey, through: context.week.adding(weeks: -1))
+        var closed: [WeekScorePoint] = app.store.goalScoreHistory(goalKey: goalKey, through: context.week.adding(weeks: -1))
+        if context.segments.hasSeveral, let start = context.currentSegment?.startWeek {
+            closed = closed.filter { $0.week >= start }
+        }
         let lastFour: [Double] = closed.suffix(4).map(\.score)
         guard !lastFour.isEmpty else { return nil }
         return lastFour.reduce(0, +) / Double(lastFour.count)
@@ -103,6 +182,13 @@ struct GoalsContent: View {
                 Text(verbatim: "\(period.start.day). \(DayKey.monthShort(period.start.month)) \(period.start.year) – \(period.end.day). \(DayKey.monthShort(period.end.month)) \(period.end.year)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                yearMenu
+            }
+            if context.segments.hasSeveral {
+                // v10 (§1.4.3): "Abschnitt 2 · seit KW50 · Woche 3" – the current segment, no head of its own.
+                Label(context.segmentHeadline, systemImage: "flag.2.crossed")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Brand.accent)
             }
             ProgressView(value: period.progress(on: context.today))
                 .tint(Brand.accent)
@@ -147,6 +233,65 @@ struct GoalsContent: View {
         }
         .card()
     }
+
+    /// v10: "Neuen Abschnitt beginnen…" (§1.4.2), the capture options for results and reading, the reading
+    /// list and the goal settings – from the year card.
+    private var yearMenu: some View {
+        Menu {
+            Button("Jahresziel eintragen…", systemImage: "flag.checkered") { sheet = .entry(app.captureDay) }
+            Button("Lesen…", systemImage: "bookmark") { sheet = .reading(app.captureDay) }
+            Divider()
+            Button("Leseliste", systemImage: "books.vertical") { showsReadingList = true }
+            Button("Jahresziele bearbeiten", systemImage: "pencil") { showsGoalSettings = true }
+            Divider()
+            Button("Neuen Abschnitt beginnen…", systemImage: "flag.2.crossed") { sheet = .segment }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .foregroundStyle(Brand.accent)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Jahresziele – mehr")
+    }
+}
+
+/// v10: the sheets the Ziele page opens itself.
+enum GoalsSheet: Identifiable {
+    case segment
+    case entry(DayKey)
+    case reading(DayKey)
+
+    var id: String {
+        switch self {
+        case .segment: "segment"
+        case .entry(let day): "entry-" + day.string
+        case .reading(let day): "reading-" + day.string
+        }
+    }
+}
+
+struct GoalsSheetContent: View {
+    let sheet: GoalsSheet
+
+    var body: some View {
+        switch sheet {
+        case .segment:
+            SegmentWizard()
+        case .entry(let day):
+            GoalEntrySheet(day: day)
+        case .reading(let day):
+            ReadingProgressSheet(day: day)
+        }
+    }
+}
+
+/// The CI screens of the Ziele page open once per launch.
+@MainActor
+enum GoalsLaunch {
+    static var handled = false
 }
 
 /// One annual goal: this week's score, its categories, the last weeks – in the goal's colour (R68).
@@ -156,6 +301,15 @@ struct GoalCard: View {
     let history: [ScorePoint]
     /// R93: mean of the last four closed weeks, shown while this week is "–".
     var recentAverage: Double? = nil
+    /// v10 (§1.2): "Bücher 3/10 · Website ✓" – the goal's results in the current segment.
+    var resultLine: String? = nil
+    /// v10 (§1.2.4): the goal's measures – up to three chips, "+2".
+    var measureTitles: [String] = []
+
+    private var chips: (shown: [String], more: Int) { GoalResult.chips(measureTitles) }
+
+    /// v10 (§1.2.3): "Wochen über 8: 1.1 9/12 · 1.2 7/12" in the current segment.
+    private var trackLine: String? { context.goalTrackLine(goal) }
 
     /// A week without a score yet shows how many categories are scored, with a thin arc (R68).
     private var pending: GoalWeek? {
@@ -212,11 +366,30 @@ struct GoalCard: View {
                     Text(category.title)
                         .font(.caption)
                         .lineLimit(1)
+                    if context.isGood(category) {
+                        // v10 (§1.2.3): this week's score is above 8 (live).
+                        GoodWeekBadge()
+                    }
                     Spacer()
                     Text(Format.score(context.score.categoryWeek[category.key], outOf: false))
                         .font(.caption.weight(.semibold))
                         .monospacedDigit()
                 }
+            }
+            if let trackLine {
+                Text(trackLine)
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            if let resultLine {
+                Label(resultLine, systemImage: "flag.checkered")
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+                    .foregroundStyle(goal.color)
+            }
+            if !chips.shown.isEmpty {
+                MeasureChips(titles: chips.shown, more: chips.more)
             }
             if history.count > 1 {
                 GoalScoreSparkline(points: history, tint: goal.color)
@@ -224,6 +397,35 @@ struct GoalCard: View {
         }
         .card(padding: 14)
         .contentShape(.rect)
+    }
+}
+
+/// v10 (§1.2.4): "Gewicht · Protein · Schritte" and "+2" – the measures in a goal, read only.
+struct MeasureChips: View {
+    let titles: [String]
+    let more: Int
+
+    var body: some View {
+        WrapLayout(spacing: 4) {
+            ForEach(titles, id: \.self) { title in
+                chip(title)
+            }
+            if more > 0 {
+                chip("+\(more)")
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Messwerte: " + titles.joined(separator: ", "))
+    }
+
+    private func chip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .foregroundStyle(.secondary)
+            .background(Color.secondary.opacity(0.12), in: .capsule)
     }
 }
 
@@ -238,8 +440,17 @@ struct GoalScoreSparkline: View {
     /// The weeks in order – two series would otherwise put the pale columns at the end.
     private var labels: [String] { points.map(\.label) }
 
+    /// v10: earlier segments' weeks grey, like "vor KW42".
+    private func dotTint(_ point: ScorePoint) -> Color {
+        point.isEarlierSegment ? Color.secondary : tint
+    }
+
     var body: some View {
         Chart {
+            // v10 (§1.2.3): the line at 8 – weeks at or above it have filled points.
+            RuleMark(y: .value("Wertung", GoalTrack.threshold))
+                .foregroundStyle(Color.secondary.opacity(0.4))
+                .lineStyle(StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
             ForEach(excused) { point in
                 BarMark(x: .value("Woche", point.label), y: .value("Wertung", 10.0))
                     .foregroundStyle(Color.secondary.opacity(0.16))
@@ -249,8 +460,9 @@ struct GoalScoreSparkline: View {
                     .interpolationMethod(.catmullRom)
                     .foregroundStyle(tint)
                 PointMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
-                    .symbolSize(18)
-                    .foregroundStyle(tint)
+                    .symbol {
+                        SparkDot(filled: GoalTrack.isGood(point.score), tint: dotTint(point))
+                    }
             }
         }
         .chartXScale(domain: labels)
@@ -269,6 +481,22 @@ struct GoalScoreSparkline: View {
             let value: String = point.isExcused ? WeekScore.excusedLabel : Format.score(point.score)
             return "\(point.label) \(value)"
         }.joined(separator: ", ")
+    }
+}
+
+/// v10: a point of the goal's line – filled at or above 8, a ring below.
+struct SparkDot: View {
+    let filled: Bool
+    let tint: Color
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(filled ? tint : Color.clear)
+            Circle()
+                .strokeBorder(tint, lineWidth: 1.2)
+        }
+        .frame(width: 5, height: 5)
     }
 }
 
@@ -296,76 +524,48 @@ struct GoalDetailContent: View {
     @State private var title = ""
     @State private var details = ""
     @State private var range: HistoryRange = .twelveWeeks
+    /// v10: the result editor and "Eintrag mit Datum…".
+    @State private var resultSheet: ResultSheet?
+    /// v10 (§1.2.4): the latest week's measures when this week has none.
+    @State private var fallbackMeasures: [MeasureRecord] = []
+    /// v10 (§1.4.3): the goal in each earlier segment.
+    @State private var earlier: [SegmentPageData.GoalHistoryLine] = []
+
+    /// v10 (§1.2.4): this week's measures of the goal – those of its categories, then those feeding one of
+    /// its results.
+    private var goalMeasures: [MeasureDefinition] {
+        let codes: [String] = context.goalMeasures(goal).map(\.code)
+        return codes.compactMap { code in context.measures.first { $0.code == code } }
+    }
 
     var body: some View {
-        let categories = context.categories(of: goal)
-        let categoryKeys = Set(categories.map(\.key))
-        let measures = context.measures.filter { categoryKeys.contains($0.categoryKey) }
-        List {
-            Section {
-                HStack(spacing: 16) {
-                    ScoreRing(score: context.score.goalWeek[goal.key]?.score, size: 76, caption: context.week.label, tint: goal.color)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(goal.details.isEmpty ? "Keine Beschreibung" : goal.details)
-                            .font(.subheadline)
-                        Text("Die Wertung misst Verhalten, nicht das Jahresergebnis.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+        let categories: [TrackCategory] = context.categories(of: goal)
+        let measures: [MeasureDefinition] = goalMeasures
+        ResultSeriesReader(results: context.results(of: goal), context: context) { table in
+            List {
+                headerSection
+                // v10 (§1.2.6): results with anlegen, abhaken, +1, Wert and their dated entries.
+                GoalResultsSection(goal: goal, context: context, table: table) { sheet in resultSheet = sheet }
+                weeksAboveEightSection(categories)
+                measuresSection(measures, table: table)
+                historySection(measures)
+                ForEach(categories) { category in
+                    categorySection(category)
+                }
+                if !earlier.isEmpty {
+                    earlierSection
                 }
             }
-            if !measures.isEmpty {
-                Section("Messwerte diese Woche") {
-                    ForEach(measures) { measure in
-                        LabeledContent(measure.title) {
-                            Text(context.weekValue(measure).map { value in
-                                (measure.record?.aggregation == .sum ? "" : "Ø ") + Format.measure(value, unit: measure.unit)
-                            } ?? "–")
-                            .monospacedDigit()
-                        }
-                    }
-                }
-            }
-            Section {
-                Picker("Zeitraum", selection: $range) {
-                    ForEach(HistoryRange.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                GoalHistoryCharts(goal: goal, measures: measures, range: range, context: context)
-            } header: {
-                Text("Verlauf")
-            }
-            ForEach(categories) { category in
-                let items: [PlanItem] = context.items(in: category)
-                Section {
-                    if !items.isEmpty {
-                        weekdayHeader
-                    }
-                    ForEach(items) { item in
-                        HStack {
-                            Text(item.title)
-                                .font(.subheadline)
-                            Spacer()
-                            HStack(spacing: 2) {
-                                ForEach(context.week.days, id: \.self) { day in
-                                    markCell(item, day: day)
-                                }
-                            }
-                        }
-                        .contentShape(.rect)
-                        .onTapGesture { app.sheet = .item(item, context.today) }
-                    }
-                } header: {
-                    HStack {
-                        KeyBadge(key: category.key)
-                        Text(category.title)
-                        Spacer()
-                        Text(Format.score(context.score.categoryWeek[category.key], outOf: false)).monospacedDigit()
-                    }
-                }
-            }
+        }
+        .task(id: context.measures.isEmpty) {
+            fallbackMeasures = context.measures.isEmpty ? app.store.latestMeasureRecords(through: context.week) : []
+        }
+        .task(id: earlierKey) {
+            earlier = SegmentPageData.goalHistory(goal.key, context: context, store: app.store)
+        }
+        .sheet(item: $resultSheet) { sheet in
+            ResultSheetContent(sheet: sheet)
+                .thaliaLocalSheet(app)
         }
         .navigationTitle("\(goal.key) \(goal.title)")
         .inlineNavigationTitle()
@@ -404,6 +604,198 @@ struct GoalDetailContent: View {
             .environment(app)
             .toastHost(app)
         }
+    }
+
+    // MARK: Sections
+
+    private var headerSection: some View {
+        Section {
+            HStack(spacing: 16) {
+                ScoreRing(score: context.score.goalWeek[goal.key]?.score, size: 76, caption: context.week.label, tint: goal.color)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(goal.details.isEmpty ? "Keine Beschreibung" : goal.details)
+                        .font(.subheadline)
+                    Text("Die Wertung misst Verhalten, nicht das Jahresergebnis.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if context.goalIsGood(goal) == true {
+                        Label("Diese Woche gut dabei – jede Kategorie über 8", systemImage: "checkmark.seal")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color("MarkDoneText"))
+                    }
+                }
+            }
+            if context.segments.hasSeveral {
+                Label(context.segmentHeadline, systemImage: "flag.2.crossed")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// This week's measures with "zählt für"; without any, the latest week's names.
+    @ViewBuilder
+    private func measuresSection(_ measures: [MeasureDefinition], table: ResultProgressTable) -> some View {
+        if !measures.isEmpty {
+            Section("Messwerte diese Woche") {
+                ForEach(measures) { measure in
+                    measureRow(measure, table: table)
+                }
+            }
+        } else if !fallbackMeasures.isEmpty {
+            Section {
+                ForEach(fallbackMeasures, id: \.code) { record in
+                    Text(record.title)
+                }
+            } header: {
+                Text("Messwerte")
+            } footer: {
+                Text("Diese Woche hat noch keine Messwerte – die Liste stammt aus der letzten Woche mit Plan.")
+            }
+        }
+    }
+
+    private func historySection(_ measures: [MeasureDefinition]) -> some View {
+        Section {
+            Picker("Zeitraum", selection: $range) {
+                ForEach(HistoryRange.choices(hasSegments: context.segments.hasSeveral)) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            GoalHistoryCharts(goal: goal, measures: measures, range: range, context: context)
+        } header: {
+            Text("Verlauf")
+        }
+    }
+
+    /// "Punkte dieser Woche" of one category, Mo–So.
+    private func categorySection(_ category: TrackCategory) -> some View {
+        let items: [PlanItem] = context.items(in: category)
+        return Section {
+            if !items.isEmpty {
+                weekdayHeader
+            }
+            ForEach(items) { item in
+                HStack {
+                    Text(item.title)
+                        .font(.subheadline)
+                    Spacer()
+                    HStack(spacing: 2) {
+                        ForEach(context.week.days, id: \.self) { day in
+                            markCell(item, day: day)
+                        }
+                    }
+                }
+                .contentShape(.rect)
+                .onTapGesture { app.sheet = .item(item, context.today) }
+            }
+        } header: {
+            HStack {
+                KeyBadge(key: category.key)
+                Text(category.title)
+                if context.isGood(category) {
+                    GoodWeekBadge()
+                }
+                Spacer()
+                Text(Format.score(context.score.categoryWeek[category.key], outOf: false)).monospacedDigit()
+            }
+        }
+    }
+
+    // MARK: v10 – weeks above 8, measures, earlier segments
+
+    /// "Wochen über 8" (§1.2.3): per category this week's badge and its tally in the current segment.
+    private func weeksAboveEightSection(_ categories: [TrackCategory]) -> some View {
+        Section {
+            ForEach(categories) { category in
+                HStack(spacing: 8) {
+                    KeyBadge(key: category.key)
+                    Text(category.title)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                    if context.isGood(category) {
+                        GoodWeekBadge()
+                    }
+                    Spacer(minLength: 4)
+                    Text(GoalDetailContent.tallyText(context.tally(category)))
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                }
+            }
+        } header: {
+            Text("Wochen über 8")
+        } footer: {
+            Text(weeksFooter)
+        }
+    }
+
+    /// "9/12" – weeks above 8 of the scored ones; "–" without any.
+    static func tallyText(_ tally: GoalTrack.Tally?) -> String {
+        guard let tally else { return "–" }
+        return "\(tally.good)/\(tally.scored)"
+    }
+
+    private var weeksFooter: String {
+        let scope: String = context.segments.hasSeveral ? "in \(context.currentSegment?.title ?? "diesem Abschnitt")" : "im Zieljahr"
+        return "Die letzten \(GoalTrack.recentWeeks) abgeschlossenen Wochen \(scope): eine Kategorie ist gut dabei ab einer Note von 8,00. Entschuldigte Wochen zählen nicht."
+    }
+
+    /// A measure with its week value and, below, the results it feeds ("zählt für Ziel 5 · Bücher 3/10").
+    private func measureRow(_ measure: MeasureDefinition, table: ResultProgressTable) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            LabeledContent(measure.title) {
+                Text(GoalDetailContent.weekValueText(measure, context: context))
+                    .monospacedDigit()
+            }
+            ForEach(table.countsFor(measure), id: \.self) { line in
+                Label(line, systemImage: "flag.checkered")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// "Ø 86,4 kg · Ziel ≤ 85", "12 Seiten" (a sum), "–" (§1.2.4: week value and target).
+    static func weekValueText(_ measure: MeasureDefinition, context: WeekContext) -> String {
+        let target: String = measure.record?.target.map { " · Ziel \($0.label)" } ?? ""
+        guard let value = context.weekValue(measure) else { return "–" + target }
+        let prefix: String = measure.record?.aggregation == .sum ? "" : "Ø "
+        return prefix + Format.measure(value, unit: measure.unit) + target
+    }
+
+    /// "Frühere Abschnitte" (§1.4.3): the goal in each earlier segment – greyed, never hidden.
+    private var earlierSection: some View {
+        Section {
+            ForEach(earlier) { line in
+                NavigationLink {
+                    SegmentPage(spanID: line.span.id)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(GoalDetailContent.earlierTitle(line, goal: goal))
+                            .font(.subheadline.weight(.semibold))
+                        Text(line.line)
+                            .font(.caption)
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Frühere Abschnitte")
+        }
+    }
+
+    /// "Abschnitt 1 · KW45–KW49", with the goal's title then when it was different.
+    static func earlierTitle(_ line: SegmentPageData.GoalHistoryLine, goal: AnnualGoal) -> String {
+        let base: String = "\(line.span.title) · \(line.span.weeksLabel)"
+        guard !line.title.isEmpty, line.title != goal.title else { return base }
+        return base + " · damals „\(line.title)“"
+    }
+
+    private var earlierKey: String {
+        let spans: String = context.segments.spans.map(\.id).joined(separator: ",")
+        return "\(spans)|\(context.today.string)|\(context.storedCategoryWeeks.count)"
     }
 
     // MARK: Days (R69)
@@ -471,10 +863,26 @@ struct GoalReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var report: PeriodReport?
     @State private var copied = false
+    /// v10 (§1.4.3): the review covers the current segment or the whole goal year.
+    @State private var scope: GoalReviewScope?
+    @State private var segments: Segments?
+    /// v10 (§1.2.5): the results of the current segment (no Health values).
+    @State private var results: [GoalResultLine] = []
+    @State private var showsSegmentWizard = false
 
     init() {}
 
     private var period: GoalPeriod { app.store.goalPeriod }
+
+    /// The current segment while the review covers it; nil for the goal year.
+    private var segment: SegmentSpan? {
+        guard scope == .segment, let segments, segments.hasSeveral else { return nil }
+        return segments.current(today: app.today)
+    }
+
+    private var scopeBinding: Binding<GoalReviewScope> {
+        Binding(get: { scope ?? .goalYear }, set: { scope = $0 })
+    }
 
     var body: some View {
         NavigationStack {
@@ -499,22 +907,37 @@ struct GoalReviewView: View {
                     .disabled(report == nil)
                 }
             }
-            .task {
-                guard report == nil else { return }
-                report = app.store.periodReport(period: period, through: app.today.week)
-            }
+            .task(id: scope) { load() }
+        }
+        .sheet(isPresented: $showsSegmentWizard) {
+            SegmentWizard()
+                .thaliaLocalSheet(app)
         }
         .thaliaSheetFrame(width: 620, height: 760)
     }
 
+    /// The first look picks the current segment when the goal year has several (the focus), else the year.
+    private func load() {
+        let store: TrackerStore = app.store
+        if segments == nil { segments = store.segments() }
+        if scope == nil {
+            scope = (segments?.hasSeveral ?? false) ? .segment : .goalYear
+            return
+        }
+        report = store.periodReport(period: period, through: app.today.week, from: segment?.startWeek)
+        results = store.resultLines(today: app.today)
+        copied = false
+    }
+
     private func copyReport() {
         guard let report else { return }
-        Clipboard.copy(report.markdown(period: period))
+        Clipboard.copy(report.markdown(period: period, segment: segment, results: results))
         copied = true
     }
 
     private func content(_ report: PeriodReport) -> some View {
         Form {
+            scopeSection
             Section {
                 Text(spanText(report))
                     .font(.subheadline)
@@ -527,6 +950,8 @@ struct GoalReviewView: View {
             } footer: {
                 Text("Die Wertungen messen Verhalten, nicht Ergebnisse. „Bericht kopieren“ nimmt alles mit – für das Gespräch zur Zielüberprüfung.")
             }
+
+            resultsSection
 
             Section {
                 if report.goals.isEmpty {
@@ -607,14 +1032,76 @@ struct GoalReviewView: View {
             } header: {
                 Text("Geparkte Ideen")
             }
+
+            // v10 (§1.4.2): after the review, the goals for the next segment.
+            segmentStartSection
         }
         .formStyle(.grouped)
     }
 
-    /// "Zieljahr seit Montag, 2. November 2026 · ausgewertet KW45 bis KW47".
+    /// v10 (§1.4.3): "Abschnitt 2 · Zieljahr" when the goal year has several segments.
+    @ViewBuilder
+    private var scopeSection: some View {
+        if let segments, segments.hasSeveral {
+            Section {
+                Picker("Zeitraum", selection: scopeBinding) {
+                    ForEach(GoalReviewScope.allCases) { choice in
+                        Text(choice.title(segments.current(today: app.today))).tag(choice)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+    }
+
+    /// v10 (§1.2.5): the results with their state (no Health values).
+    @ViewBuilder
+    private var resultsSection: some View {
+        if !results.isEmpty {
+            Section {
+                ForEach(results, id: \.markdown) { line in
+                    GoalReviewView.resultRow(line)
+                }
+            } header: {
+                Text("Ergebnisse")
+            }
+        }
+    }
+
+    static func resultRow(_ line: GoalResultLine) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(line.goalKey) · \(line.title)")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 6)
+                Text(line.status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Text(line.text)
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var segmentStartSection: some View {
+        Section {
+            Button {
+                showsSegmentWizard = true
+            } label: {
+                Label("Neuen Abschnitt beginnen…", systemImage: "flag.2.crossed")
+            }
+        } footer: {
+            Text("Ziele aktualisieren und für den nächsten Abschnitt neu festlegen – was bisher geleistet wurde, bleibt erhalten.")
+        }
+    }
+
+    /// "Zieljahr seit Montag, 2. November 2026 · ausgewertet KW45 bis KW47"; v10: "Abschnitt 2 seit KW50 · …".
     private func spanText(_ report: PeriodReport) -> String {
-        guard !report.goals.isEmpty || !report.work.isEmpty else { return "Zieljahr seit \(period.start.longLabel)" }
-        return "Zieljahr seit \(period.start.longLabel) · ausgewertet \(report.start.label) bis \(report.end.label)"
+        let base: String = segment.map { "\($0.title) seit \($0.startWeek.longLabel)" } ?? "Zieljahr seit \(period.start.longLabel)"
+        guard !report.goals.isEmpty || !report.work.isEmpty else { return base }
+        return "\(base) · ausgewertet \(report.start.label) bis \(report.end.label)"
     }
 
     private func goalRow(_ line: PeriodReport.GoalLine) -> some View {
@@ -684,11 +1171,25 @@ struct GoalReviewView: View {
     }
 }
 
+/// v10 (§1.4.3): "Abschnitt 2" or "Zieljahr" in the goal review.
+enum GoalReviewScope: String, CaseIterable, Identifiable {
+    case segment, goalYear
+
+    var id: String { rawValue }
+
+    func title(_ current: SegmentSpan?) -> String {
+        switch self {
+        case .segment: current?.title ?? "Abschnitt"
+        case .goalYear: "Zieljahr"
+        }
+    }
+}
+
 // MARK: History (R93)
 
-/// "12 Wochen · Halbjahr · Zieljahr".
+/// "12 Wochen · Halbjahr · Abschnitt · Zieljahr".
 enum HistoryRange: String, CaseIterable, Identifiable {
-    case twelveWeeks, halfYear, goalYear
+    case twelveWeeks, halfYear, segment, goalYear
 
     var id: String { rawValue }
 
@@ -696,20 +1197,43 @@ enum HistoryRange: String, CaseIterable, Identifiable {
         switch self {
         case .twelveWeeks: "12 Wochen"
         case .halfYear: "Halbjahr"
+        case .segment: "Abschnitt"
         case .goalYear: "Zieljahr"
         }
     }
 
-    /// The first week shown, up to `week`.
-    func firstWeek(through week: WeekKey, period: GoalPeriod) -> WeekKey {
+    /// v10 (§1.4.3): "Abschnitt" only when the goal year has more than one.
+    static func choices(hasSegments: Bool) -> [HistoryRange] {
+        hasSegments ? allCases : allCases.filter { $0 != .segment }
+    }
+
+    /// The first week shown, up to `week`; `segment` is the current one (v10).
+    func firstWeek(through week: WeekKey, period: GoalPeriod, segment: SegmentSpan? = nil) -> WeekKey {
         switch self {
         case .twelveWeeks:
             return week.adding(weeks: -11)
         case .halfYear:
             return week.adding(weeks: -25)
+        case .segment:
+            let start: WeekKey = segment?.startWeek ?? period.start.week
+            return start < week ? start : week
         case .goalYear:
             let start: WeekKey = period.start.week
             return start < week ? start : week
+        }
+    }
+}
+
+/// v10 (§1.4.3): a segment's start in a chart – a line with its name.
+struct SegmentBoundary: Identifiable {
+    let date: Date
+    let title: String
+    var id: String { title + "|" + String(date.timeIntervalSince1970) }
+
+    /// The starts of the segments after the first one, from `first` through `last`.
+    static func boundaries(_ segments: Segments, from first: WeekKey, through last: WeekKey) -> [SegmentBoundary] {
+        segments.spans.dropFirst().filter { $0.startWeek > first && $0.startWeek <= last }.map { span in
+            SegmentBoundary(date: span.startWeek.monday.date(minutes: 0), title: span.title)
         }
     }
 }
@@ -746,6 +1270,8 @@ struct GoalHistoryCharts: View {
     /// v8: weeks of only sick or holiday days – a pale column ("entschuldigt") instead of a gap.
     @State private var excusedScores: [HistoryValue] = []
     @State private var histories: [MeasureHistory] = []
+    /// v10 (§1.4.3): the starts of later segments in the range – a line with the segment's name.
+    @State private var boundaries: [SegmentBoundary] = []
     @State private var loaded = false
 
     private var loadKey: String {
@@ -784,6 +1310,16 @@ struct GoalHistoryCharts: View {
                         PointMark(x: .value("Woche", point.date), y: .value("Wertung", point.value))
                             .symbolSize(16)
                             .foregroundStyle(goal.color)
+                    }
+                    ForEach(boundaries) { boundary in
+                        RuleMark(x: .value("Woche", boundary.date))
+                            .foregroundStyle(Color.secondary.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                            .annotation(position: .top, alignment: .leading) {
+                                Text(boundary.title)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                     }
                 }
                 .chartYScale(domain: 0...10)
@@ -859,7 +1395,8 @@ struct GoalHistoryCharts: View {
 
     private func load() {
         let period: GoalPeriod = app.store.goalPeriod
-        let first: WeekKey = range.firstWeek(through: context.week, period: period)
+        let first: WeekKey = range.firstWeek(through: context.week, period: period, segment: context.currentSegment)
+        boundaries = SegmentBoundary.boundaries(context.segments, from: first, through: context.week)
         scores = app.store.goalScoreHistory(goalKey: goal.key, through: context.week)
             .filter { $0.week >= first }
             .map { HistoryValue(date: $0.week.monday.date(minutes: 720), value: $0.score) }
@@ -992,6 +1529,8 @@ struct ScorePoint: Identifiable {
     var isUnclosed = false
     /// v8: a week that was all sick or holiday days – no score on purpose ("entschuldigt", not a gap).
     var isExcused = false
+    /// v10 (§1.4.3): a week before the current segment – shown greyed, not hidden.
+    var isEarlierSegment = false
     var id: String { week.string }
     var label: String { week.label }
 

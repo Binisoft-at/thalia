@@ -70,7 +70,33 @@ extension TrackerStore {
         let scores = all(ScoreOverride.self).filter { $0.deletedAt == nil }.latest(by: \.key, modified: \.modifiedAt)
         for score in scores.values { if let record = score.record { state.scores[record.key] = record } }
         state.archiveGrades = storedArchives()
+        state.records = storedRecordRows()
         return state
+    }
+
+    /// v10 (§1.1.4): every stored v10 record – results, entries, segments, the reading list, mappings,
+    /// the inbox (`x.`, Thalia never deletes it) and the category week scores – the newest copy of each
+    /// key, as `record` rows of the backup. One prefix query per kind.
+    func storedRecordRows() -> [String: SettingRow] {
+        var settings: [StoredSetting] = []
+        for prefix in SettingKeys.all { settings += self.settings(prefix: prefix).map(\.stored) }
+        var rows: [String: SettingRow] = [:]
+        for (key, setting) in SettingRecords.newest(settings) where !setting.value.isEmpty {
+            // The inbox only with facts recorded in the source app (5.1.3(ii)) – also when a copy stored
+            // by an earlier build of v10 still holds others; an unreadable day file stays out.
+            guard let value = ExchangeInbox.syncableValue(setting.value, key: key) else { continue }
+            rows[key] = SettingRow(key: key, value: value)
+        }
+        // A day of the inbox with two copies (two devices before they synced): the copy the weeks read
+        // (`ExchangeInbox.isPreferred`), not the one written last – a restore shows the same values.
+        let days: [String: [StoredSetting]] = Dictionary(grouping: settings.filter { ExchangeInbox.parse(settingKey: $0.key) != nil }, by: \.key)
+        let doubled: [StoredSetting] = days.values.filter { $0.count > 1 }.flatMap { $0 }
+        for file in ExchangeInbox.files(from: doubled) {
+            guard let day = DayKey(file.day) else { continue }
+            let key = ExchangeInbox.settingKey(source: file.source, day: day)
+            rows[key] = SettingRow(key: key, value: ExchangeInbox.value(ExchangeInbox.syncable(file)))
+        }
+        return rows
     }
 
     func preview(_ text: String) -> ImportPreview {
@@ -90,6 +116,25 @@ extension TrackerStore {
         var week: WeekKey?
         /// v9: when the import was saved – Undo keeps a snapshot of what was edited in a week after it.
         var finishedAt: Date?
+        /// v10 (Grundregel 2): closed weeks the import changed but didn't score again – they lie before the
+        /// current segment; "Neu berechnen" in the week does it.
+        var frozenWeeks: Set<WeekKey> = []
+
+        /// "KW40, KW41: nicht neu gewertet – früherer Abschnitt („Neu berechnen“ in der Woche)"; nil without.
+        var frozenHint: String? {
+            guard !frozenWeeks.isEmpty else { return nil }
+            let weeks = frozenWeeks.sorted().map(\.label).joined(separator: ", ")
+            return "\(weeks): nicht neu gewertet – früherer Abschnitt (\u{201E}Neu berechnen\u{201C} in der Woche)"
+        }
+
+        /// The short form for the second line of the toast after the import: "KW40, KW41 nicht neu gewertet" –
+        /// one line on an iPhone too (the toast has two); the week itself says why and offers "Neu berechnen".
+        var frozenToast: String? {
+            guard !frozenWeeks.isEmpty else { return nil }
+            let weeks = frozenWeeks.sorted().map(\.label)
+            let shown = weeks.count > 3 ? "\(weeks.prefix(3).joined(separator: ", ")) …" : weeks.joined(separator: ", ")
+            return "\(shown) nicht neu gewertet"
+        }
 
         var summary: String {
             var parts = ["\(created) neu", "\(updated) aktualisiert"]
@@ -333,6 +378,21 @@ extension TrackerStore {
         result.created += preview.grades.creates
         result.updated += preview.grades.updates
 
+        // v10 (§1.1.4): stored records of a backup (`record` rows) by key – a stored copy with a newer
+        // `modifiedAt` stays (the preview counts it as unchanged). The inbox comes back the same way.
+        if preview.records.hasChanges {
+            var change = RecordChange()
+            for entry in preview.records.entries where entry.action != .unchanged {
+                var value: String = entry.record.value
+                // `x.sources` is merged, never replaced: a source connected after the backup stays known.
+                if entry.record.key == ExchangeInbox.sourcesKey {
+                    value = exchangeSources().merging(ExchangeSourceList(value: value)).value
+                }
+                writeSetting(entry.record.key, value, now: now, change: &change)
+                if entry.action == .create { result.created += 1 } else { result.updated += 1 }
+            }
+        }
+
         // Closed days from the file (R27) and from the caller (demo, tour).
         let daysToClose = Set(closedDays).union(preview.newClosedDays)
         if !daysToClose.isEmpty || !closedWeeks.isEmpty {
@@ -348,17 +408,30 @@ extension TrackerStore {
 
         result.week = preview.primaryWeek
         AppLog.info("Import: \(result.created) new, \(result.updated) updated, \(result.removedItems.count) removed, \(preview.document.skipped.count) skipped", category: "import")
-        save()
-        // Closed weeks from the file get their score like any closed week (R27).
-        for week in preview.newClosedWeeks where !(plan(week)?.isClosed ?? false) { closeWeek(week) }
+        // v10 (Grundregel 2): closed weeks before the current segment keep their score.
+        result.frozenWeeks = commit(rescoring: [])
+        // Closed weeks from the file get their score like any closed week (R27) – closing a week isn't
+        // scoring it again, so this happens in an earlier segment too.
+        var closedNow: Set<WeekKey> = []
+        for week in preview.newClosedWeeks where !(plan(week)?.isClosed ?? false) {
+            closeWeek(week)
+            closedNow.insert(week)
+        }
         // v9: a closed week without items whose grades changed gets its recalculation again (the save
-        // before the closings doesn't see the change).
+        // before the closings doesn't see the change) – v10: not before the current segment.
         var rescored = false
+        let isFrozen = freezeRule()
         for week in preview.archiveUpdates.keys.sorted() {
             guard let plan = plan(week), plan.isClosed, self.items(week).isEmpty else { continue }
+            if isFrozen(week) {
+                result.frozenWeeks.insert(week)
+                continue
+            }
             if storeFinalScore(plan) { rescored = true }
         }
-        if rescored { save() }
+        if rescored { result.frozenWeeks.formUnion(commit(rescoring: [])) }
+        // A week closed just now got its score: it isn't left as it was.
+        result.frozenWeeks.subtract(closedNow)
         result.finishedAt = Date()
         return result
     }
@@ -366,9 +439,10 @@ extension TrackerStore {
     // MARK: Archive grades (v9, decision 7)
 
     /// Every week's archive grades (settings `archive.<week>`, the newest copy of each), weeks with an
-    /// empty archive left out. Few settings exist, so they are filtered in memory.
+    /// empty archive left out. v10: one prefix query (§1.1.2) – the settings hold the inbox and the
+    /// goals' records too.
     func storedArchives() -> [WeekKey: ArchiveWeek] {
-        let settings = all(AppSetting.self).filter { $0.key.hasPrefix(ArchiveWeek.settingPrefix) }
+        let settings = settings(prefix: ArchiveWeek.settingPrefix)
         var result: [WeekKey: ArchiveWeek] = [:]
         for (key, setting) in settings.latest(by: \.key, modified: \.modifiedAt) {
             guard let week = ArchiveWeek.week(settingKey: key) else { continue }
@@ -396,7 +470,7 @@ extension TrackerStore {
     /// empty archive deletes them all. Unchanged values are left alone.
     private func writeArchive(_ archive: ArchiveWeek?, week: WeekKey, now: Date) {
         let key = ArchiveWeek.settingKey(week)
-        let copies = all(AppSetting.self).filter { $0.key == key }.sorted { $0.modifiedAt > $1.modifiedAt }
+        let copies = settings(keys: [key]).sorted { $0.modifiedAt > $1.modifiedAt }
         var stored: ArchiveWeek? = archive
         if let archive, archive.week != week {
             // Grades always belong to the setting's week.
@@ -484,6 +558,8 @@ extension TrackerStore {
             day.modifiedAt = now
         }
         if completely { writeArchive(nil, week: week, now: now) }
+        // v10: the computed category scores go with the final score (a restore closes the week again).
+        if !items.isEmpty || completely { writeCategoryScores([:], week: week, now: now) }
         // Every copy of the week row (sync duplicates): merging them later must not bring back a closing
         // or a value laut Unterlagen from an older copy.
         for plan in allPlans() where plan.weekKey == key && plan.deletedAt == nil {
@@ -572,8 +648,7 @@ extension TrackerStore {
         if all(ItemMark.self).contains(where: { $0.weekKey == key && $0.modifiedAt > date }) { return true }
         if all(MeasureEntry.self).contains(where: { dayKeys.contains($0.dayKey) && $0.modifiedAt > date }) { return true }
         if all(ScoreOverride.self).contains(where: { dayKeys.contains($0.dayKey) && $0.modifiedAt > date }) { return true }
-        let setting = ArchiveWeek.settingKey(week)
-        return all(AppSetting.self).contains { $0.key == setting && $0.modifiedAt > date }
+        return settings(keys: [ArchiveWeek.settingKey(week)]).contains { $0.modifiedAt > date }
     }
 
     /// Everything (or some weeks) in the import format – backup, sharing with the planning AI, editing elsewhere.
@@ -593,7 +668,9 @@ extension TrackerStore {
         doc.days = state.days.values.filter { keep(day: $0.day) && (!$0.dayType.isEmpty || !$0.note.isEmpty) }
         doc.items = state.items.values.filter { keep($0.week) }
         doc.measures = state.measures.values.filter { keep($0.week) }
-        doc.marks = state.marks.values.filter { keep($0.week) && $0.mark != nil }
+        // v10: a cleared mark that keeps a connected app's ✓ away (or holds a note) comes along, so a
+        // restore or an Undo of an import brings the clear back (Grundregel 1).
+        doc.marks = MarkRecord.exported(state.marks.values.filter { keep($0.week) }, items: doc.items, measures: doc.measures)
         doc.entries = state.entries.values.filter { keep(day: $0.day) }
         doc.work = state.work.values.filter { keep(day: $0.day) }
         doc.notes = state.notes.values.filter { keep(day: $0.day) }
@@ -607,6 +684,9 @@ extension TrackerStore {
         doc.closedDays = state.closedDays.filter { keep(day: $0) }
         doc.closedWeeks = state.closedWeeks.filter { keep($0) }
         doc.addArchives(state.archiveGrades.values.filter { keep($0.week) }.sorted { $0.week < $1.week })
+        // v10 (§1.1.4): the backup ("Alles als CSV") carries every v10 record, the inbox included; an
+        // export of some weeks (a week for ChatGPT, an archive snapshot) none.
+        if weeks == nil { doc.records = state.records.values.sorted { $0.key < $1.key } }
         return doc
     }
 

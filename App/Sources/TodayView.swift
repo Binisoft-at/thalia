@@ -37,6 +37,7 @@ extension WeekContext {
             items.contains { $0.categoryKey == category.key && applies($0, on: day) }
                 || measures.contains { $0.categoryKey == category.key && applies($0, on: day) }
                 || work.contains { $0.categoryKey == category.key && $0.dayKey == day.string }
+                || derivedWork(on: day).contains { $0.categoryKey == category.key }
         }
     }
 
@@ -953,7 +954,9 @@ struct CategoryPage: View {
     private var showsWorkSection: Bool {
         let key: String = category.key
         let isWorkCategory: Bool = context.measures.contains { $0.record?.source == .work(category: key) }
+        // v10: power-hours "aus Theo" show here too.
         return isWorkCategory || context.work(on: day).contains { $0.categoryKey == key }
+            || context.derivedWork(on: day).contains { $0.categoryKey == key }
     }
 
     var body: some View {
@@ -1008,6 +1011,8 @@ struct CategoryPage: View {
                 ForEach(context.work(on: day).filter { $0.categoryKey == category.key }) { block in
                     InlineWorkRow(block: block, categoryTitle: category.title)
                 }
+                // v10 (§1.5.3): computed from another app, read only – "Übernehmen" makes an own block of it.
+                DerivedWorkRows(context: context, day: day, category: category)
                 NewWorkRow(categoryKey: category.key, day: day)
             } header: {
                 Text("Power-Hours heute")
@@ -1043,6 +1048,8 @@ struct CategoryPage: View {
                         ForEach(context.expenseEntries(measure, on: day)) { expense in
                             ExpenseEntryRow(entry: expense, onEdit: { editingExpense = expense })
                         }
+                        // v10: spending from another app ("aus Finn – in Finn ändern"), read only.
+                        AppExpenseRows(context: context, measure: measure, day: day)
                     } else {
                         MeasureRow(measure: measure, context: context, day: day,
                                    healthSuggestion: healthSuggestion(for: measure),
@@ -1353,6 +1360,7 @@ struct ItemMarkRow: View {
     /// Title, kind, week progress and the mark's note.
     private var details: some View {
         let note: String = context.markNote(item, on: day)
+        let derived: String? = context.derivedMarkLabel(item, on: day)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(item.title)
@@ -1375,6 +1383,10 @@ struct ItemMarkRow: View {
                 .accessibilityLabel("Details zu \(item.title)")
             }
             meta
+            if let derived {
+                // v10 (§1.5.3): the ✓ comes from a connected app while there is no own mark.
+                DerivedMarkNote(label: derived)
+            }
             if !note.isEmpty {
                 Text(note)
                     .font(.caption)
@@ -1748,6 +1760,12 @@ struct MeasureRow: View {
         if isWeekly {
             parts.append("Woche \(context.weekValue(measure).map { Format.measure($0, unit: measure.unit) } ?? "0")")
         }
+        // v10: a value from a connected app or the reading list says where it comes from.
+        if let source = context.valueSource(measure, on: day) {
+            parts.append(ConnectedAppsTexts.fromSource(source))
+        } else if record?.source.listKind != nil {
+            parts.append("aus der Leseliste")
+        }
         if measure.isSecondary { parts.append("Nebensache") }
         return parts.joined(separator: " · ")
     }
@@ -1760,6 +1778,11 @@ struct MeasureMenu: View {
     let day: DayKey
     @Environment(AppModel.self) private var app
 
+    /// v10: the day's value is an own one – not the reading list's, not only a connected app's.
+    private var hasOwnValue: Bool {
+        measure.record?.source.listKind == nil && context.valueSource(measure, on: day) == nil
+    }
+
     var body: some View {
         Button("Verlauf und Einträge…", systemImage: "chart.bar") { app.sheet = .measure(code: measure.code, day: day) }
         Button("Messwert bearbeiten…", systemImage: "pencil") { app.sheet = .editMeasure(measure, day.week, categoryKey: measure.categoryKey) }
@@ -1769,8 +1792,12 @@ struct MeasureMenu: View {
             Button("Als Nebensache", systemImage: "square.stack") { app.store.setSecondary(measure, true) }
         }
         // R2: spendings are deleted one by one, work comes from power-hours – neither is cleared here.
-        if context.dayValue(measure, on: day) != nil, measure.record?.isWork != true, !context.isExpense(measure) {
+        if context.dayValue(measure, on: day) != nil, measure.record?.isWork != true, !context.isExpense(measure), hasOwnValue {
             Button("Wert leeren", systemImage: "xmark.circle") { app.setValue(nil, for: measure, day: day) }
+        }
+        // v10: the reading list's pages are entered in "Lesen".
+        if measure.record?.source.listKind != nil {
+            Button("Lesen…", systemImage: "book") { app.sheet = .reading(day, itemID: nil) }
         }
     }
 }
@@ -1821,6 +1848,9 @@ struct MeasureInput: View {
                     .accessibilityLabel("Power-Hours für \(measure.title) mit Beschreibung erfassen")
                 }
             }
+        } else if record?.source.listKind != nil {
+            // v10 (§1.3.3): the pages are entered once, in the reading list.
+            ReadingMeasureInput(measure: measure, context: context, day: day)
         } else if context.isExpense(measure) {
             Button {
                 app.sheet = .expenses(day)
@@ -2095,6 +2125,8 @@ struct WeeklyGoalRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            // v10 (§1.2.4): "zählt für Ziel 5 · Bücher 3/10".
+            CountsForLines(measure: goal.measure, context: context)
             if !isWork {
                 HStack {
                     Text("Heute eintragen")
@@ -2308,6 +2340,9 @@ struct DayPageSections: View {
                 Text("Die Tageswertung erscheint, wenn der Tag abgeschlossen ist.")
             }
         }
+
+        // v10 (§1.5.3): power-hours from another app without a category – shown, counted nowhere.
+        UnassignedWorkSection(context: context, day: day)
 
         if showsMeasures, !loose.isEmpty {
             Section("Weitere Messwerte") {

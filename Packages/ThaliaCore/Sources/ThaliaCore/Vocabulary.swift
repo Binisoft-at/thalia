@@ -392,11 +392,18 @@ public enum MeasureSource: Equatable, Sendable {
     case work(category: String)
     /// Apple Health suggests a value; the person confirms or overrides it.
     case health(HealthKind)
-    /// A source this build doesn't know ("app:nina:kcal", "list:buch", "health:carbs" from a newer build). It
-    /// behaves like `manual`, but the text is kept unchanged, so saving the measure here never erases it.
+    /// A connected app's facts (v10, "app:george:workout=tpl-1", "app:nina:kcal", "app:theo:task"): computed
+    /// from the inbox, never stored as own entries (`ExchangeDerivation`).
+    case app(AppSource)
+    /// Read from the reading list (v10, "list:buch"): the day's value is the amount read in all entries of
+    /// that kind (`ListMath`).
+    case list(kind: String)
+    /// A source this build doesn't know ("health:carbs", "x:…" from a newer build). It behaves like
+    /// `manual`, but the text is kept unchanged, so saving the measure here never erases it.
     case other(String)
 
-    /// "", "arbeit:3.2", "health:sleep"; unknown "prefix:…" texts are kept as `other`.
+    /// "", "arbeit:3.2", "health:sleep", "app:nina:kcal", "list:buch"; unknown "prefix:…" texts are kept as
+    /// `other` (also an "app:…" or "list:…" text that can't be read).
     public init(raw: String) {
         let t = raw.trimmingCharacters(in: .whitespaces)
         let lower = t.lowercased()
@@ -405,6 +412,11 @@ public enum MeasureSource: Equatable, Sendable {
         } else if lower.hasPrefix("health:") || lower.hasPrefix("gesundheit:") {
             let kind = String(lower[lower.index(after: lower.firstIndex(of: ":")!)...])
             self = HealthKind(token: kind).map(MeasureSource.health) ?? .other(t)
+        } else if lower.hasPrefix(AppSource.prefix) {
+            self = AppSource(raw: t).map(MeasureSource.app) ?? .other(t)
+        } else if lower.hasPrefix(MeasureSource.listPrefix) {
+            let kind = ListItem.kindKey(String(t.dropFirst(MeasureSource.listPrefix.count)))
+            self = kind.isEmpty ? .other(t) : .list(kind: kind)
         } else if t.contains(":") {
             self = .other(t)
         } else {
@@ -417,6 +429,57 @@ public enum MeasureSource: Equatable, Sendable {
         case .manual: ""
         case .work(let category): "arbeit:\(category)"
         case .health(let kind): "health:\(kind.rawValue)"
+        case .app(let source): source.raw
+        case .list(let kind): MeasureSource.listPrefix + kind
+        case .other(let text): text
+        }
+    }
+
+    /// "list:"
+    public static let listPrefix = "list:"
+
+    /// The connected app's source, if any.
+    public var appSource: AppSource? {
+        if case .app(let source) = self { return source }
+        return nil
+    }
+
+    /// The reading-list kind ("buch"), if any.
+    public var listKind: String? {
+        if case .list(let kind) = self { return kind }
+        return nil
+    }
+
+    /// The value is computed (power-hours, a connected app, the reading list) – the "+" of such a
+    /// measure doesn't simply add an own entry.
+    public var isComputed: Bool {
+        switch self {
+        case .work, .app, .list: return true
+        default: return false
+        }
+    }
+
+    /// For the measure editor's "Quelle" (v10): "Manuell", "Power-Hours", "Apple Health", "Leseliste",
+    /// "Verbundene App", "Andere Quelle".
+    public var choiceLabel: String {
+        switch self {
+        case .manual: "Manuell"
+        case .work: "Power-Hours"
+        case .health: "Apple Health"
+        case .list: "Leseliste"
+        case .app: "Verbundene App"
+        case .other: "Andere Quelle"
+        }
+    }
+
+    /// "Leseliste · Buch", "George · workout = tpl-1", "Apple Health · Schritte", "Power-Hours · 3.2"; "" for manual.
+    public var label: String {
+        switch self {
+        case .manual: ""
+        case .work(let category): "Power-Hours · \(category)"
+        case .health(let kind): "Apple Health · \(kind.label)"
+        case .list(let kind): "Leseliste · \(ListItem.kindTitle(kind))"
+        case .app(let source): source.label
         case .other(let text): text
         }
     }

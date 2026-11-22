@@ -17,7 +17,8 @@ let package = Package(
             name: "ThaliaCore",
             dependencies: [.product(name: "BinisoftKitCore", package: "BinisoftKit")]
         ),
-        .testTarget(name: "ThaliaCoreTests", dependencies: ["ThaliaCore"]),
+        // v10: the exchange fixtures (Fixtures/exchange/<App>/exchange/…), also the test files for other apps.
+        .testTarget(name: "ThaliaCoreTests", dependencies: ["ThaliaCore"], resources: [.copy("Fixtures")]),
     ],
     swiftLanguageModes: [.v5]
 )

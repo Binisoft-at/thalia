@@ -107,7 +107,24 @@ struct WeekContext {
     /// closed shows it too; nil without grades.
     let archiveRecalculation: ArchiveRecalculation?
 
-    /// `settings`: the week's archive setting (`ArchiveWeek.settingKey`), other settings are ignored.
+    // v10 (TASKS-v10 §1.2–1.5)
+    /// The goal year (settings `goal.start` …; the foundation year without them).
+    let goalPeriod: GoalPeriod
+    /// Thalia's mappings of other apps' groups to categories.
+    let linkRules: [LinkRule]
+    /// The sources seen (`x.sources`) and their day files of this week (`x.<source>.<day>`).
+    let exchangeSources: ExchangeSourceList
+    let inbox: [ExchangeDayFile]
+    /// What the connected apps and the reading list add – computed, never stored (Grundregel 1): own
+    /// records always win. `entryRecords`, `workRecords` and the marks the scoring sees come from here.
+    let extras: WeekExtras
+    /// The goal year's records, decoded on first use (`segments`, `results`, `goalEntries`, `listItems`,
+    /// `listProgress`, `storedCategoryWeeks`) – a screen that shows none of them never decodes them.
+    private let records: WeekRecords
+
+    /// `settings`: the week's archive setting (`ArchiveWeek.settingKey`); v10: the goal year (`goal.`),
+    /// the reading list (`list.`), the mappings (`link.rule.`), the category week scores (`score.`), the
+    /// known sources (`x.sources`) and the week's day files from the inbox. Other settings are ignored.
     init(week: WeekKey, today: DayKey, plans: [WeekPlan], goals: [AnnualGoal], categories: [TrackCategory], items: [PlanItem],
          measures: [MeasureDefinition], marks: [ItemMark], days: [PlanDay], entries: [MeasureEntry], health: [HealthValue],
          work: [WorkBlock], notes: [DayNote], overrides: [ScoreOverride], reflections: [Reflection], changes: [PlanChange] = [],
@@ -130,49 +147,73 @@ struct WeekContext {
             .sorted { ($0.position, $0.code) < ($1.position, $1.code) }
         self.marks = marks.filter { $0.weekKey == weekString }.latest(by: \.key, modified: \.modifiedAt)
         self.days = days.latest(by: \.dayKey, modified: \.modifiedAt)
-        let dayStrings = Set(week.days.map(\.string))
-        self.entries = entries.filter { $0.deletedAt == nil && dayStrings.contains($0.dayKey) }
-        self.health = health.filter { dayStrings.contains($0.dayKey) }
-        self.work = work.filter { $0.deletedAt == nil && dayStrings.contains($0.dayKey) }
+        let weekDays = Set(week.days.map(\.string))
+        self.entries = entries.filter { $0.deletedAt == nil && weekDays.contains($0.dayKey) }
+        self.health = health.filter { weekDays.contains($0.dayKey) }
+        self.work = work.filter { $0.deletedAt == nil && weekDays.contains($0.dayKey) }
             .sorted { $0.createdAt < $1.createdAt }
-        self.notes = notes.filter { $0.deletedAt == nil && dayStrings.contains($0.dayKey) }.sorted { $0.createdAt < $1.createdAt }
-        self.overrides = overrides.filter { $0.deletedAt == nil && dayStrings.contains($0.dayKey) }.latest(by: \.key, modified: \.modifiedAt)
+        self.notes = notes.filter { $0.deletedAt == nil && weekDays.contains($0.dayKey) }.sorted { $0.createdAt < $1.createdAt }
+        self.overrides = overrides.filter { $0.deletedAt == nil && weekDays.contains($0.dayKey) }.latest(by: \.key, modified: \.modifiedAt)
         self.reflections = reflections.latest(by: \.key, modified: \.modifiedAt)
         self.changes = changes.filter { $0.weekKey == weekString }.sorted { $0.createdAt < $1.createdAt }
 
-        // Confirmed Health values count like entries, but only where no own value exists that day.
-        var records = self.entries.compactMap(\.record)
-        let own = Set(records.map(\.key))
-        records += self.health.compactMap(\.record).filter { !own.contains($0.key) }
-        entryRecords = records
-        workRecords = self.work.compactMap(\.record)
+        // v10: the goal year and its records, the mappings and the week's inbox – read from the settings.
+        let storedSettings: [StoredSetting] = settings.map(\.stored)
+        let period: GoalPeriod = TrackerStore.goalPeriod(from: settings)
+        goalPeriod = period
+        let yearRecords = WeekRecords(settings: storedSettings, period: period)
+        records = yearRecords
+        linkRules = SettingRecords.decode(LinkRule.self, from: storedSettings)
+        // Every copy of `x.sources` merged (two devices may each have written one before they synced).
+        let sourceList: ExchangeSourceList = ExchangeSourceList.merged(settings.filter { $0.key == ExchangeInbox.sourcesKey }.map(\.value))
+        exchangeSources = sourceList
+        let dayStrings = Set(week.days.map(\.string))
+        inbox = ExchangeInbox.files(from: storedSettings.filter { $0.key.hasPrefix(ExchangeInbox.prefix) }).filter { dayStrings.contains($0.day) }
 
-        var markValues: [String: Mark] = [:]
-        for (key, mark) in self.marks { if let value = mark.mark { markValues[key] = value } }
         var overrideValues: [String: Double] = [:]
         for (key, override) in self.overrides { overrideValues[key] = override.score }
         let isComplete = Scorer.isComplete(week: week, today: today, closed: self.plan?.isClosed ?? false)
         let itemRecords = self.items.compactMap(\.record)
-        let measureRecords = self.measures.compactMap(\.record)
         let dayInfo = self.days
         let free = Set(week.days.filter { DayTypes.isWorkFree(dayInfo[$0.string]?.dayType ?? "") })
         // v8: sick and holiday days don't count (nothing due, weekly targets scaled).
         let excused: Set<DayKey> = DayTypes.excusedDays(week.days) { dayInfo[$0.string]?.dayType ?? "" }
+        let goalRecords: [GoalRecord] = self.goals.map(\.record)
+        let categoryRecords: [CategoryRecord] = self.categories.map(\.record)
+
+        // Own entries count first, confirmed Health values only where no own value exists that day, then
+        // (v10) the reading list and the connected apps; own marks and work blocks win over derived ones.
+        let ownWork: [WorkRecord] = self.work.compactMap(\.record)
+        let ownMeasures: [MeasureRecord] = self.measures.compactMap(\.record)
+        // The reading list only matters when a measure or item of the week reads from it.
+        let readsList: Bool = ownMeasures.contains { $0.source.listKind != nil }
+            || itemRecords.contains { MeasureSource(raw: $0.measure).listKind != nil }
+        let extras = WeekExtras.compute(WeekExtras.Input(
+            week: week, items: itemRecords, measures: ownMeasures, categories: categoryRecords,
+            ownMarks: self.marks.values.compactMap(\.record), ownEntries: self.entries.compactMap(\.record),
+            health: self.health.compactMap(\.record), ownWork: ownWork,
+            ownWorkImportIDs: Set(self.work.map(\.importID).filter { !$0.isEmpty }), excusedDays: excused, workFreeDays: free,
+            inbox: inbox, rules: linkRules, listItems: readsList ? yearRecords.listItems : [],
+            listProgress: readsList ? yearRecords.listProgress : [], sourceNames: sourceList.names))
+        self.extras = extras
+        let records: [EntryRecord] = extras.entries
+        entryRecords = records
+        workRecords = extras.work
+        let measureRecords: [MeasureRecord] = extras.measures
+
         // Work categories as in `WeekData`, so progress, pace and weekly targets scale the same way.
-        let workCategories: Set<String> = WeekData.workCategories(items: itemRecords, categories: self.categories.map(\.record))
+        let workCategories: Set<String> = WeekData.workCategories(items: itemRecords, categories: categoryRecords)
         var progress: [String: Double] = [:]
         var worked: [String: Set<DayKey>] = [:]
         for item in itemRecords where item.schedule == .progress {
             progress[item.code] = Measures.progressRatio(for: item, measures: measureRecords, days: week.days,
-                                                         entries: records, work: workRecords, excused: excused, workFree: free,
+                                                         entries: records, work: extras.work, excused: excused, workFree: free,
                                                          workCategories: workCategories)
             worked[item.code] = Measures.workedDays(for: item, measures: measureRecords, days: week.days,
-                                                    entries: records, work: workRecords)
+                                                    entries: records, work: extras.work)
         }
-        let goalRecords: [GoalRecord] = self.goals.map(\.record)
-        let categoryRecords: [CategoryRecord] = self.categories.map(\.record)
         data = WeekData(week: week, goals: goalRecords, categories: categoryRecords,
-                        items: itemRecords, marks: markValues, overrides: overrideValues, isComplete: isComplete,
+                        items: itemRecords, marks: extras.marks, overrides: overrideValues, isComplete: isComplete,
                         progress: progress, worked: worked, workFreeDays: free, excusedDays: excused)
         score = Scorer.score(data)
 
@@ -255,10 +296,22 @@ struct WeekContext {
     }
 
     /// The mark a linked measurement suggests, when it differs from what's recorded.
+    /// v10: also for an item linked to an `app:` / `list:` text directly (its hidden measure).
     func suggestion(_ item: PlanItem, on day: DayKey) -> Mark? {
-        guard !item.measureCode.isEmpty, let record = item.record, let measure = measure(code: item.measureCode) else { return nil }
+        guard !item.measureCode.isEmpty, let record = item.record, let measure = measureRecord(code: item.measureCode) else { return nil }
         let suggested = Measures.suggestion(for: record, dayValue: dayValue(measure, on: day))
         return suggested == mark(item, on: day) ? nil : suggested
+    }
+
+    /// v10: the measure of a code as the scoring sees it – the week's definition, else the hidden measure
+    /// of an item linked to an `app:` or `list:` text directly (`ExchangeDerivation.virtualMeasures`).
+    func measureRecord(code: String) -> MeasureRecord? {
+        measure(code: code)?.record ?? extras.measures.first { $0.code == code }
+    }
+
+    /// A measure's day value (own > Health > reading list and connected apps, v10).
+    func dayValue(_ record: MeasureRecord, on day: DayKey) -> Double? {
+        Measures.dayValue(record, on: day, entries: entryRecords, work: workRecords)
     }
 
     func info(_ day: DayKey) -> PlanDay? { days[day.string] }
@@ -395,16 +448,26 @@ struct WeekContext {
         return Format.count(days.count, "Tag", "Tage") + " " + excusedWord(days)
     }
 
-    func reportInput() -> WeekReportInput {
+    /// v10: `results` – the goals' results for the block "Jahresziel-Ergebnisse" (`TrackerStore.resultLines`);
+    /// give them here or to the planning prompt, not both. The marks are the ones that count (own ones,
+    /// and ✓ derived from a connected app where there is none).
+    func reportInput(results: [GoalResultLine] = []) -> WeekReportInput {
         let weekRecord = plan?.record ?? WeekRecord(week: week)
         return WeekReportInput(
             week: weekRecord, goals: data.goals, categories: data.categories, items: data.items,
-            measures: measures.compactMap(\.record), marks: marks.values.compactMap(\.record),
+            measures: measures.compactMap(\.record), marks: reportMarks,
             overrides: overrides.values.compactMap(\.record), days: days.values.compactMap(\.record),
             entries: entryRecords, work: workRecords, notes: notes.compactMap(\.record),
             reviews: reflections.values.map(\.record), changes: changes.compactMap(\.record),
-            closedDays: Set(week.days.filter { isClosed($0) }), isClosed: isClosed, today: today
+            closedDays: Set(week.days.filter { isClosed($0) }), isClosed: isClosed, today: today, results: results
         )
+    }
+
+    /// The own marks, plus the derived ✓ where there is no own mark (v10) – as the score counts them.
+    private var reportMarks: [MarkRecord] {
+        let own: [MarkRecord] = marks.values.compactMap(\.record)
+        let ownKeys = Set(own.map { WeekData.markKey($0.itemCode, $0.day) })
+        return own + extras.effect.marks.filter { !ownKeys.contains(WeekData.markKey($0.itemCode, $0.day)) }
     }
 
     /// Weekly progress of a progress item ("62 %"), nil when it has no target.
@@ -673,21 +736,25 @@ extension WeekContext {
 
     /// H1: due that day, no value – and not a value that only Health on the iPhone can give.
     /// v8: never missing on a sick or holiday day (a value can still be entered and counts).
+    /// v10: never for a value from the reading list or a connected app (nothing to type in).
     func countsAsMissing(_ measure: MeasureDefinition, on day: DayKey) -> Bool {
-        !isExcused(day) && applies(measure, on: day) && dayValue(measure, on: day) == nil && !isHealthElsewhere(measure)
+        if let source = measure.record?.source, source.appSource != nil || source.listKind != nil { return false }
+        return !isExcused(day) && applies(measure, on: day) && dayValue(measure, on: day) == nil && !isHealthElsewhere(measure)
     }
 
     /// The mark a linked measurement suggests, whatever is recorded.
     private func measuredSuggestion(_ item: PlanItem, on day: DayKey) -> Mark? {
         guard !item.measureCode.isEmpty, applies(item, on: day), let record = item.record,
-              let linked = measure(code: item.measureCode) else { return nil }
+              let linked = measureRecord(code: item.measureCode) else { return nil }
         return Measures.suggestion(for: record, dayValue: dayValue(linked, on: day))
     }
 
-    /// R12: blank items a measurement has a suggestion for.
+    /// R12: blank items a measurement has a suggestion for. v10: not those ticked by a connected app –
+    /// the derived tick stays computed (Grundregel 1).
     func suggestionsToFill(on day: DayKey) -> [MarkSuggestion] {
         items.compactMap { item -> MarkSuggestion? in
-            guard recordedMark(item, on: day) == nil, let mark = measuredSuggestion(item, on: day) else { return nil }
+            guard recordedMark(item, on: day) == nil, !isDerivedMark(item, on: day),
+                  let mark = measuredSuggestion(item, on: day) else { return nil }
             return MarkSuggestion(item: item, mark: mark, current: nil)
         }
     }
@@ -722,14 +789,18 @@ extension WeekContext {
     }
 
     /// R54: the week's spending grouped by what it was for (case-insensitive, the most used spelling
-    /// shown), largest first.
+    /// shown), largest first. v10: a connected app's rows (Finn) count in their groups too.
     func expensesByPurpose(_ measure: MeasureDefinition, limit: Int = 5) -> [ExpensePurpose] {
         var groups: [String: (total: Double, count: Int, spellings: [String: Int])] = [:]
-        for entry in entries where entry.code == measure.code {
-            let trimmed = entry.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        var rows: [(note: String, value: Double)] = entries.filter { $0.code == measure.code }.map { ($0.note, $0.value ?? 0) }
+        for day in week.days {
+            rows += appExpenseRows(measure, on: day).map { ($0.purpose, $0.amount) }
+        }
+        for row in rows {
+            let trimmed = row.note.trimmingCharacters(in: .whitespacesAndNewlines)
             let key = trimmed.lowercased()
             var group = groups[key] ?? (total: 0, count: 0, spellings: [:])
-            group.total += entry.value ?? 0
+            group.total += row.value
             group.count += 1
             group.spellings[trimmed, default: 0] += 1
             groups[key] = group
@@ -829,4 +900,272 @@ extension WeekContext {
     func goal(key: String) -> AnnualGoal? {
         goals.first { $0.key == key }
     }
+}
+
+// MARK: v10 – results, "Wochen über 8", segments, reading list, connected apps
+
+/// The goal year's records of a week's settings, decoded once on first use. A class so `WeekContext`
+/// stays a value that copies cheaply; locked, as a context may be read off the main thread (PDF).
+final class WeekRecords: @unchecked Sendable {
+    private let settings: [StoredSetting]
+    private let period: GoalPeriod
+    private let lock = NSRecursiveLock()
+    private var segmentsValue: Segments?
+    private var resultsValue: [GoalResult]?
+    private var entriesValue: [GoalEntry]?
+    private var itemsValue: [ListItem]?
+    private var progressValue: [ListProgress]?
+    private var scoresValue: [GoalTrack.Week]?
+
+    init(settings: [StoredSetting], period: GoalPeriod) {
+        self.settings = settings
+        self.period = period
+    }
+
+    private func cached<T>(_ value: inout T?, _ make: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        if let value { return value }
+        let made = make()
+        value = made
+        return made
+    }
+
+    var segments: Segments {
+        cached(&segmentsValue) { Segments.resolve(SettingRecords.decode(GoalSegment.self, from: settings), period: period) }
+    }
+
+    var results: [GoalResult] {
+        cached(&resultsValue) {
+            SettingRecords.decode(GoalResult.self, from: settings)
+                .filter { $0.periodStart == nil || $0.periodStart == period.start }
+                .sorted(by: TrackerStore.resultOrder)
+        }
+    }
+
+    var entries: [GoalEntry] { cached(&entriesValue) { SettingRecords.decode(GoalEntry.self, from: settings) } }
+
+    var listItems: [ListItem] {
+        cached(&itemsValue) { SettingRecords.decode(ListItem.self, from: settings).sorted { ($0.position, $0.title) < ($1.position, $1.title) } }
+    }
+
+    var listProgress: [ListProgress] { cached(&progressValue) { SettingRecords.decode(ListProgress.self, from: settings) } }
+
+    var categoryWeeks: [GoalTrack.Week] {
+        cached(&scoresValue) {
+            let newest = SettingRecords.newest(settings.filter { $0.key.hasPrefix(GoalTrack.settingPrefix) })
+            return newest.compactMap { key, setting -> GoalTrack.Week? in
+                GoalTrack.week(settingKey: key).map { GoalTrack.Week(week: $0, text: setting.value) }
+            }.sorted { $0.week < $1.week }
+        }
+    }
+}
+
+/// A connected app's spending row in the spending list (§1.5.3): shown, never edited here ("in Finn ändern").
+struct AppExpenseRow: Identifiable {
+    let day: DayKey
+    let amount: Double
+    /// What it was for (the group in the source app).
+    let purpose: String
+    /// "Finn"
+    let source: String
+    let index: Int
+    var id: String { "\(day.string)|\(source)|\(index)" }
+}
+
+extension WeekContext {
+    /// The goal year's segments, gapless – without stored ones one "Abschnitt 1" (§1.4).
+    var segments: Segments { records.segments }
+    /// The goal year's results (those without a goal year too), not in the trash, by goal and position.
+    var results: [GoalResult] { records.results }
+    /// The results' own entries (not in the trash).
+    var goalEntries: [GoalEntry] { records.entries }
+    /// The reading list and every reading (not in the trash) – a day's amount needs the readings before it.
+    var listItems: [ListItem] { records.listItems }
+    var listProgress: [ListProgress] { records.listProgress }
+    /// The stored category week scores (`score.<week>`) of closed weeks, oldest first.
+    var storedCategoryWeeks: [GoalTrack.Week] { records.categoryWeeks }
+
+    // MARK: Segments (§1.4)
+
+    /// The segment `today` is in (the focus of every screen).
+    var currentSegment: SegmentSpan? { segments.current(today: today) }
+
+    /// The segment this week belongs to.
+    var weekSegment: SegmentSpan? { segments.span(for: week) }
+
+    /// "Abschnitt 2 · seit KW50 · Woche 3" – the year card's head.
+    var segmentHeadline: String { currentSegment?.headline(week: today.week) ?? "" }
+
+    /// Grundregel 2: the week lies before the current segment – once closed, its score is never computed
+    /// again by itself, only with "Neu berechnen" (`TrackerStore.recompute`).
+    var isFrozen: Bool { segments.isFrozen(week, today: today) }
+
+    /// The labels of this week (§1.4.1): a week of an earlier segment shows the goals and categories as
+    /// they were then; later weeks the current ones.
+    var labels: (goals: [GoalRecord], categories: [CategoryRecord]) {
+        segments.labels(for: week, today: today, goals: data.goals, categories: data.categories)
+    }
+
+    /// The goal's title in this week (§1.4.1): a week of an earlier segment shows the one of then.
+    func title(of goal: AnnualGoal) -> String {
+        guard segments.hasSeveral else { return goal.title }
+        return labels.goals.first { $0.key == goal.key }?.title ?? goal.title
+    }
+
+    /// The category's title in this week (§1.4.1): a week of an earlier segment shows the one of then.
+    func title(of category: TrackCategory) -> String {
+        guard segments.hasSeveral else { return category.title }
+        return labels.categories.first { $0.key == category.key }?.title ?? category.title
+    }
+
+    // MARK: Results (§1.2.1–1.2.2)
+
+    /// The results shown in the current segment (started in it or before, not ended before it).
+    var activeResults: [GoalResult] {
+        guard let current = currentSegment else { return results }
+        return results.filter { $0.isActive(in: current, segments: segments) }
+    }
+
+    /// The active results of a goal.
+    func results(of goal: AnnualGoal) -> [GoalResult] {
+        activeResults.filter { $0.goalKey == goal.key }
+    }
+
+    /// The results of a goal new from a segment that hasn't begun yet ("Gilt ab Abschnitt 2 (KW48)") –
+    /// shown apart until it begins, so a result set up right after "Neuen Abschnitt beginnen…" is visible.
+    func upcomingResults(of goal: AnnualGoal) -> [GoalResult] {
+        guard let current = currentSegment else { return [] }
+        let active = Set(activeResults.map(\.id))
+        return results.filter { result in
+            guard result.goalKey == goal.key, !active.contains(result.id),
+                  let from = result.fromSegment.flatMap(segments.span(id:)) else { return false }
+            return from.number > current.number
+        }
+    }
+
+    /// A result's own entries, by day.
+    func entries(of result: GoalResult) -> [GoalEntry] {
+        goalEntries.filter { $0.resultID == result.id }.sorted { ($0.day, $0.modifiedAt) < ($1.day, $1.modifiedAt) }
+    }
+
+    /// The result's source needs the store's day values (`TrackerStore.resultSeries`): a measure over the
+    /// goal year, a connected app's facts beyond this week.
+    func needsSeries(_ result: GoalResult) -> Bool {
+        switch result.resultSource {
+        case .measure, .app: return true
+        default: return false
+        }
+    }
+
+    /// A result's progress on `today`: own entries and the reading list from here; for a `measure:` or
+    /// `app:` source pass `series` (`TrackerStore.resultSeries`, read once per screen).
+    func progress(_ result: GoalResult, series: [DayKey: Double] = [:]) -> ResultProgress {
+        ResultProgress.compute(result, segments: segments, today: today, entries: goalEntries, items: listItems, series: series)
+    }
+
+    /// The results that a measure feeds (`measure:<code>`) – "zählt für Ziel 5 · Bücher 3/10".
+    func results(feedBy measure: MeasureDefinition) -> [GoalResult] {
+        activeResults.filter { $0.uses(measure: measure.code) }
+    }
+
+    /// The measures of a goal (§1.2.4): those of its categories, then those feeding one of its results –
+    /// this week's definitions (the store's `latestMeasureRecords` when the week has none).
+    func goalMeasures(_ goal: AnnualGoal) -> [MeasureRecord] {
+        GoalResult.measures(of: goal.key, categories: data.categories, measures: measures.compactMap(\.record), results: activeResults)
+    }
+
+    // MARK: "Wochen über 8" (§1.2.3)
+
+    /// The category's score this week is "über 8" (live; rounded like on screen).
+    func isGood(_ category: TrackCategory) -> Bool {
+        GoalTrack.isGood(score.categoryWeek[category.key])
+    }
+
+    /// The goal is "gut dabei" this week: every scored category of it is above 8; nil when none is scored.
+    func goalIsGood(_ goal: AnnualGoal) -> Bool? {
+        GoalTrack.goalIsGood(goal.key, categories: data.categories, scores: score.categoryWeek)
+    }
+
+    /// The stored weeks of the current segment (all goal years' weeks when there is none), oldest first.
+    var segmentCategoryWeeks: [GoalTrack.Week] {
+        guard let current = currentSegment else { return storedCategoryWeeks }
+        return storedCategoryWeeks.filter { current.contains($0.week) }
+    }
+
+    /// "Wochen über 8: 1.1 9/12 · 1.2 7/12" – the goal's categories over the last 12 closed, scored
+    /// weeks of the current segment; nil without any.
+    func goalTrackLine(_ goal: AnnualGoal) -> String? {
+        let keys = categories(of: goal).map(\.key)
+        let range: ClosedRange<WeekKey>? = currentSegment.map { $0.startWeek...$0.endWeek }
+        return GoalTrack.line(GoalTrack.tallies(storedCategoryWeeks, categories: keys, range: range))
+    }
+
+    /// The category's tally ("1.1 9/12") in the current segment; nil without scored weeks.
+    func tally(_ category: TrackCategory) -> GoalTrack.Tally? {
+        let range: ClosedRange<WeekKey>? = currentSegment.map { $0.startWeek...$0.endWeek }
+        return GoalTrack.tallies(storedCategoryWeeks, categories: [category.key], range: range).first
+    }
+
+    // MARK: Reading list (§1.3)
+
+    /// "Gerade dabei": the entries being read (readings or a start, not finished or abandoned).
+    var runningListItems: [ListItem] {
+        listItems.filter { ListMath.status($0, progress: listProgress) == .running }
+    }
+
+    func status(_ item: ListItem) -> ListStatus { ListMath.status(item, progress: listProgress) }
+
+    /// "120 von 320 Seiten · 38 %"
+    func progressText(_ item: ListItem) -> String { ListMath.progressText(item, progress: listProgress) }
+
+    /// The highest page reached (through `day`), nil without readings.
+    func reached(_ item: ListItem, through day: DayKey? = nil) -> Double? {
+        ListMath.reached(itemID: item.id, progress: listProgress, through: day)
+    }
+
+    /// A book's readings, by day.
+    func readings(of item: ListItem) -> [ListProgress] { ListMath.readings(listProgress, itemID: item.id) }
+
+    // MARK: Connected apps (§1.5.3)
+
+    /// Derived power-hours with a category ("aus Theo", read only) of a day.
+    func derivedWork(on day: DayKey) -> [WorkRecord] { extras.effect.work.filter { $0.day == day } }
+
+    /// Power-hours without a category ("ohne Zuordnung") of a day – shown, counted nowhere.
+    func unassignedWork(on day: DayKey) -> [WorkRecord] { extras.effect.unassignedWork.filter { $0.day == day } }
+
+    /// "Theo" – where a derived block comes from.
+    func workSource(_ record: WorkRecord) -> String? { extras.effect.workSources[record.id] }
+
+    /// The item's ✓ comes from a connected app (no own mark that day).
+    func isDerivedMark(_ item: PlanItem, on day: DayKey) -> Bool { extras.isDerived(item.code, on: day) }
+
+    /// "⇄ George · Push" for a derived ✓; nil otherwise.
+    func derivedMarkLabel(_ item: PlanItem, on day: DayKey) -> String? {
+        extras.effect.markLabels[WeekData.markKey(item.code, day)]
+    }
+
+    /// "Finn" when the measure's day value comes from a connected app (own entries replace it, spending adds up).
+    func valueSource(_ measure: MeasureDefinition, on day: DayKey) -> String? {
+        extras.effect.entrySources["\(measure.code)|\(day.string)"]
+    }
+
+    /// A connected app's spending rows of a day (read only): one per group, with the source's purpose.
+    func appExpenseRows(_ measure: MeasureDefinition, on day: DayKey) -> [AppExpenseRow] {
+        guard let source = valueSource(measure, on: day) else { return [] }
+        let derived = extras.effect.entries.filter { $0.code == measure.code && $0.day == day }
+        var rows: [AppExpenseRow] = []
+        for entry in derived {
+            let parts: [EntryPart] = entry.parts.isEmpty ? [EntryPart(value: entry.value, minutes: 0)] : entry.parts
+            for part in parts {
+                rows.append(AppExpenseRow(day: day, amount: part.value ?? 0, purpose: part.note, source: source, index: rows.count))
+            }
+        }
+        return rows
+    }
+
+    /// Facts of the week this build can't use ("nicht verwendet") and those from Apple Health (never used).
+    var unusedFactCount: Int { extras.effect.unused.count }
+    var ignoredFactCount: Int { extras.effect.ignored }
 }

@@ -19,11 +19,14 @@ public struct WeekReportInput: Sendable {
     public var closedDays: Set<DayKey>
     public var isClosed: Bool
     public var today: DayKey
+    /// v10: the annual goals' results (no Health values) – the block "Jahresziel-Ergebnisse"; empty = no block.
+    public var results: [GoalResultLine]
 
     public init(week: WeekRecord, goals: [GoalRecord], categories: [CategoryRecord], items: [ItemRecord], measures: [MeasureRecord],
                 marks: [MarkRecord], overrides: [ScoreRecord] = [], days: [DayRecord] = [], entries: [EntryRecord] = [],
                 work: [WorkRecord] = [], notes: [NoteRecord] = [], reviews: [ReviewRecord] = [], changes: [PlanChangeRecord] = [],
-                closedDays: Set<DayKey> = [], isClosed: Bool = false, today: DayKey) {
+                closedDays: Set<DayKey> = [], isClosed: Bool = false, today: DayKey, results: [GoalResultLine] = []) {
+        self.results = results
         self.week = week
         self.goals = goals
         self.categories = categories
@@ -110,6 +113,8 @@ public enum WeekReport {
             out.append("| \(goal.label) | \(Format.score(score.goalWeek[goal.key]?.score, outOf: false)) | \(parts.joined(separator: " · ")) |")
         }
         out.append("")
+        // v10: where the goals' results stand – only for information, no reason to raise the plan.
+        out.append(contentsOf: GoalResultLine.block(input.results))
 
         out.append("## Tage")
         out.append("| Tag | Typ | Wertung | Ausgefüllt | Abschluss | Journal | Notiz |")
@@ -398,11 +403,15 @@ public struct PeriodReport: Sendable {
     }
 
     /// The review as Markdown to paste into ChatGPT.
-    public func markdown(period: GoalPeriod) -> String {
+    /// - Parameters:
+    ///   - segment: v10 – the review covers this segment of the goal year (a line names it); nil = the goal year.
+    ///   - results: v10 – the annual goals' results (no Health values), a block after the goals; empty = none.
+    public func markdown(period: GoalPeriod, segment: SegmentSpan? = nil, results: [GoalResultLine] = []) -> String {
         var out: [String] = []
         let review = period.reviewWeek
         out.append("# Zielüberprüfung \(review.label) (\(review.rangeLabel) \(review.year))")
         out.append("Zieljahr seit \(period.start.longLabel) · ausgewertet \(start.longLabel) bis \(end.longLabel)")
+        if let segment { out.append("Abschnitt: \(segment.title) · seit \(segment.startWeek.longLabel)") }
         if !period.motto.isEmpty { out.append("Motto: \(period.motto)") }
         out.append("Hinweis: Die Wertungen messen Verhalten, nicht Ergebnisse (0–10, Jahresziele gleich gewichtet).")
         out.append("")
@@ -414,6 +423,7 @@ public struct PeriodReport: Sendable {
             out.append("| \(line.key) \(line.title) | \(Format.score(line.average)) | \(Format.score(line.firstFour)) | \(Format.score(line.lastFour)) | \(PeriodReport.trend(line)) |")
         }
         out.append("")
+        out.append(contentsOf: GoalResultLine.block(results))
 
         out.append("## Am häufigsten verpasst")
         if missed.isEmpty {
@@ -462,9 +472,11 @@ public enum PlanPrompt {
     ///   - currentPlan: the source week's plan as CSV (`PlanCSV.export(document.planOnly(week:))`) – ChatGPT
     ///     takes it over and changes only what the message asks for (R91).
     ///   - trend: a few lines "KW44: Wertung 7,1 · 22 von 28 PH".
+    ///   - results: v10, the annual goals' results (no Health values) – the block "Jahresziel-Ergebnisse",
+    ///     left out when empty or when `lastWeekReport` already has it.
     public static func text(for week: WeekKey, goals: [GoalRecord], categories: [CategoryRecord], measures: [MeasureRecord],
                             lastWeekReport: String?, changes: [PlanChangeRecord] = [], currentPlan: String? = nil,
-                            currentPlanWeek: WeekKey? = nil, trend: [String] = []) -> String {
+                            currentPlanWeek: WeekKey? = nil, trend: [String] = [], results: [GoalResultLine] = []) -> String {
         var out: [String] = []
         out.append("Du hilfst mir, meinen Wochenplan für \(week.longLabel) (\(week.rangeLabel)) in meine Tracking-App „Thalia“ zu übertragen. Meine Nachricht mit Rückblick, Zusagen, Prioritäten, Zielen und Ausnahmen steht ganz unten.")
         out.append("")
@@ -512,7 +524,7 @@ public enum PlanPrompt {
             "- unit (measure): PH, Stück, Seiten, €, kg, h, min, Uhrzeit, %.",
             "- target: >=150 | <=6 | <50 | <=23:00 | 150-180. Bei measure das Tages- oder Wochenziel. Bei item die Schwelle für den verknüpften Messwert (Thalia schlägt dann ✓ oder ✗ vor).",
             "- period (measure): tag | woche.",
-            "- link: bei item die id eines Messwerts. Bei measure die Quelle: leer = manuell | arbeit:3.2 = Power-Hours aus den Arbeitsblöcken dieser Kategorie | health:sleep, health:bedtime, health:bodyMass, health:steps … = Vorschlag aus Apple Health.",
+            "- link: bei item die id eines Messwerts. Bei measure die Quelle: leer = manuell | arbeit:3.2 = Power-Hours aus den Arbeitsblöcken dieser Kategorie | health:sleep, health:bedtime, health:bodyMass, health:steps … = Vorschlag aus Apple Health | list:buch = gelesene Seiten aus der Leseliste | app:<app>:<art>[=<ref>] = Werte aus einer verbundenen App (z. B. app:george:workout=tpl-1 zählt Workouts, app:theo:task erledigte Aufgaben der Kategorie, app:nina:kcal den Tageswert). Verknüpfungen aus dem Ausgangsplan unverändert übernehmen – auch app:… und list:…; ohne link verliert der Messwert seine Quelle nicht.",
             "- flags (kommagetrennt, in Anführungszeichen wenn mehrere): nebensache = zählt nur wenn ausgefüllt, eingeklappt | arbeit = nur an Arbeitstagen | frei = auch an freien Tagen | bei item ko = persönliche Null-Regel (✗ → Kategorie an diesem Tag 0) | bei measure zusätzlich summe | letzter | schnitt | max | min (Standard summe; kg, Uhrzeit, % → letzter). Beispiel: \"arbeit,ko\".",
             "- date, value, note: für den Plan leer lassen.",
         ])
@@ -553,12 +565,15 @@ public enum PlanPrompt {
             out.append(report.trimmingCharacters(in: .newlines))
             out.append("")
         }
+        if !(lastWeekReport ?? "").contains(GoalResultLine.heading) {
+            out.append(contentsOf: GoalResultLine.block(results))
+        }
         if let plan = currentPlan?.trimmingCharacters(in: .whitespacesAndNewlines), !plan.isEmpty {
             out.append("## Plan von \(currentPlanWeek?.label ?? "letzter Woche") (Ausgangspunkt)")
             out.append("```csv")
             out.append(plan)
             out.append("```")
-            out.append("Übernimm diese Zeilen für \(week.label) (Datum in die neue Woche verschieben), ändere nur, was ich unten verlange, und nenne jede Änderung unter dem Codeblock.")
+            out.append("Übernimm diese Zeilen für \(week.label) (Datum in die neue Woche verschieben), ändere nur, was ich unten verlange, und nenne jede Änderung unter dem Codeblock. Verknüpfungen aus dem Ausgangsplan unverändert übernehmen (Spalte link, auch app:… und list:…).")
             out.append("")
         }
         if !trend.isEmpty {

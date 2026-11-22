@@ -373,6 +373,20 @@ private struct SheetContent: View {
             PastWeekImportView(week: week)
         case .rangePDF:
             RangePDFSheet()
+        case .goalEntry(let day, let resultID):
+            GoalEntrySheet(day: day, resultID: resultID)
+        case .reading(let day, let itemID):
+            ReadingProgressSheet(day: day, itemID: itemID)
+        case .book(let item):
+            BookEditor(item: item)
+        case .readingList:
+            ReadingListSheet()
+        case .beginSegment:
+            SegmentWizard()
+        case .resultEditor(let result, let goalKey):
+            ResultEditor(result: result, goalKey: goalKey)
+        case .connectedApps:
+            ConnectedAppsSheet()
         }
     }
 }

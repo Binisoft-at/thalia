@@ -9,6 +9,9 @@ public enum Demo {
         public var document: PlanCSV.Document
         public var closedDays: [DayKey]
         public var closedWeeks: [WeekKey]
+        /// v10: segments, results, books, category week scores, the connected app's inbox – also in
+        /// `document.records` as `record` rows (`Demo.addV10`).
+        public var records: Records
     }
 
     /// v8: in `-Demo` launches (with history) Friday of the current week is "Krank", so the screenshots
@@ -63,7 +66,9 @@ public enum Demo {
             }
             addArchive(&doc, week: archiveWeek(today: today))
         }
-        return Content(document: doc, closedDays: closedDays, closedWeeks: closedWeeks)
+        let records = addV10(&doc, today: today, history: history)
+        doc.records = records.rows
+        return Content(document: doc, closedDays: closedDays, closedWeeks: closedWeeks, records: records)
     }
 
     // MARK: An archive week (v9)

@@ -35,7 +35,7 @@ Results (export, backup, history) use `date`, `value`, `note`:
 
 | type | id | columns |
 |---|---|---|
-| `mark` | item id | `date`, `value` = `1` / `0.5` / `0` / `na` (✓ ½ ✗ X N/A also read), `note` |
+| `mark` | item id | `date`, `value` = `1` / `0.5` / `0` / `na` (✓ ½ ✗ X N/A also read), `note`; an empty `value` is a cleared mark (since 1.9.0 the export writes one when it has a note or keeps a connected app's ✓ away) |
 | `entry` | measure id | `date`, `value` (one value per measure and day), `flags` `schaetzung`, `unit` `text` for text values; single entries: one row each with `flags` `einzeln` and the time in `title` (`12:30`) |
 | `work` | block id | `parent` category, `title` task, `description` result, `unit` `PH` / `h` / `ersatz`, `date`, `value` minutes, `note` next step |
 | `note` | note id | `date`, `title` kind (beobachtung, ausloeser, erfolg, kontakt, idee), `description` |
@@ -43,6 +43,7 @@ Results (export, backup, history) use `date`, `value`, `note`:
 | `score` | category id | `date`, `value` own score 0–10, `note` reason |
 | `category_score` | today's category or empty | `title` label as in the records, `date` (day grade) or empty (week grade), `value` 0–10, `note` source, `count` (since 1.8.0, see „Archiv-Wochen“) |
 | `goal_score` | annual goal `1` … `10` or empty | `title` label as in the records, `value` 0–10, `note` source, `count` (since 1.8.0) |
+| `record` | a stored record's key (`goal.result.<id>`, `list.progress.2026-11-17.<id>`, `x.theo.2026-11-22` …) | `note` = its value (JSON; `score.<week>` plain text) – backups only, since 1.9.0, see „Datensätze“ |
 
 ## Columns
 
@@ -58,7 +59,11 @@ Results (export, backup, history) use `date`, `value`, `note`:
 - **link**: on an item the id of a measurement whose value suggests the mark (with `target`: ✓ when
   met, ✗ when recorded and missed; without: ✓ as soon as something is recorded). On a measurement the
   source: empty (manual) · `arbeit:3.2` (from work blocks of 3.2: PH = focus minutes ÷ 50, h = real
-  hours) · `health:sleep|bedtime|bodyMass|protein|energy|water|exercise|mindful|steps` (Apple Health suggestion).
+  hours) · `health:sleep|bedtime|bodyMass|protein|energy|water|exercise|mindful|steps` (Apple Health suggestion)
+  · since 1.9.0 `list:buch` (pages read in the reading list) and `app:<source>:<kind|metric>[=<ref>]` (a connected
+  app) – see „Verbundene Apps und Leseliste“. Since 1.9.0 an item may also link such a text directly
+  (`app:theo:task`) instead of a measurement id. A source this version doesn't know (`health:carbs`, a newer
+  version's text) is kept unchanged and acts as manual.
 - **flags**: item `ko` = personal zero rule. Measurement: `summe` · `letzter` · `schnitt` · `max` · `min`
   (default `summe`; kg, Uhrzeit and % → `letzter`).
 
@@ -74,6 +79,10 @@ Results (export, backup, history) use `date`, `value`, `note`:
 - Safe to repeat: rows are matched by id (week + item id, measure id + day …); importing the same
   file twice changes nothing.
 - Weeks before KW42 2026 are marked "vor KW42" automatically (another scoring model).
+- **Links stay over the weeks (since 1.9.0):** a `measure` row without `link` keeps the source the app has for
+  that id – in the same week, else in the nearest earlier week (any source: `arbeit:`, `health:`, `app:`,
+  `list:`). A source set back to manual stays manual. The preview says so once per week, e.g. "KW48: bisherige
+  Quelle übernommen, die Datei nennt keine – „Workouts“ (app:george:workout=tpl-1, aus KW47)".
 - Everything is read on the device.
 
 ## Vergangene Wochen (past weeks, since 1.7.0)
@@ -304,11 +313,100 @@ Nothing is reconstructed: the app never turns grades into marks or measurements,
 combined category and never multiplies a goal grade onto its categories. Missing single marks,
 working times and measurements stay unknown.
 
+## Verbundene Apps und Leseliste (since 1.9.0)
+
+Two more sources for a `measure` row's `link`. Their values are **computed** every time – never stored as
+entries – and an own entry for the same measurement and day replaces them (spending adds up instead). Confirmed
+Apple Health values come before them. How the other apps deliver: [CONNECTED_APPS.md](CONNECTED_APPS.md).
+
+| `link` | Day value |
+|---|---|
+| `list:buch` | pages read in all reading-list entries of that kind – per entry the increase over its highest earlier reading, never negative (`list:hoerbuch`, `list:kurs` … for other kinds) |
+| `app:george:workout=<ref>` | number of workouts of that template (`ref` from George's `source.json`); `app:george:workout` counts all |
+| `app:theo:task` | tasks done whose group is mapped to the measurement's category; `app:theo:task=<ref>` the tasks of one group |
+| `app:theo:ph` | power-hours (sum); `=<ref>` for one group |
+| `app:nina:kcal` | the day's value (also `protein_g`, `carbs_g`, `fat_g`, `water_ml`) |
+| `app:finn:spending` | the day's spending (unit `€`); Finn's rows show read-only, own spendings add up; `=<ref>` for one group |
+| `app:finn:net_worth` | the latest value of the day – give such a measurement the flag `letzter` (also `savings_rate`, `body_weight_kg`) |
+
+The general form is `app:<source>:<kind|metric>[=<ref>]`: `<source>` is the app's id (`theo`, `george`, `nina`,
+`finn` …), `<kind>` one of `workout`, `task`, `habit`, `ph`, `spending` (counted or summed), or a metric of the
+table (`kcal`, `protein_g`, `carbs_g`, `fat_g`, `water_ml`, `net_worth`, `savings_rate`, `body_weight_kg`);
+`=<ref>` keeps only the facts with that id. A text that doesn't read as one stays unchanged as an unknown source.
+Power-hours from a connected app also count for the `arbeit:` measurement of their category, like own work blocks.
+
+```csv
+type,id,parent,title,description,days,schedule,unit,target,period,link,flags,date,value,note
+measure,workouts,1.2,Workouts,,,,Stück,>=3,woche,app:george:workout=tpl-1,,,,
+item,1.2-01,1.2,Krafttraining,Workout aus der Vorlage „Push“.,"Mo,Mi,Fr",fix,,,,workouts,,,,
+measure,seiten,5,Seiten,,,,Seiten,>=20,tag,list:buch,,,,
+item,5-01,5,Lesen,20 Seiten.,täglich,fix,,>=20,,seiten,,,,
+item,3.2-04,3.2,Kundenaufgabe erledigt,Mindestens eine Aufgabe aus Theo.,Mo-Fr,fix,,,,app:theo:task,,,,
+```
+
+- **Derived ticks:** an item linked to such a measurement gets ✓ "⇄ George · Push" on a day it applies and that isn't
+  excused, when the target is met (without a target: a value of at least 1) – as long as there is no own mark (a
+  cleared mark counts as own). Otherwise the usual suggestion.
+- **Direct links:** `item,3.2-04,…,app:theo:task` links the item to the text itself; Thalia adds a hidden
+  measurement for it in the item's category. The check accepts `app:…` and `list:…` links without a measure row
+  (no "verknüpfter Messwert fehlt").
+- **Kept over the weeks:** the planning prompt names these values and asks ChatGPT to take every link of the source
+  plan over unchanged ("Verknüpfungen aus dem Ausgangsplan unverändert übernehmen"); a measure row without `link` keeps
+  the previous week's source anyway (see „Reading rules“).
+- Measurement sources are also set in the app: measure editor → „Quelle“ → Manuell / Power-Hours / Apple Health /
+  Leseliste / Verbundene App (app → kind → entry from the app's `source.json`).
+
+## Datensätze (`record`, since 1.9.0)
+
+The annual goals' results and their entries, the segments, the reading list and its readings, the mappings of
+other apps' groups, the connected apps' inbox and the category week scores are stored as JSON in settings – no
+new iCloud fields. A backup carries each as one `record` row: `id` = the setting's key, `note` = its value, all
+other columns empty. Alias: `datensatz`, `records`.
+
+```csv
+type,id,parent,title,description,days,schedule,unit,target,period,link,flags,date,value,note
+record,list.progress.2026-11-17.5d0e…,,,,,,,,,,,,,"{""day"":""2026-11-17"",""id"":""5d0e…"",""item"":""b2a9…"",""modifiedAt"":""2026-11-17T20:15:00.000Z"",""note"":"""",""reached"":120,""v"":1}"
+record,score.2026-W47,,,,,,,,,,,,,1.1=8.2;1.2=6.5
+```
+
+| Key | What |
+|---|---|
+| `goal.result.<id>` | a result of an annual goal (check / count / value, target, target per segment, source) |
+| `goal.entry.<JJJJ-MM-TT>.<id>` | one dated entry of a result (tick, +1, value) |
+| `goal.segment.<id>` | a segment of the goal year, with the goals and categories at its start |
+| `list.item.<id>` | a reading-list entry (book, course …) |
+| `list.progress.<JJJJ-MM-TT>.<id>` | one reading ("bis Seite 120") |
+| `link.rule.<id>` | a group of another app mapped to a category |
+| `x.<source>.<JJJJ-MM-TT>` | a connected app's day file as Thalia received it |
+| `x.sources` | the connected apps seen (their `source.json`) |
+| `score.<week>` | the category week scores, plain text `1.1=8.2;1.2=6.5` (not JSON) |
+
+- **Reading:** only keys with these prefixes; anything else is skipped ("Zeile 12: Datensatz “goal.start” wird nicht
+  gelesen (unbekannter Schlüssel)"), and so are an empty `note` ("… ohne Inhalt (note)") and a value that isn't a JSON
+  object, except for `score.` ("… ist kein lesbares JSON"). Two rows with the same key: the last one counts, with a
+  warning. Archive grades stay in their `category_score` / `goal_score` rows (`archive.<week>` is no `record`).
+- **Importing:** by key. A stored record with a newer `modifiedAt` (day files: `generatedAt`) stays as it is; without
+  a time stamp (`score.`) the file wins when it differs. `x.sources` is merged, never replaced: a connected app the app
+  knows and the file doesn't stays (an older backup never drops one). A day file `x.<source>.<day>` keeps only facts
+  with `origin` `app` – values from Apple Health never come in; a row that isn't a day file of that source and day is
+  skipped ("… ist kein lesbarer Tag einer verbundenen App"). The preview has the line „Datensätze“ (new, changed,
+  same); importing the same file twice changes nothing. Fields this version doesn't know are kept.
+- **Writing:** *Alles als CSV (Sicherung)* writes every record, the inbox `x.` included – Thalia never deletes it,
+  and it is the only long-term copy (the other apps remove their files after 62 days). A day file goes out only with
+  facts with `origin` `app`, and a day stored twice (two devices before they synced) goes out as the copy the weeks
+  read. The rows come last, sorted by
+  key, and only when there are any, so every other file stays exactly as before. *Diese Woche als CSV*, the week
+  export for ChatGPT and the planning prompt have no `record` rows.
+- Versions before 1.9.0 skip the rows ("unbekannter Typ").
+
 ## Export
 
 *Diese Woche als CSV* and *Alles als CSV (Sicherung)* write this format with results; editing the
-file and importing it again updates. *Wochenbericht kopieren* gives the Markdown report for the
-planning conversation (`WeekReport` in Core).
+file and importing it again updates. Since 1.9.0 the backup also ends with the `record` rows (results, reading
+list, segments, mappings, the connected apps' inbox, category week scores – see „Datensätze“).
+*Wochenbericht kopieren* gives the Markdown report for the planning conversation (`WeekReport` in Core); since
+1.9.0 it and the planning prompt carry the block "Jahresziel-Ergebnisse (nur zur Info – nichts unaufgefordert
+steigern)" with each result's state, target and status – never Apple Health values.
 
 ### Backups since version 1.6.0
 

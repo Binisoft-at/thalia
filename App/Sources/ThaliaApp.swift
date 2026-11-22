@@ -172,6 +172,11 @@ struct ThaliaCommands: Commands {
             Button("Messwert eintragen…") { present { .measure(code: "", day: $0.captureDay) } }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(isBlocked)
+            // v10: the same as "Erfassen" → "Jahresziel eintragen" / "Lesen", on the day shown.
+            Button("Jahresziel eintragen…") { present { .goalEntry($0.captureDay, resultID: nil) } }
+                .disabled(isBlocked)
+            Button("Lesen…") { present { .reading($0.captureDay, itemID: nil) } }
+                .disabled(isBlocked)
             Divider()
             Button("Tag abschließen…") { closeDay() }
                 .keyboardShortcut(.return, modifiers: [.command])

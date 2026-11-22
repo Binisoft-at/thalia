@@ -197,9 +197,17 @@ struct ExpensesContent: View {
                     ExpenseLine(entry: entry, isEditing: isEditing(entry), onEdit: { startEditing(entry) },
                                 onDelete: { delete(entry) })
                 }
+                // v10 (§1.5.3): spending from another app – counted, never changed here ("in Finn ändern").
+                ForEach(context.appExpenseRows(measure, on: weekDay)) { row in
+                    AppExpenseLine(row: row)
+                }
             }
         } header: {
             Text("Woche · \(context.week.label)")
+        } footer: {
+            if hasAppRows(measure) {
+                Text("Zeilen „aus …“ kommen aus einer verbundenen App und zählen mit – geändert werden sie dort. Eigene Ausgaben kommen dazu.")
+            }
         }
     }
 
@@ -244,6 +252,11 @@ struct ExpensesContent: View {
 
     private var canSave: Bool {
         parsedAmount != nil && !trimmedWhat.isEmpty
+    }
+
+    /// v10: the week has spending rows from a connected app.
+    private func hasAppRows(_ measure: MeasureDefinition) -> Bool {
+        context.week.days.contains { !context.appExpenseRows(measure, on: $0).isEmpty }
     }
 
     private func dayTarget(_ measure: MeasureDefinition) -> Double? {

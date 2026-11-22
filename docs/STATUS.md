@@ -1,6 +1,97 @@
 # Thalia – Stand (zum Wiedereinstieg nach Kontext-Kompaktierung)
 
-Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v9.md](TASKS-v9.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) · Verbundene Apps: [CONNECTED_APPS.md](CONNECTED_APPS.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+
+## Stand v10 (Version 1.9.0, Tour-Version 10) – umgesetzt, CI und TestFlight offen
+- Anlass: „Thalia Korrekturen v8“ vom 22. Nov. 2026 ([TASKS-v10.md](TASKS-v10.md), vor der Umsetzung von drei
+  Prüfern gegengelesen): Jahresziele klarer eintragen und abhaken, Bücher erfassen, rückwirkend eintragen,
+  Abschnitte als Versionen der Jahresziele, andere Binisoft-Apps liefern Daten. Abweichungen vom Plan stehen dort in
+  „Nachträge (Umsetzung)“.
+- **Keine CloudKit-Schemaänderung:** alles Neue ist JSON in `AppSetting` unter eigenen Präfixen (`goal.result.`,
+  `goal.entry.<Tag>.`, `goal.segment.`, `list.item.`, `list.progress.<Tag>.`, `link.rule.`, `x.<quelle>.<Tag>`,
+  `x.sources`, `score.<Woche>`, Schalter `exchange.catalog`); ältere Builds übergehen die Schlüssel, unbekannte
+  Quellen bleiben als `MeasureSource.other` unverändert.
+- **P1 Core – fertig:** `SettingRecord` (unbekannte Felder bleiben), Ergebnisse (`GoalResult`, `GoalEntry`,
+  `ResultProgress`), „Wochen über 8“ (`GoalTrack`, gerundet ab 8,00), Leseliste (`ListItem`, `ListProgress`,
+  `ListMath`), Abschnitte (`GoalSegment`, `Segments`), Austausch-Format v1 (`ExchangeFormat.swift`, zum Kopieren für
+  die anderen Apps) und die Wirkung (`ExchangeDerivation`, `LinkRule`), `MeasureSource.app` / `.list`,
+  `Measures.merged`, CSV-Zeile `record`, Prompt-Block „Jahresziel-Ergebnisse“ und Link-Regel, Quelle der Vorwoche beim
+  Import, Tour 10, Demo-Daten (`DemoV10.swift`, Fixtures unter `Tests/ThaliaCoreTests/Fixtures/exchange`). Tests
+  B1–B9 in `V10Tests.swift`.
+- **P2 Shared – fertig:** `Shared/TrackerStore+Records.swift` (Datensätze lesen mit Prädikat, speichern, löschen,
+  Papierkorb, Widerrufen, Abschnitt beginnen als eine Undo-Gruppe, Einfrieren, `score.` speichern und einmal
+  nachtragen), `Shared/ExchangeInboxReader.swift` (`ExchangeScan`, `ExchangeFolders`, `ExchangeMonitor`: App Group
+  lesen, Eingang, Katalog schreiben, Entitlement-Prüfung am Mac, Auslöser; nicht auf der Watch), WeekContext v10
+  (Abschnitt, Ergebnisse, „Wochen über 8“, abgeleitete Einträge, Arbeit und Haken), WeekReader-Abfragen,
+  Export/Backup mit `record`-Zeilen, v9-Abfragen mit Präfix-Prädikat.
+- **P3a App – fertig** (Ziele, Leseliste, Abschnitte): neu `App/Sources/GoalResults.swift`, `ReadingList.swift`,
+  `Segments.swift`; Ziele-Seite mit Jahreskarte „Abschnitt 2 · seit KW50 · Woche 3“ und Menü ••• (Jahresziel
+  eintragen…, Lesen…, Leseliste, Jahresziele bearbeiten, Neuen Abschnitt beginnen…), Ergebnisse, „✓ über 8“ und
+  „Wochen über 8“, Messwert-Chips, „Gerade dabei“, frühere Abschnitte; Zielseite mit Ergebnissen und Einträgen,
+  „Messwerte diese Woche“ und Zeitraum „Abschnitt“; Zielüberprüfung mit Auswahl Abschnitt/Zieljahr, den Ergebnissen
+  und „Neuen Abschnitt beginnen…“; Einstellungen → Jahresziele mit Abschnitten; Rückblick mit Abschnittsgrenzen;
+  PDF-Zeitraum „Aktueller Abschnitt“; Woche: „✓ über 8“ am Kategorie-Kopf und „Neu berechnen“ für eingefrorene
+  Wochen.
+- **P3b App – fertig** (verbundene Apps, Heute, Editoren, Tour): neu `App/Sources/ConnectedApps.swift` –
+  Einstellungen → Tracking → „Verbundene Apps“ (je App „Zuletzt gesehen“, Format, Meldungen der letzten 30 Tage;
+  „Ohne Zuordnung · …“ mit Kategorie-Auswahl → Zuordnung in Thalia; Zuordnungen mit Herkunft „aus Theo“ / „in
+  Thalia“ und „Zuordnung prüfen“; „Was kommt an · letzte 7 Tage“; „Thalia-Katalog bereitstellen“; „Auf diesem Gerät“
+  mit „Jetzt nachsehen“). `ExchangeMonitor` läuft für den echten Speicher (iPhone, iPad, Mac; nie `-Demo`, Übung,
+  Watch), aktiv/inaktiv über die App-Benachrichtigungen; 8 s nach dem Start einmal `backfillCategoryScores()` und in
+  Debug-Builds `verifyPrefixQuery()`. Heute: Power-Hours „aus Theo“ (nur lesen) mit „Übernehmen“, „Aus anderen Apps ·
+  ohne Zuordnung“ mit „Übernehmen in …“, Haken „⇄ George · Push“ unter dem Punkt, „aus Nina“ am Messwert, ein
+  Messwert mit Quelle Leseliste zeigt „Lesen“ statt − / +; Fokus „Aus anderen Apps“; Ausgaben-Zeilen „aus Finn – in
+  Finn ändern“ (Heute und Fenster „Ausgaben“). Messwert-Editor „Quelle“ (Manuell, Power-Hours, Apple Health,
+  Leseliste, Verbundene App → App → Art → Eintrag; eine unbekannte Quelle bleibt unverändert) und „Jahresziele“
+  („zählt für …“, auch in Heute → Wochenziele und im Fenster „Wochenziele“); Punkt-Editor und Punkt-Details mit der
+  Verknüpfung; eine Notiz behält einen abgeleiteten Haken. „Erfassen“ → „Jahresziel eintragen“ / „Lesen“; die
+  AppSheet-Fälle für die P3a-Fenster; „Zuletzt gelöscht“ mit Ergebnissen, Leseliste und Abschnitten; vier
+  Erklärseiten; Tour-Karten v10 mit „Ansehen“; `-DemoScreen goal-detail | reading | connected-apps` (in
+  `Config/ci.env` für iPhone und Mac); Version 1.9.0 (`Config/Base.xcconfig`).
+- **P4 Doku – fertig:** [CONNECTED_APPS.md](CONNECTED_APPS.md) (wie es funktioniert, Binis Aufgaben in Reihenfolge,
+  je ein vollständiger Auftrag für Theo, George, Nina, Finn und weitere Apps, offene Fragen), [IMPORT.md](IMPORT.md)
+  (`link`-Werte `app:` / `list:`, Zeile `record`), [ARCHITECTURE.md](ARCHITECTURE.md),
+  [HANDBOOK_PROPOSALS.md](HANDBOOK_PROPOSALS.md) (Vorschläge 31–35), [TOUR.md](TOUR.md) (Tour 10),
+  [TESTING.md](TESTING.md) „v10“. Die Bezeichnungen sind mit den Bildschirmen von P3 abgeglichen; P3b hat
+  TOUR.md („Ansehen“), TESTING.md „v10“ (Heute, Ausgaben, Editoren, „Verbundene Apps“, Papierkorb, Tour) und diese
+  Notiz nachgezogen. In der App heißen die Tatsachen der Austauschdateien „Meldungen“ („12 Meldungen an 9 Tagen ·
+  letzte 30 Tage“).
+- **Lückenschluss nach der Prüfung – fertig** (Einzelheiten: [TASKS-v10.md](TASKS-v10.md) „Lückenschluss“):
+  `x.sources` aus allen Kopien und beim Backup zusammengeführt; Kopien eines Tages überall gleich gewählt; nur
+  Tatsachen mit `origin: app` im synchronisierten Eingang (auch aus `record`-Zeilen); geleerte Haken in Backup und
+  Wochen-Schnappschuss; Zusammenführen einer Markierung behält einen geleerten Wert; Schonfrist für die Woche vor einem
+  neuen Abschnitt (erste Woche); Art eines Buchs geändert → Neuwertung; Nachtragen der Kategorie-Noten je Woche und
+  nach jedem Abgleich; Ziel und neue Ergebnisse für einen geplanten Abschnitt; kein zweiter Abschnitt in derselben
+  Woche, doppelte löschbar; unbekannte Felder in Schnappschüssen; Bezeichnungen alter Wochen im Wochenblatt; Leseliste
+  auf Watch, in „Messwert eintragen“ und den Kurzbefehlen nur über „Lesen“; Wochenberichte mit
+  „Jahresziel-Ergebnisse“; „Buch hinzufügen“ in „Lesen“; Import-Hinweis für eingefrorene Wochen; Lesefehler bleiben
+  sichtbar, Dateien über 256 KB ausgelassen; Kennzahlen ohne „Eintrag“; Namen aus `source.json`.
+- Tour 10: vier Karten `since: 10` – „Ergebnisse und Wochen über 8“, „Leseliste“, „Abschnitte“ (nach „review“),
+  „Verbundene Apps“ (nach „everywhere“); 21 Karten in der ganzen Tour.
+- Geprüft lokal: 207 Core-Tests in 39 Suiten grün (Stand nach dem Lückenschluss; davor 195 in 36) (Docker `swift:6.2-noble`) und `swiftc -parse` aller App-Dateien
+  (`scripts/ci/local-check.sh`); Shared gegen Stub-SwiftData im Docker typgeprüft, 104 Verhaltensprüfungen grün
+  (zwei weitere bewusst so belassen: Notiz an einem abgeleiteten ✓, erstes Nachsehen – siehe TASKS-v10
+  „Lückenschluss“) und die v9-Prüfungen weiter grün; das Schreiber-Beispiel der Aufträge mit dem echten `ExchangeFormat.swift` in Swift 5 und 6
+  übersetzt (7 Prüfungen mit einem temporären Ordner); die CSV-Beispiele aus IMPORT.md durch `PlanCSV` gelesen.
+  App-Teile von P3 gegen echtes Core und Shared mit SwiftUI-/Charts-Stubs typgeprüft: P3a die Ziel-, Leseliste- und
+  Abschnitt-Ansichten; P3b `ConnectedApps.swift`, `Explainers.swift`, `AppModel.swift`, `TourView.swift`,
+  `Expenses.swift` und `Focus.swift` ganz, dazu die geänderten Teile von Heute (Seite einer Kategorie, Punkt-Zeile,
+  Messwert-Zeile, -Menü und -Eingabe, Wochenziele, „Abschluss & Notizen“), des Fensters „Wochenziele“, von
+  „Erfassen“, Punkt-Details, Punkt- und Messwert-Editor, „Zuletzt gelöscht“, der Fenster-Auswahl (`SheetContent`,
+  `AppChrome`) und der Mac-Menübefehle, nach dem Lückenschluss auch die Kopf-Zeile der Kategorie in Wochenblatt
+  und Wochentabelle (mit ihren Zeilen), `WatchPages`, `LogMeasureIntent.refusal` und „Bericht kopieren“ /
+  „Wochenbericht kopieren“ im Wortlaut der App – ohne Fehler; ein absichtlich eingebauter Fehler wird in jeder dieser Dateien
+  gefunden; keine geänderte Ansicht über 160 ms Typprüfung. Die Zweige nur für iOS bzw. nur für macOS
+  (`#if os(…)`) dieser P3b-Teile sind in je einem eigenen Lauf mitgeprüft (darin die App-Benachrichtigungen für
+  „aktiv/inaktiv“ des Austauschs), mit nachgebildeten UIKit-/AppKit-Namen. SwiftUI ist dabei nur nachgebildet; echtes
+  SwiftUI, das Aussehen und der App-Teil des Austauschs (App Group, Darwin-Benachrichtigung, `SecTask`) prüft erst CI
+  am Mac bzw. das Gerät.
+- Offene Fragen an Bini ([CONNECTED_APPS.md](CONNECTED_APPS.md) §5): „über 8,0“ ab 8,00 (umgesetzt) oder ab 8,01;
+  Finn-Vermögen monatlich oder bei Änderung, Sparquote gewünscht; Darwin-Benachrichtigung zwischen Mac-Apps ungeprüft.
+- Nächste Schritte: CI mit `[screenshots]` (`goal-detail`, `reading`, `connected-apps`) und die Screenshots ansehen;
+  `cloudkit-schema.yml` darf keinen Deploy verlangen (`needs-deploy.txt`); TestFlight 1.9.0 mit Build-Nr. 57 oder höher (1.8.0 (56)
+  ist in TestFlight); nach dem Merge auf `main` die zwei öffentlichen Adressen in den Aufträgen öffnen (sie zeigen auf
+  `main`), dann Bini: Aufgaben aus [CONNECTED_APPS.md](CONNECTED_APPS.md) §2 und TESTING.md „v10“.
 
 ## Stand v9 (Version 1.8.0, Tour-Version 9)
 - Anlass: fünf Import-Probleme beim Nachtragen alter Wochen aus Scans ([TASKS-v9.md](TASKS-v9.md)). Pakete P1 Core,
@@ -130,9 +221,9 @@ Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v9.md](TASKS-v9.md) ·
 - Offene A/B-Fragen aus v1 (unbeantwortet): Sprache (A Deutsch), Health-Werte nur Gerät (A), Papier-Historie importieren (A), Erinnerungszeiten (A 08:15/21:45/So 17:00).
 
 ## Architektur (Kurz)
-- `Packages/ThaliaCore` (Linux-getestet): Calendar (DayKey/WeekKey/DayMask/GoalPeriod), Vocabulary (Mark, ItemSchedule, Target, Units, MeasureSource, WorkKind, DayTypes, NoteKind, ReflectionQuestion), Records, Scoring (Scorer, Pace), Measures (+WorkTotals), PlanCSV, ImportPreview, Template, Demo, Reports (WeekReport, PlanPrompt, PastWeekPrompt, WeekLine/RangeReport), ThaliaTour (+TodaySummary, ReminderSettings), Format.
-- `Shared/`: Models (SwiftData, Schlüssel statt Relationen, HealthValue device-only), TrackerStore(+Import, +Range), WeekContext/WeekReader, Persistence, DemoData, WidgetBridge, WorkActivity.
-- `App/Sources`: AppModel, RootView, TodayView, WeekView, GoalsView, ReviewView, CloseDayView, CloseWeekView, Editors, ImportView, PastImport, PDFExport, RangePDF, SettingsView, Explainers, Services (Reminder, Health, Live Activity), Intents, TourView, Components, AppPlatform, ThaliaTips, ThaliaApp.
+- `Packages/ThaliaCore` (Linux-getestet): Calendar (DayKey/WeekKey/DayMask/GoalPeriod), Vocabulary (Mark, ItemSchedule, Target, Units, MeasureSource, WorkKind, DayTypes, NoteKind, ReflectionQuestion), Records, Scoring (Scorer, Pace), Measures (+WorkTotals), PlanCSV, ImportPreview, Template, Demo, Reports (WeekReport, PlanPrompt, PastWeekPrompt, WeekLine/RangeReport), ThaliaTour (+TodaySummary, ReminderSettings), Format; v10: SettingRecord, GoalResults, GoalTrack, Lists, Segments, ExchangeFormat (Format v1 zum Kopieren), Exchange (ExchangeDerivation, LinkRule), WeekExtras, DemoV10.
+- `Shared/`: Models (SwiftData, Schlüssel statt Relationen, HealthValue device-only), TrackerStore(+Import, +Range, +Records), WeekContext/WeekReader, ExchangeInboxReader (nicht auf der Watch), Persistence, DemoData, WidgetBridge, WorkActivity.
+- `App/Sources`: AppModel, RootView, TodayView, WeekView, GoalsView, GoalResults, ReadingList, Segments, ReviewView, CloseDayView, CloseWeekView, Editors, ImportView, PastImport, PDFExport, RangePDF, SettingsView, Explainers, Services (Reminder, Health, Live Activity), Intents, TourView, Components, AppPlatform, ThaliaTips, ThaliaApp.
 - `Watch/Sources`, `Widgets/Sources`. Screens für CI-Screenshots: `Config/ci.env`.
 
 ## v2 – Fortschritt

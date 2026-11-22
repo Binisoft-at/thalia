@@ -226,6 +226,8 @@ struct ExplainerSheet: View {
 /// the "Neu seit 1.7" card at the end of "Wie wird gerechnet?" – a NavigationStack is around every explainer.
 enum FeatureExplainer: String, CaseIterable, Identifiable {
     case excused, pastWeeks, rangePDF
+    // v10 (1.9.0)
+    case goalResults, reading, segments, connectedApps
 
     var id: String { rawValue }
 
@@ -234,6 +236,10 @@ enum FeatureExplainer: String, CaseIterable, Identifiable {
         case .excused: "Krank & Urlaub"
         case .pastWeeks: "Vergangene Wochen"
         case .rangePDF: "PDF-Bericht"
+        case .goalResults: "Ergebnisse und Wochen über 8"
+        case .reading: "Leseliste"
+        case .segments: "Abschnitte"
+        case .connectedApps: "Verbundene Apps"
         }
     }
 
@@ -242,6 +248,10 @@ enum FeatureExplainer: String, CaseIterable, Identifiable {
         case .excused: "cross.case"
         case .pastWeeks: "clock.arrow.circlepath"
         case .rangePDF: "doc.richtext"
+        case .goalResults: "flag.checkered"
+        case .reading: "books.vertical"
+        case .segments: "square.split.2x1"
+        case .connectedApps: "arrow.left.arrow.right"
         }
     }
 }
@@ -285,6 +295,10 @@ struct FeatureExplainerView: View {
                 case .excused: excused
                 case .pastWeeks: pastWeeks
                 case .rangePDF: rangePDF
+                case .goalResults: goalResults
+                case .reading: reading
+                case .segments: segments
+                case .connectedApps: connectedApps
                 }
             }
             .padding()
@@ -423,5 +437,118 @@ struct FeatureExplainerView: View {
         #else
         return "Thalia baut den Bericht Seite für Seite – abbrechen geht jederzeit – und zeigt ihn in der Vorschau. Dann teilen, etwa in Dateien oder per Mail. Lesezeichen führen zu jeder Woche."
         #endif
+    }
+
+    // MARK: v10 – Ergebnisse und Wochen über 8
+
+    private var goalResults: some View {
+        Group {
+            Step(number: 1, title: "Ergebnisse eines Jahresziels",
+                 text: "Ziele → ein Ziel → „Ergebnisse“ → „Ergebnis anlegen“. Drei Arten: abhaken (erledigt am Tag des Eintrags), zählen (Einträge, fertige Bücher der Leseliste, ein Messwert oder eine verbundene App) und Zielwert (der letzte Wert zählt, mit Startwert).",
+                 example: "Website online ✓ · Bücher 3 von 10 · Zielwert auf Kurs")
+            Step(number: 2, title: "Stand und Tempo",
+                 text: "Die Zeile zeigt Stand, Ziel und Status: „auf Kurs“, wenn der Stand mindestens dem gleichmäßigen Tempo bis heute entspricht, sonst „hinten“; „erreicht“, sobald das Ziel erfüllt ist. Ohne Ziel steht nur der Stand.",
+                 example: "7 von 10 · davon 4 in Abschnitt 2 · auf Kurs")
+            Step(number: 3, title: "Eintragen – auch rückwirkend",
+                 text: goalEntryText,
+                 example: "Jahresziel eintragen · Zählt für Di, 17. Nov.")
+            Step(number: 4, title: "Wochen über 8",
+                 text: "Eine Kategorie ist in einer Woche gut dabei, wenn ihre Wochennote gerundet mindestens 8,00 ist – 7,99 nicht. Ein Ziel ist gut dabei, wenn jede seiner gewerteten Kategorien es ist. Entschuldigte Wochen zählen nicht mit.",
+                 example: "✓ über 8 · Wochen über 8: 1.1 9/12 · 1.2 7/12")
+            Step(number: 5, title: "Messwerte im Ziel",
+                 text: "Die Zielkarte zeigt bis zu drei Messwerte der Kategorien des Ziels, die Zielseite alle mit Wochenwert und Ziel. Ein Messwert, der ein Ergebnis speist, sagt das in „Wochenziele“ und im Messwert-Editor.",
+                 example: "zählt für Ziel 5 · Bücher 3/10")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Wichtig", systemImage: "exclamationmark.circle")
+                    .font(.headline)
+                Text("• „Wochen über 8“ zählt die letzten zwölf gewerteten Wochen im aktuellen Abschnitt.")
+                Text("• Die Planung sieht die Ergebnisse als Information – sie steigert nichts unaufgefordert. Werte aus Apple Health stehen nie darin.")
+                Text("• Ein gelöschtes Ergebnis liegt mit seinen Einträgen 30 Tage unter „Zuletzt gelöscht“.")
+            }
+            .font(.subheadline)
+            .card()
+        }
+    }
+
+    private var goalEntryText: String {
+        #if os(macOS)
+        return "Zum Tag gehen, dann „Erfassen“ (⇧⌘N) → „Jahresziel eintragen“: Ergebnis wählen, abhaken, +1 oder einen Wert. Das Datum ist vorbelegt und änderbar. Auf der Seite eines Ergebnisses lassen sich Einträge ändern und löschen."
+        #else
+        return "Zum Tag gehen, dann + → „Jahresziel eintragen“: Ergebnis wählen, abhaken, +1 oder einen Wert. Das Datum ist vorbelegt und änderbar. Auf der Seite eines Ergebnisses lassen sich Einträge ändern und löschen."
+        #endif
+    }
+
+    // MARK: v10 – Leseliste
+
+    private var reading: some View {
+        Group {
+            Step(number: 1, title: "Die Leseliste",
+                 text: "Ziele → Jahreskarte → ••• → „Leseliste“, ab dem ersten Buch auch über die Karte „Gerade dabei“. Läuft, Geplant, Fertig (nach Abschnitt) und Abgebrochen, mit Suche. + legt ein Buch an: Titel, Autor:in, Seiten, Art, „Zählt für“ und Beginn und Ende – auch rückwirkend.",
+                 example: "Läuft · Klarer Kopf · 120 von 320 Seiten · 38 %")
+            Step(number: 2, title: "Lesen eintragen",
+                 text: "„Bis Seite“ (der Stand) oder „+ Seiten“ (dazu), für jeden Tag – auch einen früheren. Gelesen ist, was über den bisher höchsten Stand hinausgeht; ein Stand, der rückwirkend dazwischen kommt, rechnet richtig, nie negativ. Ist die letzte Seite erreicht, schlägt Thalia „fertig“ vor.",
+                 example: "bis Seite 140 · Mi, 18. Nov. → 20 Seiten")
+            Step(number: 3, title: "Messwerte und Ergebnisse",
+                 text: "Ein Messwert mit der Quelle „Leseliste“ zählt die gelesenen Seiten von selbst – ein Punkt „20 Seiten lesen“ bekommt Vorschlag und Fortschritt wie immer. Sein + in Heute öffnet „Lesen“, so wird jede Seite nur einmal eingetragen. Ein Ergebnis „Bücher“ zählt die fertigen Bücher.",
+                 example: "Lesen · 20 Seiten · zählt für Ziel 5 · Bücher 3/10")
+        }
+    }
+
+    // MARK: v10 – Abschnitte
+
+    private var segments: some View {
+        Group {
+            Step(number: 1, title: "Jahresziele neu festlegen",
+                 text: "Ziele → Jahreskarte → ••• → „Neuen Abschnitt beginnen…“, auch unter Einstellungen → Jahresziele und am Ende der Zielüberprüfung. Startwoche (Standard nächste Woche, auch rückwirkend), Titel und Grund – danach Ziele umbenennen, neue anlegen und Ergebnisse für den neuen Abschnitt setzen.",
+                 example: "Abschnitt 2 · seit KW50 · Woche 3")
+            Step(number: 2, title: "Fokus auf dem aktuellen Abschnitt",
+                 text: "Die Karten zählen im aktuellen Abschnitt; ältere Werte sind grau, nicht versteckt. Darunter stehen „Frühere Abschnitte“ mit ihren Wochen, Ø Wertung, Kategorie-Wochen über 8 und erreichten Ergebnissen – mit den Zielen, wie sie damals hießen.",
+                 example: "Abschnitt 1 · KW23–KW49 · Ø 7,4")
+            Step(number: 3, title: "Vergangenes bleibt, wie es war",
+                 text: frozenText,
+                 example: "Vor Abschnitt 2: KW44 wird nicht mehr von selbst neu gewertet")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Wichtig", systemImage: "exclamationmark.circle")
+                    .font(.headline)
+                Text("• Der Assistent hängt keine Kategorien um und löscht keine – Kategorien kommen weiter über den Wochenplan.")
+                Text("• Widerrufen gleich danach nimmt den ganzen Schritt zurück.")
+                Text("• Rückblick, Zielüberprüfung und PDF-Bericht bieten den Zeitraum „Abschnitt“ bzw. „Aktueller Abschnitt“.")
+            }
+            .font(.subheadline)
+            .card()
+        }
+    }
+
+    private var frozenText: String {
+        "Eine abgeschlossene Woche vor dem aktuellen Abschnitt wird nie von selbst neu gewertet – auch nicht durch einen späten Eintrag oder eine Meldung aus einer anderen App. Nur die Woche direkt davor wird in der ersten Woche des Abschnitts noch nachgewertet. „Neu berechnen“ in der Woche rechnet sie auf Wunsch nach heutigen Regeln."
+    }
+
+    // MARK: v10 – Verbundene Apps
+
+    private var connectedApps: some View {
+        Group {
+            Step(number: 1, title: "Was andere Apps liefern",
+                 text: "Theo (erledigte Aufgaben, Power-Hours), George (Workouts), Nina (Kalorien, Makros, Wasser) und Finn (Ausgaben, Vermögen) legen auf demselben Gerät kleine Tagesdateien ab. Thalia liest sie, sobald sie dort geöffnet ist, und gleicht sie über iCloud mit den anderen Geräten ab.",
+                 example: "Einstellungen → Verbundene Apps · Theo · zuletzt gesehen")
+            Step(number: 2, title: "Gerechnet, nie geschrieben",
+                 text: "Thalia legt für Werte aus anderen Apps keine eigenen Einträge an. Ein verknüpfter Punkt bekommt den Haken von selbst, solange es keine eigene Markierung gibt – auch eine geleerte eigene Markierung geht vor. Ein eigener Eintrag für den Tag ersetzt den Wert aus der App.",
+                 example: "✓ ⇄ George · Push")
+            Step(number: 3, title: "Power-Hours aus Theo",
+                 text: "Sie stehen in Heute „aus Theo“ und zählen für das Wochenziel. „Übernehmen“ macht einen eigenen Eintrag daraus, der den aus Theo ersetzt. Gruppen ohne Kategorie stehen unter „Ohne Zuordnung“ – in Theo oder unter Einstellungen → Verbundene Apps eine Kategorie wählen.",
+                 example: "1,5 PH · Arbeit/Kunden · aus Theo · Übernehmen")
+            Step(number: 4, title: "Messwerte verbinden",
+                 text: "Messwert bearbeiten → „Quelle“ → „Verbundene App“ → App → Art → Eintrag. Ausgaben aus Finn erscheinen in der Ausgabenliste „aus Finn – in Finn ändern“; eigene Ausgaben kommen dazu.",
+                 example: "George · Workouts · Push → Krafttraining ✓")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Wichtig", systemImage: "exclamationmark.circle")
+                    .font(.headline)
+                Text("• Werte aus Apple Health gehen nie in den Austausch – Thalia liest Health selbst auf dem iPhone.")
+                Text("• Nur auf iPhone, iPad und Mac, auf demselben Gerät wie die andere App; die Watch zeigt die Werte nach dem Abgleich.")
+                Text("• Eine abgeschlossene Woche vor dem aktuellen Abschnitt ändert sich durch späte Meldungen nicht.")
+                Text("• „Thalia-Katalog bereitstellen“ zeigt anderen Apps nur Namen von Zielen, Kategorien, Messwerten und Ergebnissen – keine Werte.")
+            }
+            .font(.subheadline)
+            .card()
+        }
     }
 }

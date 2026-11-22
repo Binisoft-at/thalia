@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "source": "finn",
+  "day": "2026-11-22",
+  "generatedAt": "2026-11-22T20:00:00Z",
+  "facts": [
+    { "id": "sp-grp-lebensmittel-2026-11-22", "kind": "spending", "ref": "grp-lebensmittel", "refTitle": "Lebensmittel", "title": "Lebensmittel",
+      "value": 23.4, "currency": "EUR", "at": "2026-11-22T17:45:00+01:00", "origin": "app" },
+    { "id": "sp-grp-freizeit-2026-11-22", "kind": "spending", "ref": "grp-freizeit", "refTitle": "Freizeit", "title": "Freizeit",
+      "value": 12, "currency": "EUR", "origin": "app" },
+    { "id": "nw-2026-11", "kind": "value", "ref": "net_worth", "refTitle": "Vermögen", "metric": "net_worth", "value": 52000,
+      "currency": "EUR", "origin": "app" }
+  ]
+}

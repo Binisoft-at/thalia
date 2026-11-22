@@ -281,7 +281,11 @@ struct ImportView: View {
                 exportFile = CSVFile(text: app.store.exportCSV())
             }
             Button("Wochenbericht \(app.selectedWeek.label) kopieren", systemImage: "doc.on.doc") {
-                Clipboard.copy(WeekReport.markdown(app.store.weekContext(for: app.selectedWeek, today: app.today).reportInput()))
+                let store: TrackerStore = app.store
+                // v10 (§1.2.5): with the block "Jahresziel-Ergebnisse".
+                let input: WeekReportInput = store.weekContext(for: app.selectedWeek, today: app.today)
+                    .reportInput(results: store.resultLines(today: app.today))
+                Clipboard.copy(WeekReport.markdown(input))
                 app.toasts.show("Wochenbericht kopiert", symbol: "doc.on.doc")
             }
         } header: {
@@ -461,7 +465,9 @@ extension AppModel {
     /// Krank/Urlaub (or close days), so the evening reminders are planned anew, also after Undo.
     func showImported(_ result: TrackerStore.ImportResult, message: String? = nil) {
         scheduleReminders()
-        let text: String = message ?? "Importiert: \(result.summary)"
+        var text: String = message ?? "Importiert: \(result.summary)"
+        // v10 (Grundregel 2): closed weeks before the current segment kept their score – say so.
+        if let hint = result.frozenToast { text += "\n" + hint }
         guard !result.archives.isEmpty else {
             toasts.show(text, symbol: "square.and.arrow.down")
             return

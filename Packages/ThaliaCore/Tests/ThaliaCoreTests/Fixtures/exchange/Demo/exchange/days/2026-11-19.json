@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "source": "demo",
+  "day": "2026-11-19",
+  "generatedAt": "2026-11-19T20:00:00+01:00",
+  "facts": [
+    { "id": "demo-ph-2026-11-19-1", "kind": "ph", "ref": "grp-projekt", "refTitle": "Projekt", "title": "Landingpage",
+      "value": 1, "unit": "PH", "at": "2026-11-19T11:00:00+01:00", "origin": "app",
+      "thalia": { "category": "3.2", "categoryTitle": "stammloop" } },
+    { "id": "demo-ph-2026-11-19-2", "kind": "ph", "ref": "grp-verein", "refTitle": "Sport / Verein", "title": "Vereinsabend vorbereitet",
+      "value": 0.5, "unit": "PH", "at": "2026-11-19T16:00:00+01:00", "origin": "app" }
+  ]
+}

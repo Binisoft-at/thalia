@@ -51,7 +51,7 @@ private struct PracticePage: View {
         NavigationStack {
             // Inside the stack, so the coach sits below the navigation bar and + stays reachable.
             TodayView()
-                .thaliaCoach(steps: steps, snapshot: snapshot, startAt: startAt, onClose: onFinish)
+                .thaliaCoach(steps: steps, snapshot: snapshot, startAt: startAt, onClose: onFinish, show: showcase)
                 #if os(iOS)
                 .safeAreaInset(edge: .bottom) {
                     // The real app has + in the tab bar's accessory; the practice page brings its own.
@@ -75,6 +75,14 @@ private struct PracticePage: View {
                 }
                 #endif
         }
+    }
+
+    /// v10: the cards whose screen isn't on the practice page ("Ergebnisse", "Leseliste", "Abschnitte",
+    /// "Verbundene Apps") open it here with "Ansehen" – on the practice data, never the real store.
+    private func showcase(_ stepID: String) -> (() -> Void)? {
+        guard let sheet = TourShowcase.sheet(for: stepID, day: app.captureDay) else { return nil }
+        let model: AppModel = app
+        return { model.sheet = sheet }
     }
 
     private var snapshot: ThaliaTourSnapshot {
@@ -112,6 +120,8 @@ private struct ThaliaCoachCard: View {
     let onBack: (() -> Void)?
     let onNext: () -> Void
     let onClose: () -> Void
+    /// v10: "Ansehen" opens the card's screen on the practice page; nil for cards shown on it anyway.
+    var onShow: (() -> Void)? = nil
 
     @State private var isFolded = false
 
@@ -156,6 +166,10 @@ private struct ThaliaCoachCard: View {
                         Button("Zurück", action: onBack)
                             .buttonStyle(.borderless)
                     }
+                    if let onShow {
+                        Button("Ansehen", action: onShow)
+                            .buttonStyle(.borderless)
+                    }
                     if primaryIsProminent {
                         Button(action: onNext) { Text(primaryTitle).lineLimit(1).fixedSize().frame(minWidth: 64) }
                             .buttonStyle(.glassProminent)
@@ -183,6 +197,8 @@ private struct ThaliaCoachModifier: ViewModifier {
     let snapshot: ThaliaTourSnapshot
     let startAt: String?
     let onClose: () -> Void
+    /// v10: the "Ansehen" action of a card (by step id), nil for most.
+    let show: (String) -> (() -> Void)?
 
     @State private var progress: TourProgress<ThaliaTourSnapshot>?
     @State private var latest: ThaliaTourSnapshot?
@@ -194,7 +210,8 @@ private struct ThaliaCoachModifier: ViewModifier {
                     ThaliaCoachCard(
                         step: step, index: progress.index, count: progress.steps.count, isMet: progress.isMet,
                         primaryTitle: title(progress), primaryIsProminent: progress.primaryIsProminent,
-                        onBack: progress.isFirst ? nil : { goBack() }, onNext: { advance() }, onClose: onClose
+                        onBack: progress.isFirst ? nil : { goBack() }, onNext: { advance() }, onClose: onClose,
+                        onShow: show(step.id)
                     )
                 }
             }
@@ -243,7 +260,7 @@ private struct ThaliaCoachModifier: ViewModifier {
 
 extension View {
     func thaliaCoach(steps: [TourStep<ThaliaTourSnapshot>], snapshot: ThaliaTourSnapshot, startAt: String?,
-                     onClose: @escaping () -> Void) -> some View {
-        modifier(ThaliaCoachModifier(steps: steps, snapshot: snapshot, startAt: startAt, onClose: onClose))
+                     onClose: @escaping () -> Void, show: @escaping (String) -> (() -> Void)? = { _ in nil }) -> some View {
+        modifier(ThaliaCoachModifier(steps: steps, snapshot: snapshot, startAt: startAt, onClose: onClose, show: show))
     }
 }

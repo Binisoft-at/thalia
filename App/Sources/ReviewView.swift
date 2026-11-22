@@ -38,8 +38,49 @@ struct ReviewContent: View {
     /// v8: "PDF-Bericht ab dieser Woche" from a row's context menu.
     @State private var rangeStart: RangeStart?
     /// v9: the archive settings (`archive.<week>`), observed so the "Archiv" tag follows an import.
-    /// Settings are few; the others are ignored.
+    /// v10 (§1.1.2): read with a prefix predicate – the synced inbox and the records stay out.
     @Query private var settings: [AppSetting]
+
+    init(current: WeekContext) {
+        self.current = current
+        let prefix = ArchiveWeek.settingPrefix
+        _settings = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: prefix) })
+    }
+
+    /// The week scores as bars; v10: a dashed line with its name where a later segment begins.
+    private static func scoreChart(_ points: [ScorePoint], starts: [ReviewSegmentStart]) -> some View {
+        Chart {
+            ForEach(points) { point in
+                BarMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
+                    .foregroundStyle(by: .value("Modell", point.series))
+                    .annotation(position: .top) {
+                        Text(ReviewContent.barLabel(point))
+                            .font(.system(size: 8, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+            }
+            ForEach(starts) { start in
+                RuleMark(x: .value("Woche", start.label))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                    .annotation(position: .top, alignment: .leading) {
+                        Text(start.title)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+    }
+
+    /// v10 (§1.4.3): where a later segment begins among the chart's weeks – a line with its name.
+    private func segmentStarts(_ points: [ScorePoint]) -> [ReviewSegmentStart] {
+        guard current.segments.hasSeveral else { return [] }
+        let labels: Set<String> = Set(points.map(\.label))
+        return current.segments.spans.dropFirst().compactMap { span -> ReviewSegmentStart? in
+            let label: String = span.startWeek.label
+            return labels.contains(label) ? ReviewSegmentStart(label: label, title: span.title) : nil
+        }
+    }
 
     private var weeks: [WeekPlan] {
         Array(plans.latest(by: \.weekKey, modified: \.modifiedAt).values).sorted { $0.weekKey > $1.weekKey }
@@ -119,18 +160,11 @@ struct ReviewContent: View {
         let excused: Set<String> = excusedClosed
         let archived: Set<String> = archivedWeeks
         let points: [ScorePoint] = chartPoints(open, excused: excused)
+        let starts: [ReviewSegmentStart] = segmentStarts(points)
         List {
             if points.count > 0 {
                 Section {
-                    Chart(points) { point in
-                        BarMark(x: .value("Woche", point.label), y: .value("Wertung", point.score))
-                            .foregroundStyle(by: .value("Modell", point.series))
-                            .annotation(position: .top) {
-                                Text(ReviewContent.barLabel(point))
-                                    .font(.system(size: 8, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                    }
+                    ReviewContent.scoreChart(points, starts: starts)
                     .chartForegroundStyleScale([
                         "vor KW42": Color.secondary.opacity(0.45),
                         "gleich gewichtet": Brand.accent,
@@ -243,6 +277,13 @@ struct ReviewContent: View {
     }
 }
 
+/// v10 (§1.4.3): a segment's first week in the Rückblick chart.
+private struct ReviewSegmentStart: Identifiable {
+    let label: String
+    let title: String
+    var id: String { label }
+}
+
 /// v8: the first week of a "PDF-Bericht ab dieser Woche".
 private struct RangeStart: Identifiable {
     let week: WeekKey
@@ -350,12 +391,15 @@ struct ReportView: View {
     @State private var showsPDF = false
     /// v8: "Mehrere Wochen als PDF…" from the share menu.
     @State private var showsRangePDF = false
+    /// v10 (§1.2.5): the block "Jahresziel-Ergebnisse", read once when the sheet opens.
+    @State private var resultLines: [GoalResultLine] = []
 
     var body: some View {
         NavigationStack {
             WeekReader(week: week, today: app.today) { context in
                 content(context)
             }
+            .task { resultLines = app.store.resultLines(today: app.today) }
             .navigationTitle("Wochenbericht \(week.label)")
             .inlineNavigationTitle()
             .sheet(item: $sharing) { request in
@@ -378,7 +422,7 @@ struct ReportView: View {
     }
 
     private func content(_ context: WeekContext) -> some View {
-        let text: String = WeekReport.markdown(context.reportInput())
+        let text: String = WeekReport.markdown(context.reportInput(results: resultLines))
         return Form {
             WeekSummarySections(context: context)
             Section {

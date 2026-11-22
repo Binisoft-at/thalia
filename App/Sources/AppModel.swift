@@ -73,6 +73,20 @@ enum AppSheet: Identifiable {
     case importPast(WeekKey?)
     /// v8: several weeks as one PDF report.
     case rangePDF
+    /// v10 (§1.2.6): "Jahresziel eintragen" for a day – abhaken, +1 or a value (nil lets the sheet choose the result).
+    case goalEntry(DayKey, resultID: String?)
+    /// v10 (§1.3): "Lesen" – "bis Seite" / "+ Seiten" for a day (nil lets the sheet choose the book).
+    case reading(DayKey, itemID: String?)
+    /// v10: the book window (nil: a new book).
+    case book(ListItem?)
+    /// v10: the reading list in a sheet of its own (the tour's practice page).
+    case readingList
+    /// v10 (§1.4.2): "Neuen Abschnitt beginnen…".
+    case beginSegment
+    /// v10: a result of an annual goal (nil: a new one for `goalKey`).
+    case resultEditor(GoalResult?, goalKey: String)
+    /// v10 (§1.5.5): Einstellungen → "Verbundene Apps" as a sheet (screenshots, the tour).
+    case connectedApps
 
     var id: String {
         switch self {
@@ -105,6 +119,13 @@ enum AppSheet: Identifiable {
         case .goalReview: "goal-review"
         case .importPast(let week): "import-past-" + (week?.string ?? "any")
         case .rangePDF: "range-pdf"
+        case .goalEntry(let day, let resultID): "goal-entry-\(day.string)-\(resultID ?? "any")"
+        case .reading(let day, let itemID): "reading-\(day.string)-\(itemID ?? "any")"
+        case .book(let item): "book-" + (item?.id ?? "new")
+        case .readingList: "reading-list"
+        case .beginSegment: "begin-segment"
+        case .resultEditor(let result, let goalKey): "result-editor-\(result?.id ?? "new")-\(goalKey)"
+        case .connectedApps: "connected-apps"
         }
     }
 }
@@ -170,6 +191,9 @@ final class AppModel {
     private var inspectorStorage: Bool = UserDefaults.standard.bool(forKey: AppModel.inspectorKey)
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var widgetPublisher: WidgetPublisher?
+    /// v10 (§1.5.1): looks into the shared App Group for the connected apps' day files – the real
+    /// store only (never `-Demo`, the practice page or an in-memory store); nil otherwise.
+    @ObservationIgnored private(set) var exchangeMonitor: ExchangeMonitor?
 
     init(container: ModelContainer, mode: StorageMode, launch: LaunchOptions = .current, isSandbox: Bool = false) {
         self.container = container
@@ -189,8 +213,52 @@ final class AppModel {
             let publisher = WidgetPublisher(container: container)
             publisher.start()
             widgetPublisher = publisher
+            startConnectedApps()
         }
         updateMenuBarTitle()
+    }
+
+    // MARK: v10 – connected apps and the one-time backfill
+
+    /// The exchange with the other Binisoft apps (§1.5.1): the monitor reads at start (a few seconds
+    /// later), whenever Thalia comes to the front, every 5 minutes while it is active, after its own
+    /// iCloud import, at the day change and on the Darwin notification of another app. Also, off the
+    /// first frame: the one-time category week scores (§1.2.3) and, in debug builds, the check that
+    /// prefix queries work on this device (§1.1.2).
+    private func startConnectedApps() {
+        let monitor = ExchangeMonitor(container: container, isDemo: launch.isDemo)
+        if monitor.isEnabled {
+            monitor.start()
+            exchangeMonitor = monitor
+            let center = NotificationCenter.default
+            #if os(iOS)
+            let becameActive: Notification.Name = UIApplication.didBecomeActiveNotification
+            let wentAway: Notification.Name = UIApplication.didEnterBackgroundNotification
+            #else
+            let becameActive: Notification.Name = NSApplication.didBecomeActiveNotification
+            let wentAway: Notification.Name = NSApplication.didResignActiveNotification
+            #endif
+            observers.append(center.addObserver(forName: becameActive, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.exchangeMonitor?.setActive(true) }
+            })
+            observers.append(center.addObserver(forName: wentAway, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.exchangeMonitor?.setActive(false) }
+            })
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let self, !self.isSandbox, !self.launch.isDemo else { return }
+            let store = self.store
+            #if DEBUG
+            store.verifyPrefixQuery()
+            #endif
+            store.backfillCategoryScores(today: self.today)
+        }
+    }
+
+    /// "Jetzt nachsehen" in Einstellungen → "Verbundene Apps".
+    func refreshConnectedApps() {
+        exchangeMonitor?.refreshNow()
     }
 
     var store: TrackerStore { TrackerStore(context: container.mainContext) }
@@ -364,6 +432,9 @@ final class AppModel {
         store.mergeDuplicates()
         // A week closed or edited on the Mac or Watch gets its score with Health values (iPhone/iPad).
         store.rescoreRecentClosedWeeks(through: today.week)
+        // v10 (§1.2.3): closed weeks that arrived only now (a freshly set-up device) get their category
+        // week scores – each week is looked at once per device, so this costs nothing afterwards.
+        store.backfillCategoryScores(today: today)
         clearRemindersOfClosedDays()
         widgetPublisher?.publishNow()
         updateMenuBarTitle()
@@ -700,6 +771,12 @@ final class AppModel {
             sheet = .importPast(argument.flatMap { WeekKey($0) })
         case "range-pdf":
             sheet = .rangePDF
+        case "connected-apps":
+            sheet = .connectedApps
+        case "reading":
+            sheet = .reading(today, itemID: nil)
+        case "goal-entry":
+            sheet = .goalEntry(today, resultID: nil)
         default:
             tab = .today
             sidebar = .today
@@ -766,6 +843,13 @@ final class AppModel {
             sheet = .explainer(.scoring)
         case "settings":
             sheet = .settings
+        case "goal-detail", "reading":
+            // v10: the Ziele page opens the books goal's page or the reading list by itself (once per launch).
+            tab = .goals
+            sidebar = .goals
+        case "connected-apps":
+            // v10: the demo's sample source "Demo" from its records – the App Group is never touched.
+            sheet = .connectedApps
         default:
             break
         }

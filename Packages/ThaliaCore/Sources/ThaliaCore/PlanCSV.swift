@@ -47,6 +47,9 @@ public enum PlanCSV {
         case categoryScore = "category_score"
         /// An annual goal's grade 0–10 for the week (v9).
         case goalScore = "goal_score"
+        /// A stored v10 record (backup): `id` = the setting's key, `note` = its value (JSON) – results,
+        /// entries, segments, list entries and progress, mappings, the inbox, category week scores.
+        case record
 
         public init?(token: String) {
             let t = token.trimmingCharacters(in: .whitespaces).lowercased()
@@ -68,6 +71,7 @@ public enum PlanCSV {
             case "notiz", "beobachtung": self = .note
             case "reflexion", "rückblick", "rueckblick": self = .review
             case "kategoriewert", "override", "eigenwertung": self = .score
+            case "datensatz", "records": self = .record
             default: return nil
             }
         }
@@ -112,12 +116,14 @@ public enum PlanCSV {
         public var grades: [ArchiveGrade] = []
         /// The `note` of a week row: where the week's value comes from ("Scan S. 19", v9).
         public var weekNotes: [WeekKey: String] = [:]
+        /// Stored v10 records (`record` rows of a backup): setting key and value, one per key.
+        public var records: [SettingRow] = []
 
         public init() {}
 
         public var rowCount: Int {
             goals.count + categories.count + weeks.count + days.count + items.count + measures.count + marks.count
-                + entries.count + work.count + notes.count + reviews.count + scores.count + grades.count
+                + entries.count + work.count + notes.count + reviews.count + scores.count + grades.count + records.count
         }
 
         public var isEmpty: Bool { rowCount == 0 }
@@ -580,6 +586,31 @@ public enum PlanCSV {
                 }
                 addGrade(ArchiveGrade(week: week, kind: kind, id: id, title: title, day: gradeDay, value: value, source: source,
                                       count: count), line: line)
+
+            case .record:
+                // v10: a stored record of a backup – only the keys of v10, JSON where the key holds JSON.
+                let value = col("note")
+                guard !id.isEmpty, SettingKeys.isV10(id) else {
+                    doc.skipped.append("Zeile \(line): Datensatz \u{201C}\(id)\u{201D} wird nicht gelesen (unbekannter Schlüssel)")
+                    continue
+                }
+                guard !value.isEmpty else {
+                    doc.skipped.append("Zeile \(line): Datensatz \u{201C}\(id)\u{201D} ohne Inhalt (note)")
+                    continue
+                }
+                if !id.hasPrefix(SettingKeys.categoryScores), JSONText.object(value) == nil {
+                    doc.skipped.append("Zeile \(line): Datensatz \u{201C}\(id)\u{201D} ist kein lesbares JSON")
+                    continue
+                }
+                // A day file of the inbox: only facts recorded in the app itself come in – never values from
+                // Apple Health (guideline 5.1.3(ii)), the inbox syncs through iCloud.
+                guard let stored = ExchangeInbox.syncableValue(value, key: id) else {
+                    doc.skipped.append("Zeile \(line): Datensatz \u{201C}\(id)\u{201D} ist kein lesbarer Tag einer verbundenen App")
+                    continue
+                }
+                warnDuplicate("record:\(id)", line: line)
+                doc.records.removeAll { $0.key == id }
+                doc.records.append(SettingRow(key: id, value: stored))
             }
         }
 
@@ -679,13 +710,20 @@ public enum PlanCSV {
             // Since v2 a category has as many items as the week needs – no fixed ten.
             let items = doc.items.filter { $0.week == week }
             let measureCodes = Set(doc.measures.filter { $0.week == week }.map(\.code)).union(knownMeasures)
-            for item in items where !item.measure.isEmpty && !measureCodes.contains(item.measure) {
+            // v10: a link to a connected app or the reading list ("app:…", "list:…") needs no measure row.
+            for item in items where !item.measure.isEmpty && !measureCodes.contains(item.measure) && !isComputedLink(item.measure) {
                 doc.warnings.append("\(week.label) \(item.code): verknüpfter Messwert \u{201C}\(item.measure)\u{201D} fehlt – kein Vorschlag")
             }
             for item in items where item.schedule == .progress && item.measure.isEmpty {
                 doc.warnings.append("\(week.label) \(item.code): Fortschritts-Punkt ohne Wochen-Messwert (link) – zählt wie ein fester Punkt")
             }
         }
+    }
+
+    /// "app:george:workout=tpl-1", "list:buch" – a link that names its source itself (v10).
+    static func isComputedLink(_ link: String) -> Bool {
+        let source = MeasureSource(raw: link)
+        return source.appSource != nil || source.listKind != nil
     }
 
     /// Flag on day and week rows: the day / week is closed (R27).
@@ -818,6 +856,10 @@ public enum PlanCSV {
             for review in doc.reviews.filter({ scopes.contains($0.scope) }).sorted(by: { ($0.scope, $0.field) < ($1.scope, $1.field) }) {
                 row(["type": "review", "id": review.scope, "title": review.field, "description": review.text])
             }
+        }
+        // v10: stored records last, by key – only when there are any, so other files stay as they were.
+        for record in doc.records.sorted(by: { $0.key < $1.key }) {
+            row(["type": RowType.record.rawValue, "id": record.key, "note": record.value])
         }
         return CSV.write(table)
     }

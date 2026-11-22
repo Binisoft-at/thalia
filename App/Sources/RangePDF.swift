@@ -16,7 +16,7 @@ import AppKit
 
 /// "Letzte 4 Wochen" … "Eigener Zeitraum".
 enum PDFRangePreset: String, CaseIterable, Identifiable {
-    case fourWeeks, eightWeeks, thirteenWeeks, goalYear, custom
+    case fourWeeks, eightWeeks, thirteenWeeks, segment, goalYear, custom
 
     var id: String { rawValue }
 
@@ -25,18 +25,26 @@ enum PDFRangePreset: String, CaseIterable, Identifiable {
         case .fourWeeks: "Letzte 4 Wochen"
         case .eightWeeks: "Letzte 8 Wochen"
         case .thirteenWeeks: "Letzte 13 Wochen"
+        case .segment: "Aktueller Abschnitt"
         case .goalYear: "Zieljahr bis heute"
         case .custom: "Eigener Zeitraum"
         }
     }
 
+    /// v10 (§1.4.3): "Aktueller Abschnitt" only when the goal year has more than one.
+    static func choices(hasSegments: Bool) -> [PDFRangePreset] {
+        hasSegments ? allCases : allCases.filter { $0 != .segment }
+    }
+
     /// The weeks; nil for the own range. `lastWeek` is the last finished week (this week once it
-    /// is closed), the goal year runs through this week.
-    func range(lastWeek: WeekKey, today: DayKey, period: GoalPeriod) -> RangePDFWeeks? {
+    /// is closed), the goal year runs through this week. v10: `segment` – the current segment, from its
+    /// first week through this week (the goal year without one).
+    func range(lastWeek: WeekKey, today: DayKey, period: GoalPeriod, segment: SegmentSpan? = nil) -> RangePDFWeeks? {
         switch self {
         case .fourWeeks: return RangePDFWeeks(from: lastWeek.adding(weeks: -3), through: lastWeek)
         case .eightWeeks: return RangePDFWeeks(from: lastWeek.adding(weeks: -7), through: lastWeek)
         case .thirteenWeeks: return RangePDFWeeks(from: lastWeek.adding(weeks: -12), through: lastWeek)
+        case .segment: return RangePDFWeeks(from: segment?.startWeek ?? period.start.week, through: today.week)
         case .goalYear: return RangePDFWeeks(from: period.start.week, through: today.week)
         case .custom: return nil
         }
@@ -1147,6 +1155,8 @@ struct RangePDFSheet: View {
     @State private var choices: [WeekKey] = []
     @State private var lastFinished: WeekKey?
     @State private var period: GoalPeriod?
+    /// v10: the goal year's segments ("Aktueller Abschnitt").
+    @State private var segments: Segments?
     /// The chosen weeks, read and scored.
     @State private var data: RangePDFData?
     @State private var isGenerating = false
@@ -1207,7 +1217,7 @@ struct RangePDFSheet: View {
         Form {
             Section {
                 Picker("Zeitraum", selection: $preset) {
-                    ForEach(PDFRangePreset.allCases) { preset in
+                    ForEach(presetChoices) { preset in
                         Text(preset.title).tag(preset)
                     }
                 }
@@ -1220,7 +1230,7 @@ struct RangePDFSheet: View {
             } header: {
                 Text("Zeitraum")
             } footer: {
-                Text("„Letzte Wochen“ enden mit der letzten abgeschlossenen Woche, das Zieljahr mit dieser Woche.")
+                Text(rangeFooter)
             }
             Section {
                 Picker("Umfang", selection: $scope) {
@@ -1359,7 +1369,24 @@ struct RangePDFSheet: View {
             return RangePDFWeeks(from: from, through: through)
         }
         guard let lastFinished, let period else { return nil }
-        return preset.range(lastWeek: lastFinished, today: app.today, period: period)
+        return preset.range(lastWeek: lastFinished, today: app.today, period: period, segment: currentSegment)
+    }
+
+    /// v10: the segment `today` is in, when the goal year has several.
+    private var currentSegment: SegmentSpan? {
+        guard let segments, segments.hasSeveral else { return nil }
+        return segments.current(today: app.today)
+    }
+
+    private var presetChoices: [PDFRangePreset] {
+        PDFRangePreset.choices(hasSegments: currentSegment != nil || preset == .segment)
+    }
+
+    private var rangeFooter: String {
+        guard let segment = currentSegment else {
+            return "„Letzte Wochen“ enden mit der letzten abgeschlossenen Woche, das Zieljahr mit dieser Woche."
+        }
+        return "„Letzte Wochen“ enden mit der letzten abgeschlossenen Woche, \(segment.title) und das Zieljahr mit dieser Woche."
     }
 
     private var rangeID: String { range?.id ?? "" }
@@ -1397,6 +1424,7 @@ struct RangePDFSheet: View {
         let current: WeekKey = app.today.week
         choices = store.reportableWeeks(through: current)
         period = store.goalPeriod
+        if segments == nil { segments = store.segments() }
         let closed: Bool = store.plan(current)?.isClosed ?? false
         lastFinished = closed ? current : current.adding(weeks: -1)
         if customThrough == nil { customThrough = choices.last }

@@ -29,7 +29,7 @@ extension TrackerStore {
 
     /// The weeks of `rangeWeeks(from:through:)`, read and scored (paper weeks included).
     func weekContexts(from start: WeekKey, through end: WeekKey, today: DayKey = .today()) -> [WeekContext] {
-        rangeWeeks(from: start, through: end).map { weekContext(for: $0, today: today) }
+        rangeWeeks(from: start, through: end).map { weekContext(for: $0, today: today, goalYear: false) }
     }
 
     /// One week's line: the stored score of a closed or paper week wins (v9: the value "laut

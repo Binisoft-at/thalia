@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "source": "demo",
+  "day": "2026-11-18",
+  "generatedAt": "2026-11-18T20:00:00+01:00",
+  "facts": [
+    { "id": "demo-workout-2026-11-18", "kind": "workout.done", "ref": "tpl-push", "refTitle": "Push", "title": "Push",
+      "at": "2026-11-18T18:00:00+01:00", "origin": "app" }
+  ]
+}

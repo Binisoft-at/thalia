@@ -281,3 +281,189 @@ Schlüssel-Präfixen – der TestFlight-Build braucht kein „Deploy Schema Chan
 - B8 `MeasureSource`: `app:nina:kcal`, `app:george:workout=tpl-1`, `list:buch` hin und zurück; **unbekannter Text
   bleibt unverändert** (`other`).
 - B9 `Measures.merged`: eigener Eintrag ersetzt App-Wert; Stepper-Basis; leeren.
+
+## Nachträge (Umsetzung)
+
+Was bei der Umsetzung genauer oder anders wurde als oben geplant. Der Plan oben bleibt stehen; bei Abweichungen gilt
+dieser Abschnitt.
+
+### P1 Core
+- `ExchangeDerivation.week(…)` liefert die Struktur `ExchangeEffect` statt eines Tupels: neben `entries`, `work` und
+  `marks` auch `unassignedWork` („ohne Zuordnung“), `additiveCodes`, `markLabels`, `workSources`, `entrySources`,
+  `unused`, `ignored` und `markValues`. Eine Tatsachen-id zählt je Datei einmal (die letzte Zeile gewinnt,
+  `ExchangeDerivation.latest` / `uniqueFacts`) – Woche, Ergebnisse, Verläufe und „Verbundene Apps“ zählen gleich.
+- `Measures.merged(own:health:external:additive:)` hat den zusätzlichen Parameter `additive`: Ausgaben aus Finn werden
+  nicht ersetzt, eigene Ausgaben kommen dazu (§1.5.3).
+- Kategorie einer Tatsache: ihr `thalia.category`, sonst das einer anderen Tatsache derselben Gruppe und Quelle
+  (`groupChoices`), sonst die `LinkRule` – das Beispiel in §1.5.2 nennt die Kategorie nur bei der Aufgabe.
+- Punkte dürfen direkt auf einen `app:…`- oder `list:…`-Text verweisen; Core legt dafür einen verborgenen Messwert an
+  (`ExchangeDerivation.virtualMeasures`).
+- Quelle der Vorwoche beim Import (§1.5.4) gilt für jede Quelle (`arbeit:`, `health:`, `app:`, `list:`); eine auf
+  manuell gesetzte Quelle bleibt manuell; ein Hinweis je Woche in den Warnungen der Vorschau.
+- `record`-Zeilen (§1.1.4) lesen nur Schlüssel der v10-Präfixe (`SettingKeys.all`), Alias `datensatz` / `records`;
+  `archive.<Woche>` bleibt in den `category_score`-/`goal_score`-Zeilen. Sie stehen am Ende und nur, wenn es welche gibt,
+  so bleiben alle anderen Exporte byte-gleich.
+- `ResultProgress.Status` hat zusätzlich `.missed` („nicht erreicht“, wenn der Zeitraum vorbei ist) und `.untargeted`
+  (ohne Ziel). Mit einem Ziel für den aktuellen Abschnitt zählen `count`-Ergebnisse samt Tempo im Abschnitt („1 von 2
+  in Abschnitt 2 · 3 im Zieljahr“); `value`-Ergebnisse rechnen das Tempo ab dem Wert vor dem Abschnitt.
+- Liste als Quelle ohne zugeordnete Einträge: fertige Einträge der Art zählen, aber keine, die einem anderen Ergebnis
+  zugeordnet sind; ohne Art gilt „buch“.
+- Bezeichnungen alter Wochen kommen aus dem Schnappschuss des nächsten Abschnitts (Stand am Ende des Abschnitts),
+  sonst aus dem eigenen. Der stillschweigende „Abschnitt 1“ hat die feste id `first-<periodStart>`.
+- „Über 8,0“ ist umgesetzt als gerundet ≥ 8,00 (`GoalTrack.threshold`) – Annahme, siehe offene Fragen.
+- Lesefehler im Austausch haben deutsche Gründe (`ExchangeReadError.reason`, zusätzlich `wrongType` und
+  `elementNotAnObject`).
+- Tour 10: `goal-results`, `reading` und `segments` stehen nach „review“, `connected-apps` nach „everywhere“. Zwei
+  bestehende Tests sind angepasst (`CSVTests.tourCatalogIsValid`; `CalendarTests.sources`: `app:nina:kcal` ist jetzt
+  `.app`, `health:carbs` bleibt `.other`).
+- Demo (§1.7.2): neue Eigenschaft `Demo.Content.records` (auch in `document.records`); die laufende Woche hat drei
+  Messwerte mit Quelle `app:demo:…` (workouts, kalorien, protein), Punkt 1.2-01 „Krafttraining“ ist mit „workouts“
+  verknüpft. Grundregel 5 sagt „aus Fixture-Dateien“ – die App kann Test-Ressourcen nicht lesen, darum baut die Demo
+  ihre Tagesdateien im Code; `Fixtures/exchange/Demo/` enthält denselben Inhalt für den 22. Nov. 2026, ein Test hält
+  beides gleich. `Package.swift`: Test-Ressourcen `.copy("Fixtures")`.
+- Neue öffentliche Helfer: `AppSource.kindChoices`, `refChoices(_:)`, `label(refs:)` (Messwert-Editor),
+  `ExchangeDerivation.uniqueFacts(_:)`, `Demo.exchangeSourceInfo(today:timeZone:)`, Parameter `timeZone` bei
+  `Demo.exchangeInbox`.
+
+### P2 Shared
+- Neue Datei `Shared/ExchangeInboxReader.swift` mit `ExchangeScan`, `ExchangeFolders` und `ExchangeMonitor` (nicht auf
+  der Watch) – nicht „ExchangeInbox“, weil Core schon das öffentliche `ExchangeInbox` (Schlüssel und Werte) hat. Die
+  Datensätze liegen in `Shared/TrackerStore+Records.swift`.
+- `Trash.records` (§1.1.3) ist aufgeteilt in `results`, `listItems` und `segments` (plus `recordCount`). Einzelne
+  Einträge, Seitenstände und Zuordnungen stehen nicht im Papierkorb: sie werden über `RecordChange` widerrufen und
+  nach 30 Tagen entfernt.
+- `touchedWeeks` lässt `score.<Woche>` aus – das ist das Ergebnis der Wertung, keine Eingabe.
+- `storeFinalScore` schreibt bzw. löscht `score.<Woche>` nur für Wochen mit Punkten oder Archivnoten; Papierwochen
+  behalten, was sie haben. Das einmalige Nachtragen schreibt `score.` auch für eingefrorene Wochen des Zieljahrs (sie
+  hatten nichts, und „Frühere Abschnitte“ braucht sie).
+- Tatsachen mit `origin: health` werden entfernt, bevor eine Tagesdatei in den synchronisierten Eingang kommt; „Was
+  kommt an“ zeigt sie darum nie.
+- Eine Quelle mit Tagesdateien, aber noch ohne `source.json`, bekommt einen Platzhalter in `x.sources`.
+- Einfrieren am Ende eines Imports: Eine Woche, die der Import erst abschließt, bekommt ihre erste Wertung auch dann,
+  wenn sie eingefroren ist (auch nach „Archivdaten ersetzen“). Bereits abgeschlossene, eingefrorene Wochen werden
+  übersprungen und in `ImportResult.frozenWeeks` / `frozenHint` genannt; Noten einer solchen Archiv-Woche ohne
+  „ersetzen“ neu einzulesen braucht danach „Neu berechnen“ in der Woche.
+- Für Ergebnisse mit `measure:`- oder `app:`-Quelle kommt der Verlauf aus `store.resultSeries`; `context.needsSeries`
+  sagt, wann. Die Datensätze in WeekContext sind faul berechnete Eigenschaften (`WeekRecords`).
+- `lastValue` nutzt jetzt auch bestätigte Health-Werte (über `Measures.merged`, B9); `countsAsMissing` ist für
+  `app:`-/`list:`-Messwerte falsch; `suggestionsToFill` lässt abgeleitete Haken aus; `expensesByPurpose` enthält die
+  Zeilen aus der App.
+- Schalter „Thalia-Katalog bereitstellen“ = synchronisierte Einstellung `exchange.catalog` (`aus` = aus, Standard
+  ein); ausgeschaltet löscht das nächste Nachsehen `catalog.json`. Erstes Nachsehen 5 s nach dem Start, Auslöser 2 s
+  entprellt.
+- Neue Parameter mit Standardwert (alte Aufrufe bleiben gültig): `weekContext(for:today:goalYear:)`,
+  `periodReport(period:through:from:)`, `reportInput(results:)`, `setMarkNote(_:item:day:derived:)`; `save()` läuft
+  über `commit(rescoring:)`. `beginSegment(startWeek:title:reason:today:)` gibt `RecordChange?` zurück (nil, wenn die
+  Startwoche nicht erlaubt ist).
+- `mergeDuplicates` fasst auch Arbeitsblöcke mit derselben, nicht leeren `importID` zusammen („Übernehmen“ auf zwei
+  Geräten).
+
+### P3 App
+- Neue Dateien `App/Sources/GoalResults.swift`, `ReadingList.swift`, `Segments.swift`, `ConnectedApps.swift`.
+- Die neuen Fenster öffnen meist als **eigene Fenster der Seite** (`thaliaLocalSheet`), nicht über das eine Fenster
+  der App; zusätzliche `AppSheet`-Fälle für Wege von außen, Menü, Tour und Screenshots: `goalEntry`, `reading`, `book`,
+  `readingList`, `beginSegment`, `resultEditor`, `connectedApps` (dazu `-DemoScreen goal-detail`, `reading`,
+  `connected-apps`).
+- Neue Ziele und Kategorien (Einstellungen → Jahresziele) legt die App direkt als `AnnualGoal`/`TrackCategory` an –
+  es gibt dafür keine eigene Store-Funktion.
+- „Neu berechnen“ steht nur in eingefrorenen abgeschlossenen Wochen (`FrozenWeekNote` in Woche und Wochentabelle).
+- Mit nur einem Abschnitt bleibt die Abschnitt-Oberfläche verborgen (kein „Abschnitt 1“ auf den Karten, kein
+  `.segment` im Rückblick, kein „Ziel in Abschnitt …“) – `Segments.hasSeveral`.
+- `verifyPrefixQuery()` läuft in Debug-Builds 8 s nach dem Start aus `AppModel` (nicht in `LaunchDiagnostics`),
+  zusammen mit dem Nachtragen der Kategorie-Noten; `ExchangeMonitor.setActive` hängt an den Aktiv-/Hintergrund-
+  Benachrichtigungen der App.
+- „Verbundene Apps“ zählt Tatsachen als „Meldungen“ („12 Meldungen an 9 Tagen · letzte 30 Tage“).
+- Messwert-Editor „Quelle“: die neue Quelle schlägt die Einheit vor (PH, die Einheit der Leseliste, die der App; eine
+  Kennzahl in € schlägt nichts vor – ein Messwert in € ist ein Ausgaben-Messwert); die Woche summiert bei PH, Liste,
+  gezählten und summierten App-Arten, eine Kennzahl nimmt ihre Regel (`agg: last` → letzter Wert), sonst wie bisher
+  nach Einheit.
+
+### Lückenschluss (nach der Prüfung)
+- **`x.sources` aus allen Kopien:** zwei Geräte, die verschiedene Apps sehen, schreiben vor dem Abgleich je eine Kopie;
+  der Wert hat keinen Zeitstempel. Gelesen wird darum die Vereinigung aller Kopien (`ExchangeSourceList.merged`, je
+  Quelle das neueste `source.json`) – in `exchangeSources()`, `weekSettings`, WeekContext und WeekReader; das nächste
+  Nachsehen schreibt eine zusammengeführte Kopie. Ein Backup ersetzt `x.sources` nie, es wird zusammengeführt
+  (`SettingRow.resolved`, auch in der Vorschau).
+- **Kopien eines Tages überall gleich:** `ExchangeInbox.isPreferred` (späteres `generatedAt`, bei gleichem der größere
+  kanonische Text) entscheidet in `files(from:)` und `ExchangeDerivation.latest`; `storeInbox` vergleicht mit
+  derselben Wahl. Eine abweichende Datei ohne lesbares `generatedAt` (fehlt, ohne Zeitzone) wird übernommen, statt
+  die erste Kopie für immer zu behalten.
+- **Nur Tatsachen mit `origin: app` kommen in den synchronisierten Eingang** (`ExchangeInbox.syncable`) – auch
+  fehlende oder andere Herkunft, nicht nur `health`; `record`-Zeilen `x.<Quelle>.<Tag>` eines Backups werden beim
+  Lesen ebenso gekürzt (`syncableValue`), eine unlesbare wird übersprungen. Auch das Schreiben des Backups kürzt so
+  (`storedRecordRows`) – falls ein früher Build von v10 noch andere Tatsachen gespeichert hat – und nimmt bei zwei
+  Kopien eines Tages die, die die Wochen lesen (`isPreferred`), damit eine Wiederherstellung dieselben Werte zeigt.
+- **Geleerte Haken überleben Backup und Wochen-Schnappschuss:** Exporte enthalten eine Markierung ohne Wert, wenn sie
+  eine Notiz trägt oder ihr Punkt mit einem `app:`-Messwert verknüpft ist (`MarkRecord.exported`); der Import legt sie
+  als geleerte an. Andere geleerte Markierungen bleiben draußen (die Exporte bleiben sonst gleich).
+- **Zusammenführen zweier Kopien einer Markierung:** der Wert der neuesten gilt, auch ein leerer (`collapse`); nur
+  eine leere Notiz wird aus einer älteren Kopie ergänzt.
+- **Notiz an einem abgeleiteten ✓ (bewusst so):** `setMarkNote(_:item:day:derived:)` legt die Markierung mit dem ✓
+  an, sonst nähme die Notiz den Haken weg (eine eigene Markierung gewinnt, auch ohne Wert). Verschwindet die Tatsache
+  später in der Quelle, bleibt der ✓ als eigener stehen – wie jeder selbst gesetzte.
+- **Schonfrist beim Einfrieren:** in der ersten Woche eines Abschnitts (auch eines neuen Zieljahrs) ist die Woche
+  direkt davor noch nicht eingefroren – sie wurde eben erst abgeschlossen (oft am Mac ohne Apple Health), und das
+  iPhone bzw. späte Einträge am Montag geben ihr noch ihre Wertung. Ein rückwirkend begonnener Abschnitt friert sofort
+  ein (`Segments.isFrozen`).
+- **Art eines Buchs geändert:** `saveListItem` wertet die abgeschlossenen Wochen seiner Seitenstände neu (der
+  Schlüssel `list.item.` hat keinen Tag).
+- **Nachtragen der Kategorie-Noten:** statt eines einmaligen Merkers merkt sich jedes Gerät die schon angesehenen
+  abgeschlossenen Wochen (`score.backfill.v10.weeks`) und läuft nach dem Start und nach jedem Abgleich – Wochen, die
+  auf einem frisch eingerichteten iPhone erst später ankommen, bekommen ihre Noten auch.
+- **Abschnitte:** ein bereits geplanter Abschnitt (beginnt nach heute, `Segments.upcoming`) bekommt im
+  Ergebnis-Fenster ein eigenes Feld „Ziel in Abschnitt 2 (ab KW48, optional)“; ein neues Ergebnis gilt dann ab ihm.
+  Ergebnisse eines noch nicht begonnenen Abschnitts stehen auf der Zielseite mit „Gilt ab Abschnitt 2 (KW48)“. Ein
+  zweites „Neuen Abschnitt beginnen…“ bietet frühestens die Woche nach dem geplanten an (`earliestStart`) und zählt
+  weiter („Abschnitt 3“) – ein rückwirkender Start innerhalb des laufenden Abschnitts geht dann erst nach dem
+  geplanten. Zwei gespeicherte auf derselben Woche (zwei Geräte): der ältere steht in Einstellungen → Jahresziele als
+  „doppelt“ und lässt sich löschen (`Segments.hidden`). Unbekannte Felder in den Schnappschüssen bleiben erhalten.
+- **Bezeichnungen alter Wochen** auch im Wochenblatt und in der Wochentabelle (`WeekContext.title(of:)`).
+- **Leseliste als Quelle:** die Watch zeigt solche Messwerte nur an („mit „Lesen“ am iPhone eintragen“), „Messwert
+  eintragen“ führt zu „Lesen“, die App-Kurzbefehle lehnen ab – Seiten werden nur einmal eingetragen.
+- **Wochenberichte** (Wochenabschluss, Import → „Wochenbericht kopieren“, Woche → „Text für ChatGPT“) enthalten den
+  Block „Jahresziel-Ergebnisse“ (`reportInput(results:)`).
+- **Messwert-Editor:** eine Kennzahl (`kcal`, `net_worth` …) bietet kein „Eintrag“ an (`refChoices` leer) – der `ref`
+  einer Wert-Tatsache ist die Kennzahl selbst.
+- **Kategorie aus der Quelle:** eine spätere Tagesdatei, in der keine Tatsache einer Gruppe ein `thalia` trägt, beendet
+  die Wahl der Quelle für diese Gruppe (`groupChoices`) – Thalias eigene Zuordnung zählt dann wieder.
+- **Namen der Quellen** aus `source.json` (`app`, z. B. „TimeTracker“) in „aus …“ und „Was kommt an“.
+- **Lesen im App-Group-Ordner:** abgelehnte oder teilweise kaputte Dateien werden bei jedem Nachsehen wieder gelesen,
+  ihr Grund bleibt in „Verbundene Apps“ stehen; Dateien über 256 KB werden mit Grund ausgelassen.
+- **Import eingefrorener Wochen:** die Meldung nach dem Import nennt sie in einer zweiten Zeile („KW40 nicht neu
+  gewertet“, passt auch am iPhone in eine Zeile); die Woche selbst sagt warum und hat „Neu berechnen“.
+- **Nicht geändert (dokumentiert):** Beim ersten Nachsehen nach dem Update kommen bis zu 62 Tage einer Quelle an und
+  werten abgeschlossene Wochen des laufenden Abschnitts neu; von Hand in 1.8.0 eingetragene PH für dieselbe Arbeit
+  zählen dann doppelt. Das klärt nur Bini (eigene Blöcke löschen oder nicht mehr doppelt erfassen) –
+  `docs/CONNECTED_APPS.md` „Deine Aufgaben“ sagt es.
+
+### P4 Doku
+- `docs/CONNECTED_APPS.md` (neu): Erklärung für Bini, „Deine Aufgaben“, je ein vollständiger Auftrag für Theo, George,
+  Nina, Finn und weitere Apps (Format v1, Regeln, Beispielcode, Testdateien). Das Schreiber-Beispiel darin ist gegen
+  `ExchangeFormat.swift` in Swift 5 und 6 übersetzt und mit einem temporären Ordner geprüft.
+- Festlegungen der Aufträge über §1.5/§1.6 hinaus – Vorgaben an die anderen Apps, Thalia hängt von keiner ab: ids mit
+  Präfix je Art aus der synchronisierten id; eine Tagesdatei nur neu, wenn sich ihre Tatsachen ändern (`generatedAt`
+  bleibt stabil, feste Reihenfolge nach `at` und `id`); bei jedem Anlass Abgleich der letzten 62 Tage; ein Tag mit Datei
+  und ohne Tatsachen bekommt `"facts":[]`; `source.json` sofort bei geänderten `refs`, sonst höchstens täglich;
+  Zuordnung in der Quelle unter einem Schlüssel wie `thalia.mapping`; Theo `ref` `"ohne-gruppe"`, George `ref`
+  `"frei"`; Nina eine Tagessumme je Kennzahl (`kcal-<Tag>`); Finn `sp-<Gruppe>-<Tag>`, Vermögen `nw-<Tag>` (bei
+  Änderung) oder `nw-<JJJJ-MM>` am Monatsletzten (monatlich), Sparquote optional; je App ein Schalter „An Thalia
+  liefern“ (Finn je Kennzahl, Standard aus).
+- IMPORT.md: `link`-Werte `app:` / `list:`, direkte Verknüpfung, Quelle der Vorwoche, Zeilenart `record`.
+  ARCHITECTURE.md: die neuen Teile in Core, Shared und App. HANDBOOK_PROPOSALS.md: Vorschläge 31–35 (Austausch-Modul
+  und Format, Katalog, `SettingRecord`, `MeasureSource.other`, Entitlement-Prüfung am Mac).
+- TOUR.md: Tour 10 mit 21 Karten und den „Neu in Thalia“-Listen. TESTING.md „v10 (ab Version 1.9.0)“: Prüfliste für
+  das Gerät, nach den Entscheidungen 1.1–1.7 gegliedert; die Linux-Prüfungen stehen in STATUS.md „Stand v10“ (dort
+  auch der Stand von P3 beim Schreiben). Bezeichnungen der Oberfläche, die es beim Schreiben noch nicht gab
+  („Erfassen“ → „Jahresziel eintragen“ / „Lesen“, Heute „aus Theo“ / „Übernehmen“, Ausgaben „aus Finn“,
+  Messwert-Editor „Quelle“, Punkt-Editor mit der Verknüpfung, „zählt für …“ in „Wochenziele“, „Zuletzt gelöscht“ mit
+  Ergebnissen, Büchern und Abschnitten, Einstellungen → „Verbundene Apps“ mit „Ohne Zuordnung“, „Zuordnung prüfen“,
+  „Was kommt an“), folgen dem Plan; die übrigen sind mit dem Code von P3 abgeglichen: die Leseliste hat „+“ mit „Buch
+  hinzufügen“, die Karte „Gerade dabei“ erscheint erst ab dem ersten Buch (davor über Jahreskarte → ••• →
+  „Leseliste“), das Ergebnis-Fenster hat „Ziel in Abschnitt 2 (optional)“ statt einer Liste je Abschnitt, der
+  Abschnitt-Assistent „Beginnt mit“, und „✓ über 8“ steht auch am Kategorie-Kopf der Woche.
+
+### Offene Fragen an Bini
+1. „Über 8,0“: ab 8,00 (umgesetzt) oder erst ab 8,01?
+2. Finn – Vermögen „monatlich“ oder „bei Änderung“, Sparquote gewünscht?
+3. Darwin-Benachrichtigung zwischen zwei Mac-Apps in der Sandbox ist ungeprüft; Thalia liest ohnehin beim Start, im
+   Vordergrund und alle 5 Minuten.

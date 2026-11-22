@@ -147,6 +147,8 @@ struct LogMeasureIntent: AppIntent {
         if record.isWork { return "Power-Hours erfasst du mit „Power-Hour erfassen“ – mit Bereich und Wofür." }
         if record.isExpense { return "Ausgaben gehen mit „Ausgabe in Thalia“ – mit Betrag und Wofür." }
         if record.isTime { return "Uhrzeiten trägst du in der App ein." }
+        // v10 (§1.3.3): pages of the reading list are entered once, with "Lesen" (an own value would hide them).
+        if record.isList { return "Seiten aus der Leseliste kommen über „Lesen“ in der App – so zählen sie nur einmal." }
         return nil
     }
 }

@@ -93,7 +93,7 @@ enum WatchPages {
         switch WatchMeasureKind.of(measure, in: context) {
         case .value: return !WatchMeasureKind.isCounter(measure, in: context)
         case .health: return true
-        case .expense, .hidden: return false
+        case .expense, .list, .hidden: return false
         }
     }
 

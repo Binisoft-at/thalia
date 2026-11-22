@@ -34,6 +34,24 @@ public enum Measures {
         return values.reduce(0, +) / Double(values.count)
     }
 
+    /// The entries that count (v10, §1.5.3): own entries replace every other value of their code and day,
+    /// confirmed Health values (`health`) replace the computed ones (`external`: connected apps, the
+    /// reading list) – one source per code and day, so the stepper's base is the value shown and "Wert
+    /// leeren" (deleting the own entries) brings the app's value back. Codes in `additive` (spending from
+    /// a connected app) keep both: own spendings add to the app's rows.
+    /// Used by WeekContext, `measureSeries` and `lastValue`.
+    public static func merged(own: [EntryRecord], health: [EntryRecord] = [], external: [EntryRecord] = [],
+                              additive: Set<String> = []) -> [EntryRecord] {
+        let ownKeys = Set(own.map(\.key))
+        let healthKept = health.filter { !ownKeys.contains($0.key) }
+        let healthKeys = Set(healthKept.map(\.key))
+        let externalKept = external.filter { entry in
+            if healthKeys.contains(entry.key) { return false }
+            return !ownKeys.contains(entry.key) || additive.contains(entry.code)
+        }
+        return own + healthKept + externalKept
+    }
+
     /// Work blocks always count in power-hours, whatever unit the plan wrote (v3: "einfach PH").
     public static func workValue(_ blocks: [WorkRecord], unit: String) -> Double {
         WorkTotals(blocks).powerHours

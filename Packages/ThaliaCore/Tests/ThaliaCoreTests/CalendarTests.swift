@@ -186,8 +186,9 @@ struct VocabularyTests {
         #expect(MeasureSource(raw: "health:Schlaf") == .health(.sleep))
         #expect(MeasureSource(raw: "") == .manual)
         #expect(MeasureSource.work(category: "3.4").raw == "arbeit:3.4")
-        // 1.8: sources of newer builds survive a save here unchanged.
-        #expect(MeasureSource(raw: "app:nina:kcal") == .other("app:nina:kcal"))
+        // 1.8: sources of newer builds survive a save here unchanged. v10 (1.9) reads app: and list: itself.
+        #expect(MeasureSource(raw: "app:nina:kcal") == .app(AppSource(source: "nina", kind: "kcal")))
+        #expect(MeasureSource(raw: "health:carbs") == .other("health:carbs"))
         #expect(MeasureSource(raw: "app:george:workout=tpl-1").raw == "app:george:workout=tpl-1")
         #expect(MeasureSource(raw: "list:buch").raw == "list:buch")
         #expect(MeasureSource(raw: "health:carbs").raw == "health:carbs")

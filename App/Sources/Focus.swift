@@ -196,6 +196,7 @@ struct FocusContent: View {
                     }
                 }
             }
+            derivedSection
         }
         .compactListSections()
         .task(id: historyKey) {
@@ -275,6 +276,26 @@ struct FocusContent: View {
 
     private var workAreas: [MeasureDefinition] {
         context.measures.filter { $0.record?.isWork == true }
+    }
+
+    /// v10: the week's derived power-hours with a category, newest day first.
+    private var derivedWork: [WorkRecord] {
+        context.week.days.reversed().flatMap { context.derivedWork(on: $0) }
+    }
+
+    /// v10 (§1.5.3): power-hours from another app – counted above, read only; "Übernehmen" makes them own.
+    @ViewBuilder
+    private var derivedSection: some View {
+        let records: [WorkRecord] = derivedWork
+        if !records.isEmpty {
+            Section {
+                ForEach(records, id: \.id) { record in
+                    DerivedWorkRow(record: record, source: context.workSource(record), categoryTitle: areaName(record.categoryKey))
+                }
+            } header: {
+                Text("Aus anderen Apps")
+            }
+        }
     }
 
     private var dayBars: [DayBar] {
