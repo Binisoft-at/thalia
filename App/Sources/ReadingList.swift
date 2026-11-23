@@ -116,15 +116,37 @@ enum ReadingTexts {
         return "zuletzt \(readingText(last.reached, unit: item.unit)) · \(last.day.shortLabel)"
     }
 
-    /// The page after this entry: "bis Seite" as typed, "+ Seiten" on top of the highest reading up to `day`.
+    /// The page after this entry: "bis Seite" as typed, "+ Seiten" on top of where the book stands on `day` – the
+    /// highest reading up to then, at least "Schon gelesen bis Seite" (`ListMath.current`, v11 P1.12).
     static func reached(mode: ReadingMode, number: Double?, item: ListItem, progress: [ListProgress], day: DayKey) -> Double? {
         guard let number, number.isFinite, number >= 0 else { return nil }
         switch mode {
         case .reached: return number
         case .pages:
             guard number > 0 else { return nil }
-            return (ListMath.reached(itemID: item.id, progress: progress, through: day) ?? 0) + number
+            return ListMath.current(item, progress: progress, through: day) + number
         }
+    }
+
+    /// The running book read last – "Lesen" chooses it (v11 P7.4); never a planned one (its first reading starts it).
+    static func lastRead(_ running: [ListItem], progress: [ListProgress]) -> ListItem? {
+        byLastReading(running, progress: progress).first
+    }
+
+    /// "Schon gelesen bis Seite" as typed: nil for empty or 0 (none); `invalid` for text that is no number ≥ 0 or
+    /// beyond the book's size.
+    enum StartAtInput: Equatable {
+        case none
+        case value(Double)
+        case invalid
+    }
+
+    static func startAt(_ text: String, total: Double?) -> StartAtInput {
+        let trimmed: String = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return .none }
+        guard let value = Format.parse(trimmed), value >= 0 else { return .invalid }
+        if let total, total > 0, value > total { return .invalid }
+        return value > 0 ? .value(value) : .none
     }
 
     /// The toast: "Klarer Kopf: bis Seite 140 · fertig · Di, 17. Nov."
@@ -191,6 +213,10 @@ struct ReadingListView: View {
         }
         .navigationTitle("Leseliste")
         .inlineNavigationTitle()
+        .onAppear {
+            // v11 P7.12: the CI screen `reading` is shown – the Ziele page doesn't push it again.
+            if app.launch.isDemo { GoalsLaunch.handled = true }
+        }
     }
 }
 
@@ -251,10 +277,11 @@ struct ReadingListContent: View {
         }
     }
 
-    /// "Abschnitt 2: 2 Einträge fertig · 840 Seiten" – the current segment's reading (the goal year with one).
+    /// "Gelesen in Abschnitt 2: 2 Einträge fertig · 840 Seiten" – the current segment's reading ("Gelesen im
+    /// Zieljahr" with one segment, v11 P7.6).
     private var summaryLine: String? {
         guard let span = context.currentSegment else { return nil }
-        let title: String = context.segments.hasSeveral ? span.title : "Im Zieljahr"
+        let title: String = context.segments.hasSeveral ? "Gelesen in \(span.title)" : "Gelesen im Zieljahr"
         return ReadingTexts.spanLine(items: context.listItems, progress: context.listProgress, from: span.startDay,
                                      through: min(span.endDay, context.today), title: title)
     }
@@ -272,13 +299,18 @@ struct ReadingListContent: View {
         return status == .running || status == .planned
     }
 
+    /// v11 P7.6: a tap on a running book enters the progress (the common case), on the others it opens the book;
+    /// a running book's leading swipe is "Bearbeiten", a planned one's stays "Fortschritt".
     private func row(_ item: ListItem) -> some View {
-        Button {
-            sheet = ReadingSheet(kind: .book(item))
+        let running: Bool = context.status(item) == .running
+        let hint: String = running ? "Fortschritt eintragen" : "Öffnet das Buch"
+        return Button {
+            sheet = running ? ReadingSheet(kind: .progress(itemID: item.id, day: app.captureDay)) : ReadingSheet(kind: .book(item))
         } label: {
             BookRow(item: item, context: context)
         }
         .buttonStyle(.plain)
+        .accessibilityHint(hint)
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
                 trash(item)
@@ -287,7 +319,14 @@ struct ReadingListContent: View {
             }
         }
         .swipeActions(edge: .leading) {
-            if isOpen(item) {
+            if running {
+                Button {
+                    sheet = ReadingSheet(kind: .book(item))
+                } label: {
+                    Label("Bearbeiten", systemImage: "pencil")
+                }
+                .tint(Brand.accent)
+            } else if isOpen(item) {
                 Button {
                     sheet = ReadingSheet(kind: .progress(itemID: item.id, day: app.captureDay))
                 } label: {
@@ -413,6 +452,8 @@ struct CurrentlyReadingCard: View {
 
 /// "Lesen" (§1.2.6, §1.3): "bis Seite" or "+ Seiten" for a book on `day` (the capture day by default;
 /// any day, also back in time). "bis Seite = Seitenzahl" suggests "fertig".
+/// v11 P7.4: without a chosen book the running one read last is chosen and the number gets the focus – Return (Mac)
+/// and "Eintragen" above the iPhone's number pad save; the choice stays changeable.
 struct ReadingProgressSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -425,6 +466,7 @@ struct ReadingProgressSheet: View {
     @State private var finishChoice: Bool?
     /// "Buch hinzufügen" right here when the list is still empty.
     @State private var addsBook = false
+    @FocusState private var numberFocused: Bool
 
     init(day: DayKey, itemID: String? = nil) {
         _day = State(initialValue: day)
@@ -512,6 +554,9 @@ struct ReadingProgressSheet: View {
                     .pickerStyle(.segmented)
                     TextField(mode.title(unit: item.unit), text: $numberText)
                         .numberKeyboard()
+                        .focused($numberFocused)
+                        .onSubmit { save(context) }
+                        .keypadButton("Eintragen", isActive: numberFocused) { save(context) }
                     if suggestsFinish(item, context: context) {
                         Toggle("Fertig am \(day.shortLabel)", isOn: finishBinding(true))
                     }
@@ -533,6 +578,20 @@ struct ReadingProgressSheet: View {
             BookEditor(item: nil)
                 .thaliaLocalSheet(app)
         }
+        .onAppear { preselect(context) }
+        // A moment after appearing (and after each choice): a focus set while the sheet still slides in can get lost.
+        .task(id: chosenID) {
+            guard !chosenID.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            numberFocused = true
+        }
+    }
+
+    /// v11 P7.4: nothing chosen → the running book read last (never a planned one – its first reading starts it).
+    private func preselect(_ context: WeekContext) {
+        guard chosenID.isEmpty, let last = ReadingTexts.lastRead(context.runningListItems, progress: context.listProgress) else { return }
+        chosenID = last.id
     }
 
     private func footer(_ item: ListItem, context: WeekContext) -> String {
@@ -592,6 +651,8 @@ struct BookEditor: View {
     @State private var endDay: DayKey
     @State private var abandoned: Bool
     @State private var note: String
+    /// v11 P1.12: "Schon gelesen bis Seite" (`ListItem.startAt`; empty or 0 = none).
+    @State private var startAtText: String
     @State private var confirmsDelete = false
     @State private var progressSheet: ReadingSheet?
     @State private var editingReading: ReadingEditTarget?
@@ -602,6 +663,8 @@ struct BookEditor: View {
         let today: DayKey = DayKey.today()
         let kind: String = item?.kind ?? ListItem.defaultKind
         let total: String = item?.total.map { Format.number($0, decimals: 0) } ?? ""
+        let startAt: String = item?.startAt.map { Format.number($0, decimals: 0) } ?? ""
+        _startAtText = State(initialValue: startAt)
         _title = State(initialValue: item?.title ?? "")
         _subtitle = State(initialValue: item?.subtitle ?? "")
         _kind = State(initialValue: kind)
@@ -617,17 +680,20 @@ struct BookEditor: View {
         initialFields = BookEditor.fields(title: item?.title ?? "", subtitle: item?.subtitle ?? "", kind: kind, total: total,
                                           unit: item?.unit ?? ListItem.defaultUnit(kind: kind), resultID: item?.resultID ?? "",
                                           start: item?.startedOn, end: item?.finishedOn, abandoned: item?.abandoned ?? false,
-                                          note: item?.note ?? "")
+                                          note: item?.note ?? "", startAt: startAt)
     }
 
+    /// The fields for "something changed" (R14); `startAt` last (v11), so the indices of start (6), end (7) and
+    /// abandoned (8) stay.
     static func fields(title: String, subtitle: String, kind: String, total: String, unit: String, resultID: String,
-                       start: DayKey?, end: DayKey?, abandoned: Bool, note: String) -> [String] {
-        [title, subtitle, kind, total, unit, resultID, start?.string ?? "", end?.string ?? "", String(abandoned), note]
+                       start: DayKey?, end: DayKey?, abandoned: Bool, note: String, startAt: String = "") -> [String] {
+        [title, subtitle, kind, total, unit, resultID, start?.string ?? "", end?.string ?? "", String(abandoned), note, startAt]
     }
 
     private var currentFields: [String] {
         BookEditor.fields(title: title, subtitle: subtitle, kind: kind, total: totalText, unit: unit, resultID: resultID,
-                          start: hasStart ? startDay : nil, end: hasEnd ? endDay : nil, abandoned: abandoned, note: note)
+                          start: hasStart ? startDay : nil, end: hasEnd ? endDay : nil, abandoned: abandoned, note: note,
+                          startAt: startAtText)
     }
 
     private var isDirty: Bool { currentFields != initialFields }
@@ -637,8 +703,13 @@ struct BookEditor: View {
         return text.isEmpty || (Format.parse(text) ?? -1) > 0
     }
 
+    /// v11 P1.12: "Schon gelesen bis Seite" as typed – none, a page, or not readable (beyond the size).
+    private var startAtInput: ReadingTexts.StartAtInput {
+        ReadingTexts.startAt(startAtText, total: Format.parse(totalText).flatMap { $0 > 0 ? $0 : nil })
+    }
+
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty && totalValid
+        !title.trimmingCharacters(in: .whitespaces).isEmpty && totalValid && startAtInput != .invalid
     }
 
     private func dateBinding(_ day: Binding<DayKey>) -> Binding<Date> {
@@ -666,6 +737,7 @@ struct BookEditor: View {
     private func form(_ context: WeekContext) -> some View {
         Form {
             basicsSection
+            startAtSection
             kindSection
             countsForSection(context)
             periodSection
@@ -729,6 +801,29 @@ struct BookEditor: View {
         }
     }
 
+    private var startAtWarning: String {
+        ReadingTexts.isPages(unit) ? "Bitte eine Zahl bis zur Seitenzahl eintragen." : "Bitte eine Zahl bis zum Umfang eintragen."
+    }
+
+    /// v11 P1.12: "Schon gelesen bis Seite (optional)" – a book begun before Thalia knew it; only what comes after counts.
+    private var startAtSection: some View {
+        Section {
+            HStack {
+                TextField(ReadingTexts.isPages(unit) ? "Schon gelesen bis Seite (optional)" : "Schon erledigt bis (optional)",
+                          text: $startAtText)
+                    .numberKeyboard()
+                Text(unit).foregroundStyle(.secondary)
+            }
+            if startAtInput == .invalid {
+                Label(startAtWarning, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        } footer: {
+            Text("Zählt nicht als gelesen – nur was danach dazukommt.")
+        }
+    }
+
     /// The kind with suggestions; the unit follows a suggested kind.
     private var kindSection: some View {
         Section {
@@ -758,7 +853,8 @@ struct BookEditor: View {
                 }
             }
         } footer: {
-            Text("Ein Ergebnis wie „10 Bücher“ zählt fertige Einträge, die dafür zählen – ohne solche alle fertigen der Art.")
+            // v11 P1.11: every finished entry of the kind, plus each that counts for the result explicitly.
+            Text("Ein Ergebnis wie „10 Bücher“ zählt alle fertigen Einträge seiner Art – dazu jeden, der ausdrücklich dafür zählt (z. B. ein Hörbuch).")
         }
     }
 
@@ -853,6 +949,14 @@ struct BookEditor: View {
             record.startedOn = hasStart ? startDay : nil
         }
         if let end = record.finishedOn, let begun = record.startedOn, begun > end { record.startedOn = end }
+        // v11 P1.12: "Schon gelesen bis Seite" (index 10) only when changed here – 0 or empty clears it.
+        if item == nil || fields[10] != initialFields[10] {
+            if case .value(let value) = startAtInput {
+                record.startAt = value
+            } else {
+                record.startAt = nil
+            }
+        }
         record.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let change: RecordChange = store.saveListItem(record)
         RecordToast.show(app, item == nil ? "„\(record.title)“ auf der Leseliste" : "„\(record.title)“ gesichert", symbol: "book.fill", change: change)

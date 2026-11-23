@@ -195,11 +195,11 @@ extension TrackerStore {
     }
 
     /// Saves the context; closed weeks the change touched get their score again, except those before the
-    /// current segment (Grundregel 2, `frozenWeeks`).
+    /// current segment (Grundregel 2, `frozenWeeks`). v11 P2.1: `origin` as in `commit(rescoring:origin:)`.
     @discardableResult
-    func commit(_ change: RecordChange) -> RecordChange {
+    func commit(_ change: RecordChange, origin: SaveOrigin = .user) -> RecordChange {
         var result = change
-        result.frozenWeeks.formUnion(commit(rescoring: change.weeks))
+        result.frozenWeeks.formUnion(commit(rescoring: change.weeks, origin: origin))
         return result
     }
 
@@ -421,25 +421,39 @@ extension TrackerStore {
     }
 
     /// A result's progress on `today` (§1.2.2), with everything it needs read from the store.
-    func resultProgress(_ result: GoalResult, today: DayKey = .today(), segments: Segments? = nil) -> ResultProgress {
+    /// v11 P1.11: `resultIDs` – the results not in the trash (read here when not given): a book counting for
+    /// a deleted result counts by its kind.
+    func resultProgress(_ result: GoalResult, today: DayKey = .today(), segments: Segments? = nil,
+                        resultIDs: Set<String>? = nil) -> ResultProgress {
         let resolved = segments ?? self.segments()
         let items: [ListItem]
-        if case .list = result.resultSource { items = listItems() } else { items = [] }
+        let ids: Set<String>?
+        if case .list = result.resultSource {
+            items = listItems()
+            ids = resultIDs ?? Set(goalResults(period: resolved.period).map(\.id))
+        } else {
+            items = []
+            ids = resultIDs
+        }
         return ResultProgress.compute(result, segments: resolved, today: today, entries: goalEntries(resultID: result.id),
-                                      items: items, series: resultSeries(result, period: resolved.period, today: today))
+                                      items: items, series: resultSeries(result, period: resolved.period, today: today), resultIDs: ids)
     }
 
     /// The results of the current segment as lines for the planning prompt and the reports (§1.2.5) –
     /// values from Apple Health stay on the device ("Wert nur auf dem Gerät").
-    func resultLines(today: DayKey = .today()) -> [GoalResultLine] {
+    /// v11 P7.5: `hidesHealth` false shows them (the goal review on a device that reads Health); `hiddenText`
+    /// replaces "Wert nur auf dem Gerät" where a value is hidden (the Mac: `WeekContext.healthElsewhereHint`).
+    func resultLines(today: DayKey = .today(), hidesHealth: Bool = true, hiddenText: String? = nil) -> [GoalResultLine] {
         let resolved = segments()
         let results = goalResults(period: resolved.period)
         guard !results.isEmpty else { return [] }
         let current = resolved.current(today: today)
+        let ids = Set(results.map(\.id))
         let goals = Dictionary(liveGoals().map { ($0.key, $0.record) }, uniquingKeysWith: { first, _ in first })
         return results.filter { result in current.map { result.isActive(in: $0, segments: resolved) } ?? true }.map { result in
-            GoalResultLine(result: result, goal: goals[result.goalKey], progress: resultProgress(result, today: today, segments: resolved),
-                           hidesValue: resultUsesHealth(result))
+            GoalResultLine(result: result, goal: goals[result.goalKey],
+                           progress: resultProgress(result, today: today, segments: resolved, resultIDs: ids),
+                           hidesValue: hidesHealth && resultUsesHealth(result), hiddenText: hiddenText)
         }
     }
 
@@ -480,7 +494,9 @@ extension TrackerStore {
         if copy.createdAt == nil { copy.createdAt = Date() }
         let stored: ListItem? = record(ListItem.self, key: copy.settingKey)
         var weeks: Set<WeekKey> = []
-        if let stored, ListItem.kindKey(stored.kind) != ListItem.kindKey(copy.kind) || stored.deletedAt != copy.deletedAt {
+        // v11 P1.12: a changed "Schon gelesen bis Seite" (`startAt`) changes the first reading's amount too.
+        if let stored, ListItem.kindKey(stored.kind) != ListItem.kindKey(copy.kind) || stored.deletedAt != copy.deletedAt
+            || stored.startAt != copy.startAt {
             weeks = Set(listProgress(itemID: copy.id).map(\.day.week))
         }
         return save(copy, rescoring: weeks)
@@ -509,11 +525,13 @@ extension TrackerStore {
         return commit(change)
     }
 
-    /// "+ 20 Seiten" on `day`: the highest reading up to that day plus `pages`.
+    /// "+ 20 Seiten" on `day`: the highest reading up to that day plus `pages` – v11 P1.12: at least from
+    /// "Schon gelesen bis Seite" (`ListMath.current`).
     @discardableResult
     func addPages(_ item: ListItem, day: DayKey, pages: Double, note: String = "") -> RecordChange {
         guard pages.isFinite, pages > 0 else { return RecordChange() }
-        let base = ListMath.reached(itemID: item.id, progress: listProgress(itemID: item.id), through: day) ?? 0
+        let stored: ListItem = record(ListItem.self, key: item.settingKey) ?? item
+        let base = ListMath.current(stored, progress: listProgress(itemID: item.id), through: day)
         return addReading(item, day: day, reached: base + pages, note: note)
     }
 
@@ -667,7 +685,8 @@ extension TrackerStore {
             }
             let total = GoalTrack.total(weeks, range: span.startWeek...span.endWeek)
             let active = results.filter { $0.isActive(in: span, segments: resolved) }
-            let reached = active.filter { resultProgress($0, today: span.endDay, segments: resolved).status == .reached }.count
+            let ids = Set(results.map(\.id))
+            let reached = active.filter { resultProgress($0, today: span.endDay, segments: resolved, resultIDs: ids).status == .reached }.count
             return SegmentSummary(span: span, average: scores.isEmpty ? nil : scores.reduce(0, +) / Double(scores.count),
                                   scoredWeeks: scores.count, categoryWeeksGood: total.good, categoryWeeksScored: total.scored,
                                   resultsReached: reached, resultsActive: active.count)
@@ -717,8 +736,16 @@ extension TrackerStore {
     /// week is looked at once per device (unless `force`) – also one whose plan arrives through iCloud
     /// later (a freshly set-up iPhone): the app runs it after launch and after every sync, and a run
     /// costs nothing once every closed week was seen. Returns the number of weeks written.
+    /// v11: maintenance without Undo (P2.4); only after this device's first sync (§1.3.3 – nothing is marked
+    /// as looked at before); weeks with items on the iPhone only (`scoresHealth`, KR1-16), not those before
+    /// this install that read Health (P2.2).
     @discardableResult
     func backfillCategoryScores(today: DayKey = .today(), force: Bool = false) -> Int {
+        guard isInMemory || SyncProgress.firstImportDone else { return 0 }
+        return withoutUndo { backfillCategoryScoresNow(today: today, force: force) }
+    }
+
+    private func backfillCategoryScoresNow(today: DayKey, force: Bool) -> Int {
         let defaults = UserDefaults.standard
         let seen: Set<String> = force ? [] : Set(defaults.stringArray(forKey: Self.categoryBackfillKey) ?? [])
         let period = goalPeriod
@@ -731,13 +758,14 @@ extension TrackerStore {
         var written = 0
         let now = Date()
         for week in candidates where !stored.contains(week) {
-            // Weeks with items need Apple Health (iPhone/iPad) – elsewhere they are left to that device.
-            guard HealthDevice.readsHealth || items(week).isEmpty else { continue }
+            // Weeks with items need Apple Health (the iPhone) – elsewhere they are left to that device.
+            guard HealthDevice.scoresHealth || items(week).isEmpty else { continue }
+            guard !keepsScoreBeforeInstall(week) else { continue }
             let closed = weekContext(for: week, today: today, goalYear: false)
             guard let scores = finalCategoryScores(closed), !scores.isEmpty else { continue }
             if writeCategoryScores(scores, week: week, now: now) { written += 1 }
         }
-        if written > 0 { try? context.save() }
+        if written > 0 { saveQuietly() }
         if !force { defaults.set(seen.union(candidates.map(\.string)).sorted(), forKey: Self.categoryBackfillKey) }
         AppLog.info("Category week scores backfilled for \(written) of \(candidates.count) week(s)", category: "store")
         return written
@@ -745,11 +773,17 @@ extension TrackerStore {
 
     /// "Neu berechnen" in the week (§0.2): a closed week gets its score again under today's rules – also
     /// one before the current segment. Returns whether anything changed.
+    /// v11 P7.1: a device that can't score the week (Mac, Watch, iPad – it reads Apple Health) stores nothing
+    /// and returns false; the week offers "Am iPhone neu berechnen" (`requestRescore(_:force:)`) instead.
     @discardableResult
     func recompute(_ week: WeekKey) -> Bool {
         guard let plan = plan(week), plan.isClosed else { return false }
+        guard canScore(week) else {
+            AppLog.info("Week \(week.string) not scored here: it reads Apple Health (the iPhone scores it)", category: "store")
+            return false
+        }
         let changed = storeFinalScore(plan)
-        if changed { try? context.save() }
+        if changed { saveQuietly() }
         AppLog.info("Week \(week.string) scored again on request", category: "store")
         return changed
     }
@@ -803,9 +837,31 @@ extension TrackerStore {
         return ExchangeInbox.files(from: settings(keys: ExchangeInbox.keys(sources: ids, days: days)).map(\.stored))
     }
 
-    /// The inbox's day files (of one source; from / through a day), read by prefix – the keys are
-    /// filtered by their day before anything is decoded.
+    /// v11 P2.8: days per IN query of a bounded read (62 days × the sources).
+    static let inboxChunkDays = 62
+
+    /// The inbox's day files (of one source; from / through a day). v11 P2.8: with both bounds by key – the
+    /// days × the source (or every known source) in IN queries of 62 days, not the whole history; only an
+    /// unbounded read (`weeksWithFacts`) goes by prefix, its keys filtered by day before anything is decoded.
     func inboxFiles(source: String? = nil, from start: DayKey? = nil, through end: DayKey? = nil) -> [ExchangeDayFile] {
+        if let start, let end {
+            guard start <= end else { return [] }
+            let ids: [String] = source.map { [BinisoftExchange.sourceID($0)] } ?? exchangeSources().ids
+            guard !ids.isEmpty else { return [] }
+            var files: [ExchangeDayFile] = []
+            var first = start
+            while first <= end {
+                let last = min(end, first.adding(days: Self.inboxChunkDays - 1))
+                let days: [DayKey] = (0...(last.ordinal - first.ordinal)).map { first.adding(days: $0) }
+                files += inboxFiles(days: days, sources: ids)
+                first = last.adding(days: 1)
+            }
+            // In key order, as the prefix read gives them.
+            return files.sorted {
+                ExchangeInbox.settingKey(source: $0.source, day: DayKey($0.day) ?? start)
+                    < ExchangeInbox.settingKey(source: $1.source, day: DayKey($1.day) ?? start)
+            }
+        }
         let prefix = source.map { ExchangeInbox.prefix + BinisoftExchange.sourceID($0) + "." } ?? ExchangeInbox.prefix
         let kept = settings(prefix: prefix).filter { setting in
             guard let (_, day) = ExchangeInbox.parse(settingKey: setting.key) else { return false }
@@ -843,7 +899,9 @@ extension TrackerStore {
                 // The copy the weeks read (the same pick on every device, whatever the fetch order).
                 let current: ExchangeDayFile? = ExchangeInbox.files(from: (stored[key] ?? []).map(\.stored)).first
                 guard ExchangeInbox.shouldStore(file, over: current) else { continue }
-                writeSetting(key, ExchangeInbox.value(file), now: now, change: &change)
+                // v11 P1.1: a file that can't be written is skipped – never "{}" (or nothing) over a stored copy.
+                guard let value = ExchangeInbox.value(file) else { continue }
+                writeSetting(key, value, now: now, change: &change)
             }
         }
         let copies: [AppSetting] = settings(keys: [ExchangeInbox.sourcesKey])
@@ -859,7 +917,8 @@ extension TrackerStore {
         if list != known || merged { writeSetting(ExchangeInbox.sourcesKey, list.value, now: now, change: &change) }
         guard !change.isEmpty else { return change }
         AppLog.info("Inbox: \(change.before.count) setting(s) from connected apps", category: "exchange")
-        return commit(change)
+        // v11 P2.1 (KR1-6): the inbox is maintenance – Mac, Watch and iPad never score from it, they ask the iPhone.
+        return commit(change, origin: .maintenance)
     }
 
     /// Einstellungen → "Verbundene Apps": one summary per source for the last 30 days.

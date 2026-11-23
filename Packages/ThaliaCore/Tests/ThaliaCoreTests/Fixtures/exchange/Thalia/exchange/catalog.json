@@ -7,20 +7,25 @@
   "goals": [
     { "key": "1", "title": "Gesundheit" },
     { "key": "3", "title": "Arbeit" },
-    { "key": "5", "title": "Lesen" }
+    { "key": "5", "title": "Lesen" },
+    { "key": "8", "title": "Finanzen" }
   ],
   "categories": [
     { "key": "1.2", "goal": "1", "title": "Sport / Verein", "segment": "seg-2" },
     { "key": "3.2", "goal": "3", "title": "Kunden", "segment": "seg-2" },
-    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" }
+    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" },
+    { "key": "8.1", "goal": "8", "title": "Ausgaben", "segment": "seg-2" }
   ],
   "measures": [
     { "code": "workouts", "title": "Workouts", "unit": "Stück", "link": "app:george:workout=tpl-1", "category": "1.2" },
     { "code": "kunden_aufgaben", "title": "Aufgaben Kunden", "unit": "Stück", "link": "app:theo:task", "category": "3.2" },
-    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" }
+    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" },
+    { "code": "ausgaben", "title": "Ausgaben", "unit": "€", "link": "app:finn:spending", "category": "8.1" }
   ],
   "results": [
-    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5" },
-    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" }
+    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" },
+    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5", "source": "list:buch" },
+    { "id": "res-worth", "title": "Vermögen", "kind": "value", "goal": "8", "source": "app:finn:net_worth" },
+    { "id": "res-giro", "title": "Puffer Girokonto", "kind": "value", "goal": "8", "source": "app:finn:account_balance=acc-giro" }
   ]
 }

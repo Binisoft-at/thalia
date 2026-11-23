@@ -6,15 +6,35 @@ import ThaliaCore
 import AppKit
 #endif
 
+/// v11 (§1.8.2): a page of Einstellungen that `SettingsView(initialPage:)` opens right away on top –
+/// "Sicherungen" (`-DemoScreen backup`) and, on iPhone and iPad, Apple Health.
+enum SettingsPage: String, Hashable, Identifiable {
+    case backups
+    #if os(iOS)
+    case health
+    #endif
+
+    var id: String { rawValue }
+}
+
 /// Einstellungen: appearance, reminders, Apple Health, goal year and structure, help, Siri, iCloud &
 /// data, import/export, trash, the app log, version. Import and trash open right here (R24).
 struct SettingsView: View {
     /// The Mac's own settings window (not a sheet on the main window).
     var inSettingsWindow = false
+    /// v11 (§1.8.2): a page shown on top right away (once), e.g. "Sicherungen" for the CI screenshot `backup`.
+    var initialPage: SettingsPage?
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @AppStorage(TodaySettings.askConditionalsKey) private var askConditionals = false
+    @State private var openPage: SettingsPage? = nil
+    @State private var openedInitialPage = false
+
+    init(inSettingsWindow: Bool = false, initialPage: SettingsPage? = nil) {
+        self.inSettingsWindow = inSettingsWindow
+        self.initialPage = initialPage
+    }
 
     var body: some View {
         Form {
@@ -82,15 +102,33 @@ struct SettingsView: View {
             Section {
                 Text("„Hey Siri, Power-Hour in Thalia erfassen“ – Siri fragt nach Bereich, Menge und Wofür. „Ausgabe in Thalia“ fragt nach Betrag und Wofür.")
                     .font(.subheadline)
+                // v11 P4.8: the Mac has no Wallet automation – the iPhone's shows up here too.
+                #if os(macOS)
+                Text("Auf dem iPhone: Kurzbefehle → Automation → Transaktion → Aktion „Ausgabe in Thalia“, Betrag = Betrag, Wofür = Händler. Die Zahlungen erscheinen dann auch hier.")
+                    .font(.subheadline)
+                #else
                 Text("Kartenzahlungen automatisch: Kurzbefehle → Automation → Transaktion → Aktion „Ausgabe in Thalia“, Betrag = Betrag, Wofür = Händler. Dann landet jede Kartenzahlung von selbst in Thalia; von Hand bleiben nur Barzahlungen.")
                     .font(.subheadline)
+                #endif
             } header: {
                 Text("Siri und Kurzbefehle")
             }
 
             ThaliaSyncSection()
 
-            Section("Deine Daten") {
+            Section {
+                // v11 P3.13, §1.6.5: one name everywhere – it builds off the main thread and saves `backup.last`.
+                BackupExportButton()
+                NavigationLink {
+                    BackupsPage()
+                } label: {
+                    Label("Sicherungen", systemImage: "clock.arrow.circlepath")
+                }
+                if BackupWriter.lastAutoWasSmall {
+                    Label(BackupWriter.smallNotice, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
                 NavigationLink {
                     ImportView(showPrompt: true, embedded: true)
                 } label: {
@@ -111,6 +149,10 @@ struct SettingsView: View {
                 } label: {
                     Label("Zuletzt gelöscht", systemImage: "trash")
                 }
+            } header: {
+                Text("Deine Daten")
+            } footer: {
+                BackupStatusFooter()
             }
 
             Section {
@@ -139,6 +181,26 @@ struct SettingsView: View {
                 }
             }
         }
+        .navigationDestination(item: $openPage) { page in
+            SettingsPageView(page: page)
+        }
+        .onAppear(perform: appeared)
+    }
+
+    private func appeared() {
+        #if os(macOS)
+        // v11 P4.2: the Settings window stays when the main window was closed – a reminder or a Shortcut tapped
+        // meanwhile opens the main window through this `openWindow`.
+        if inSettingsWindow { MainWindow.remember(openWindow) }
+        #endif
+        showInitialPage()
+    }
+
+    /// The page asked for at the start, once – back from it, Einstellungen stays.
+    private func showInitialPage() {
+        guard !openedInitialPage else { return }
+        openedInitialPage = true
+        if let initialPage { openPage = initialPage }
     }
 
     /// Mac settings window: the tour runs in the main window, so that comes to the front first and
@@ -152,6 +214,39 @@ struct SettingsView: View {
         }
         #endif
         app.startTour()
+    }
+}
+
+/// v11 P3.13 (KR2-2): the footer of "Deine Daten" – the last backup by hand on any device, this device's automatic
+/// one, and what a backup is for.
+private struct BackupStatusFooter: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        // Read again after a sync and after "Sicherung gespeichert" (a toast) – the stamp is a synced record.
+        let _ = app.syncTick
+        let _ = app.toasts.current?.id
+        VStack(alignment: .leading, spacing: 4) {
+            Text(BackupWriter.statusLine(store: app.store))
+            Text(BackupWriter.footnote)
+        }
+    }
+}
+
+/// The page `SettingsView(initialPage:)` opens on top.
+private struct SettingsPageView: View {
+    let page: SettingsPage
+
+    var body: some View {
+        #if os(iOS)
+        if page == .health {
+            HealthSettingsView()
+        } else {
+            BackupsPage()
+        }
+        #else
+        BackupsPage()
+        #endif
     }
 }
 
@@ -172,9 +267,17 @@ struct ThaliaSyncSection: View {
             LabeledContent("Speicher", value: SyncGerman.storage(app.mode))
             if app.sync.state.mode.isSynced {
                 LabeledContent("iCloud-Account", value: SyncGerman.account(app.sync.state.account))
+                // v11 P4.13: whether this device's changes went out, and when others' came in.
+                SyncTimesRow()
             }
             if let error = app.sync.state.lastError {
                 Text(SyncGerman.error(error, appName: AppInfo.name))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            // v11 P2.9: a save that failed on this device.
+            if let failure = app.lastSaveError {
+                Text(ThaliaSyncText.saveFailure(failure))
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -200,54 +303,121 @@ struct ThaliaSyncSection: View {
 }
 
 /// "Geräte im Abgleich": when each device last opened Thalia, as this device knows it from iCloud.
-/// A recent time for another device means its data arrives here.
+/// A recent time for another device means its data arrives here. v11 P4.15: each row names the device's version
+/// (`sync.build.`, "iPhone · 1.10.0") and its time runs on; a device of the last 30 days without a 1.10.0 build gets
+/// the hint (Mac, Watch and iPad don't score closed weeks meanwhile, P2.1 (d)); devices not seen for 60 days sit
+/// under "Früher" and can be removed.
 private struct SyncDevicesSection: View {
     @Environment(AppModel.self) private var app
     @State private var devices: [SyncDevice] = []
+    @State private var builds: [String: SyncBuild] = [:]
 
     var body: some View {
+        let lines: [SyncDeviceLine] = SyncDeviceLine.lines(devices, builds: builds, me: TrackerStore.installID, now: Date())
+        let recent: [SyncDeviceLine] = lines.filter { !$0.isOld }
+        let old: [SyncDeviceLine] = lines.filter(\.isOld)
         Section {
-            if devices.isEmpty {
+            if lines.isEmpty {
                 Text("Noch kein Gerät gemeldet.")
                     .foregroundStyle(.secondary)
-            } else {
-                ForEach(rows) { row in
-                    LabeledContent {
-                        Text(SyncDevice.seenText(row.device.seenAt))
-                            .monospacedDigit()
-                    } label: {
-                        Label(row.label, systemImage: symbol(row.device.kind))
+            }
+            ForEach(recent) { line in
+                SyncDeviceRow(line: line)
+            }
+            if !old.isEmpty {
+                DisclosureGroup("Früher") {
+                    ForEach(old) { line in
+                        // Only other installations are old (this device is always recent).
+                        SyncDeviceRow(line: line, onRemove: { app.forgetDevice(line.device, label: line.label) })
                     }
                 }
             }
         } header: {
             Text("Geräte im Abgleich")
         } footer: {
-            Text("Jedes Gerät meldet sich, wenn Thalia geöffnet wird (höchstens alle 10 Minuten). Steht hier bei einem anderen Gerät eine aktuelle Zeit, kommen seine Daten an. Die Apple Watch meldet sich, wenn ihre Thalia-App offen war.")
+            Text("Jedes Gerät meldet sich, wenn Thalia geöffnet wird (höchstens alle 10 Minuten). Steht hier bei einem anderen Gerät eine aktuelle Zeit, kommen seine Daten an. Die Apple Watch meldet sich, wenn ihre Thalia-App offen war. Geräte, die 60 Tage nicht gesehen wurden, stehen unter „Früher“.")
         }
-        .task(id: app.syncTick) { devices = app.store.syncDevices() }
+        .task(id: app.syncTick) { reload() }
     }
 
-    private struct Row: Identifiable {
-        let device: SyncDevice
-        let label: String
-        var id: String { device.installID }
+    private func reload() {
+        let store = app.store
+        devices = store.syncDevices()
+        builds = SyncBuild.builds(store.settings(prefix: SettingKeys.buildPrefix).map(\.stored))
+    }
+}
+
+/// One device in "Geräte im Abgleich" (v11 P4.15).
+struct SyncDeviceLine: Identifiable {
+    /// Not seen for this long: under "Früher".
+    static let oldAfter: TimeInterval = 60 * 24 * 3600
+
+    let device: SyncDevice
+    /// "iPhone", "Mac (2)", "iPad (dieses Gerät)"
+    let label: String
+    /// "1.10.0" from `sync.build.`; nil when the device never wrote one.
+    let version: String?
+    let isThisDevice: Bool
+    /// Seen in the last 30 days without a 1.10.0 build.
+    let isOutdated: Bool
+    let isOld: Bool
+
+    var id: String { device.installID }
+
+    /// "iPhone · 1.10.0"
+    var title: String {
+        guard let version, !version.isEmpty else { return label }
+        return "\(label) · \(version)"
     }
 
-    private var rows: [Row] {
-        let me: String = TrackerStore.installID
-        return SyncDevice.labelled(devices).map { entry in
-            let label: String = entry.device.installID == me ? "\(entry.label) (dieses Gerät)" : entry.label
-            return Row(device: entry.device, label: label)
-        }
-    }
-
-    private func symbol(_ kind: String) -> String {
-        switch kind {
+    var symbol: String {
+        switch device.kind {
         case "Mac": return "laptopcomputer"
         case "iPad": return "ipad"
         case "Apple Watch": return "applewatch"
         default: return "iphone"
+        }
+    }
+
+    static func lines(_ devices: [SyncDevice], builds: [String: SyncBuild], me: String, now: Date) -> [SyncDeviceLine] {
+        SyncDevice.labelled(devices).map { entry in
+            let device: SyncDevice = entry.device
+            let isMe: Bool = device.installID == me
+            let build: SyncBuild? = builds[device.installID]
+            let age: TimeInterval = now.timeIntervalSince(device.seenAt)
+            let current: Bool = (build?.build ?? 0) >= SyncDevice.firstV11Build
+            return SyncDeviceLine(device: device, label: isMe ? "\(entry.label) (dieses Gerät)" : entry.label,
+                                  version: build?.version, isThisDevice: isMe,
+                                  isOutdated: !isMe && !current && age < SyncDevice.currentWindow,
+                                  isOld: !isMe && age >= oldAfter)
+        }
+    }
+}
+
+private struct SyncDeviceRow: View {
+    let line: SyncDeviceLine
+    var onRemove: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent {
+                TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                    Text(SyncDevice.seenText(line.device.seenAt, now: timeline.date))
+                        .monospacedDigit()
+                }
+            } label: {
+                Label(line.title, systemImage: line.symbol)
+            }
+            if line.isOutdated {
+                Text("Thalia 1.9 – bitte dort aktualisieren. Bis dahin werten Mac und Watch abgeschlossene Wochen nicht selbst.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            if let onRemove {
+                Button("Entfernen", role: .destructive, action: onRemove)
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+            }
         }
     }
 }
@@ -261,15 +431,57 @@ enum ThaliaSyncText {
     static func summary(_ state: SyncState) -> String {
         SyncGerman.summary(state) { relative($0) }
     }
+
+    /// v11 P4.13: "Gesendet: vor 1 Min. · Empfangen: vor 4 Min." (the style of "Geräte im Abgleich").
+    static func sentReceived(sent: Date?, received: Date?, now: Date) -> String {
+        let sentText: String = sent.map { SyncDevice.seenText($0, now: now) } ?? "noch nicht"
+        let receivedText: String = received.map { SyncDevice.seenText($0, now: now) } ?? "noch nicht"
+        return "Gesendet: \(sentText) · Empfangen: \(receivedText)"
+    }
+
+    /// v11 P2.9: "Letzter Speicherfehler: 23.11.2026, 18:03 – <the system's text>".
+    static func saveFailure(_ failure: SaveFailure) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_AT")
+        formatter.dateFormat = "dd.MM.yyyy, HH:mm"
+        let message: String = failure.message.isEmpty ? "unbekannter Fehler" : failure.message
+        return "Letzter Speicherfehler: \(formatter.string(from: failure.date)) – \(message)"
+    }
+}
+
+/// v11 P4.13: "Gesendet … · Empfangen …", updated every minute; orange when a change of this device is older than 15
+/// minutes and no export has gone out since (the iCloud account is there).
+private struct SyncTimesRow: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { timeline in
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ThaliaSyncText.sentReceived(sent: app.lastSent, received: app.lastReceived, now: timeline.date))
+                    .font(.subheadline)
+                    .monospacedDigit()
+                if app.hasUnsentChange(now: timeline.date) {
+                    Label("Letzte Änderung noch nicht an iCloud gesendet", systemImage: "exclamationmark.icloud")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
 }
 
 /// "Wo deine Daten liegen" – Thalia's own page instead of the kit's English one (R79).
 struct ThaliaDataLocationView: View {
     @Environment(AppModel.self) private var app
 
+    // HEALTHSHARE: "Bleibt auf dem Gerät – außer beim Teilen (TestFlight)" while Health values are shared (P9.4).
+    private var sections: [DataSection] {
+        ThaliaDataFacts.sections(sharingHealth: app.healthShare.sharesHealth(store: app.store))
+    }
+
     var body: some View {
         Form {
-            ForEach(ThaliaDataFacts.sections) { section in
+            ForEach(sections) { section in
                 Section(section.title) {
                     ForEach(section.facts) { fact in
                         ThaliaFactRow(fact: fact)
@@ -352,11 +564,24 @@ enum ThaliaDataFacts {
             DataFact("doc.text.magnifyingglass", "Auf dem Gerät gelesen", "CSV-Dateien und eingefügte Pläne werden auf dem Gerät gelesen. Nichts wird hochgeladen außer in dein eigenes iCloud."),
             DataFact("graduationcap", "Tour und Demo", "Die Übungsseite der Tour und die Demo-Daten liegen in einem eigenen Speicher, der nie synchronisiert."),
         ]),
+        // v11 P3.14: what a backup holds and what the trash keeps, as they are.
         DataSection("Sichern und Löschen", [
-            DataFact("square.and.arrow.up", "Export", "Einstellungen → Wochenplan importieren & exportieren gibt dir eine CSV mit allem – im Importformat."),
-            DataFact("trash", "Löschen", "Gelöschtes bleibt 30 Tage in „Zuletzt gelöscht“. Ganz löschen: App auf allen Geräten löschen, dann in Einstellungen → dein Name → iCloud → Speicher verwalten die Daten von Thalia entfernen."),
+            DataFact("externaldrive", "Sicherung", "Einstellungen → Deine Daten → „Sicherung erstellen…“: Pläne, Einträge, Ergebnisse, Leseliste, Zieljahr und die Daten verbundener Apps im Importformat. Nicht darin: das Archiv ersetzter Wochen, übernommene Health-Werte und Einstellungen dieses Geräts."),
+            DataFact("trash", "Löschen", "Gelöschte Punkte, Messwerte, Einträge, Power-Hours, Notizen, Ergebnisse, Bücher und Abschnitte bleiben 30 Tage in „Zuletzt gelöscht“; einzelne Jahresziel-Einträge und Lesestände lassen sich direkt danach im Hinweis widerrufen. Ganz löschen: App auf allen Geräten löschen, dann in Einstellungen → dein Name → iCloud → Speicher verwalten die Daten von Thalia entfernen."),
         ]),
     ]
+
+    // HEALTHSHARE: while "Health-Werte mit Mac und Watch teilen" is on (TestFlight only, §1.4.10, P9.4) the fact "Bleibt auf
+    // dem Gerät" says the exception; otherwise `sections` as they are.
+    static func sections(sharingHealth: Bool) -> [DataSection] {
+        guard sharingHealth else { return sections }
+        return sections.map { section in
+            DataSection(section.title, section.facts.map { fact in fact.symbol == "lock.iphone" ? sharedHealthFact : fact })
+        }
+    }
+
+    // HEALTHSHARE
+    static let sharedHealthFact = DataFact("lock.iphone", "Bleibt auf dem Gerät – außer beim Teilen (TestFlight)", "Übernommene Health-Werte bleiben auf diesem Gerät – außer „Health-Werte mit Mac und Watch teilen“ ist an (nur TestFlight): dann liegen die letzten 5 Wochen in deiner iCloud. Was sonst synchronisiert, ist deine eigene Bewertung.")
 }
 
 // MARK: Reminders
@@ -446,6 +671,16 @@ struct RemindersSettingsView: View {
 #if os(iOS)
 struct HealthSettingsView: View {
     @Environment(HealthService.self) private var health
+    // HEALTHSHARE: the sharing's switch and its texts (TestFlight only).
+    @Environment(AppModel.self) private var app
+
+    // HEALTHSHARE: the last section while Health values are shared (§1.4.10, P9.4); otherwise as before.
+    private var storageText: String {
+        guard app.healthShare.sharesHealth(store: app.store) else {
+            return "Übernommene Werte bleiben auf diesem iPhone (App-Store-Richtlinie 5.1.3: keine Gesundheitsdaten in iCloud). Andere Geräte sehen deine Bewertung, nicht den Health-Wert."
+        }
+        return "Übernommene Werte gehen an Mac und Watch (Schalter oben, nur TestFlight). Ausschalten löscht sie aus iCloud."
+    }
 
     var body: some View {
         @Bindable var health = health
@@ -463,6 +698,8 @@ struct HealthSettingsView: View {
             } footer: {
                 Text("Schlaf, Einschlafzeit, Gewicht, Protein, Kalorien, Wasser, Training, Achtsamkeit und Schritte erscheinen als Vorschlag neben dem passenden Messwert. Nichts wird automatisch eingetragen; dein eigener Wert hat immer Vorrang.")
             }
+            // HEALTHSHARE: "Health-Werte mit Mac und Watch teilen" – only while the gate is `.allowed` (§1.4.1).
+            HealthShareSection()
             Section("Welche Messwerte") {
                 ForEach(HealthKind.allCases, id: \.self) { kind in
                     LabeledContent(kind.label, value: "health:\(kind.rawValue)")
@@ -470,7 +707,8 @@ struct HealthSettingsView: View {
                 }
             }
             Section {
-                Text("Übernommene Werte bleiben auf diesem iPhone (App-Store-Richtlinie 5.1.3: keine Gesundheitsdaten in iCloud). Andere Geräte sehen deine Bewertung, nicht den Health-Wert.")
+                // HEALTHSHARE: `storageText` (the TestFlight wording while shared).
+                Text(storageText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -487,8 +725,14 @@ struct GoalYearSettingsView: View {
     @Environment(AppModel.self) private var app
     @Query(filter: #Predicate<AnnualGoal> { $0.deletedAt == nil }) private var goals: [AnnualGoal]
     @Query(filter: #Predicate<TrackCategory> { $0.deletedAt == nil }) private var categories: [TrackCategory]
+    /// The stored goal year – segments and results below follow it.
     @State private var period = GoalPeriod.foundationYear
+    /// v11 P4.20: what is being typed – "Beginn", "Ende" and "Zielüberprüfung" go to iCloud only with "Zieljahr
+    /// sichern", the motto on Return and when the field is left (no half-typed state syncs).
+    @State private var draft = GoalPeriod.foundationYear
     @State private var loaded = false
+    @State private var asksNewYear = false
+    @FocusState private var mottoFocused: Bool
     @State private var editingCategory: TrackCategory?
     /// v10 (§1.4.2): the goal year's records (`goal.`: segments, results, entries) – live.
     @Query private var goalRecords: [AppSetting]
@@ -538,17 +782,23 @@ struct GoalYearSettingsView: View {
                     .thaliaDateLocale()
                 DatePicker("Ende", selection: dayBinding(\.end), displayedComponents: .date)
                     .thaliaDateLocale()
-                Picker("Zielüberprüfung", selection: $period.reviewWeek) {
+                Picker("Zielüberprüfung", selection: $draft.reviewWeek) {
                     ForEach(0..<60, id: \.self) { offset in
-                        let week = period.start.week.adding(weeks: offset)
+                        let week = draft.start.week.adding(weeks: offset)
                         Text("\(week.longLabel) (\(week.rangeLabel))").tag(week)
                     }
                 }
-                TextField("Motto", text: $period.motto, axis: .vertical)
+                TextField("Motto", text: $draft.motto, axis: .vertical)
+                    .focused($mottoFocused)
+                    .onSubmit(saveMotto)
+                if yearChanged {
+                    Button("Zieljahr sichern", systemImage: "checkmark.circle") { saveYear() }
+                        .disabled(!draftIsValid)
+                }
             } header: {
                 Text("Zieljahr")
             } footer: {
-                Text("Bis zur Zielüberprüfung werden Ziele nicht automatisch schwerer – auch nach einer guten Woche nicht.")
+                Text(yearFooter)
             }
 
             segmentsSection(resolved)
@@ -561,10 +811,18 @@ struct GoalYearSettingsView: View {
         .onAppear {
             guard !loaded else { return }
             period = app.store.goalPeriod
+            draft = period
             loaded = true
         }
-        .onChange(of: period) { _, new in
-            if loaded { app.store.setGoalPeriod(new) }
+        .onChange(of: mottoFocused) { _, focused in
+            if !focused { saveMotto() }
+        }
+        .onDisappear(perform: saveMotto)
+        .confirmationDialog("Beginn des Zieljahrs ändern?", isPresented: $asksNewYear, titleVisibility: .visible) {
+            Button("Neues Zieljahr beginnen") { applyYear() }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text(newYearMessage)
         }
         .sheet(item: $editingCategory) { category in
             CategoryEditor(category: category).environment(app)
@@ -711,9 +969,79 @@ struct GoalYearSettingsView: View {
 
     private func dayBinding(_ path: WritableKeyPath<GoalPeriod, DayKey>) -> Binding<Date> {
         Binding(
-            get: { period[keyPath: path].startDate() },
-            set: { period[keyPath: path] = DayKey(date: $0) }
+            get: { draft[keyPath: path].startDate() },
+            set: { draft[keyPath: path] = DayKey(date: $0) }
         )
+    }
+
+    // MARK: v11 P4.20 – the goal year saved on purpose
+
+    /// "Beginn", "Ende" or "Zielüberprüfung" differ from what is stored.
+    private var yearChanged: Bool {
+        draft.start != period.start || draft.end != period.end || draft.reviewWeek != period.reviewWeek
+    }
+
+    private var draftIsValid: Bool { draft.end > draft.start }
+
+    private var yearFooter: String {
+        let rule = "Bis zur Zielüberprüfung werden Ziele nicht automatisch schwerer – auch nach einer guten Woche nicht."
+        return draftIsValid ? rule : "Das Ende liegt vor dem Beginn. " + rule
+    }
+
+    /// The motto on its own (Return, leaving the field, leaving the page) – the dates stay as they are stored.
+    private func saveMotto() {
+        guard loaded, draft.motto != period.motto else { return }
+        var new: GoalPeriod = period
+        new.motto = draft.motto
+        app.store.setGoalPeriod(new)
+        period = new
+    }
+
+    /// "Zieljahr sichern": a new "Beginn" while results or segments belong to the old one asks first.
+    private func saveYear() {
+        guard draftIsValid else { return }
+        if draft.start != period.start && !newYearMessage.isEmpty {
+            asksNewYear = true
+            return
+        }
+        applyYear()
+    }
+
+    /// All four settings in one change (`setGoalPeriod`, P2.10). A new "Beginn" that hides results or segments
+    /// offers "Widerrufen" (§0.4): the goal year as it was comes back, and with it what it showed.
+    private func applyYear() {
+        guard draftIsValid else { return }
+        let previous: GoalPeriod = period
+        let hidesSomething: Bool = draft.start != previous.start && !newYearMessage.isEmpty
+        app.store.setGoalPeriod(draft)
+        period = draft
+        guard hidesSomething else { return }
+        let store: TrackerStore = app.store
+        app.toasts.show("Neues Zieljahr ab \(GoalYearSettingsView.dateText(draft.start))", symbol: "calendar") {
+            store.setGoalPeriod(previous)
+            period = previous
+            draft = previous
+        }
+    }
+
+    /// "1. Juni 2026" – the date without its weekday.
+    private static func dateText(_ day: DayKey) -> String {
+        String(day.longLabel.split(separator: ",", maxSplits: 1).last ?? "").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// "3 Ergebnisse und 2 Abschnitte gehören zum Zieljahr ab 1. Juni 2026. Mit dem neuen Beginn …"; empty when
+    /// nothing belongs to the stored start.
+    private var newYearMessage: String {
+        let results: Int = SettingRecords.decode(GoalResult.self, from: goalRecords.map(\.stored))
+            .filter { $0.periodStart == period.start }.count
+        let segments: Int = storedSegments.filter { $0.periodStart == period.start }.count
+        var parts: [String] = []
+        if results > 0 { parts.append(Format.count(results, "Ergebnis", "Ergebnisse")) }
+        if segments > 0 { parts.append(Format.count(segments, "Abschnitt", "Abschnitte")) }
+        guard !parts.isEmpty else { return "" }
+        let verb: String = results + segments == 1 ? "gehört" : "gehören"
+        let start: String = GoalYearSettingsView.dateText(period.start)
+        return "\(parts.joined(separator: " und ")) \(verb) zum Zieljahr ab \(start). Mit dem neuen Beginn werden sie nicht mehr angezeigt – stellst du den alten Beginn wieder ein, sind sie zurück."
     }
 }
 
@@ -771,6 +1099,8 @@ struct TrashView: View {
     @State private var entryLines: [UUID: TrashLine] = [:]
     @State private var pendingPurge: TrackerStore.Trash?
     @State private var purgesAll = false
+    /// v11 P2.6: restoring an item or measurement whose week has a live copy asks first.
+    @State private var restoreQuestion: RestoreQuestion?
 
     init(embedded: Bool = false) {
         self.embedded = embedded
@@ -808,7 +1138,7 @@ struct TrashView: View {
                     ForEach(trash.items) { item in
                         row(planLine(item.title, week: item.weekKey, category: item.categoryKey), deletedAt: item.deletedAt,
                             purge: TrackerStore.Trash(items: [item])) {
-                            app.store.restore([item])
+                            restore(item)
                         }
                     }
                 }
@@ -818,7 +1148,7 @@ struct TrashView: View {
                     ForEach(trash.measures) { measure in
                         row(planLine(measure.title, week: measure.weekKey, category: measure.categoryKey), deletedAt: measure.deletedAt,
                             purge: TrackerStore.Trash(measures: [measure])) {
-                            app.store.restore([measure])
+                            restore(measure)
                         }
                     }
                 }
@@ -870,7 +1200,61 @@ struct TrashView: View {
         } message: { _ in
             Text("Das lässt sich nicht widerrufen.")
         }
+        .confirmationDialog(restoreTitle, isPresented: restoreIsPresented, titleVisibility: .visible,
+                            presenting: restoreQuestion) { question in
+            Button("Trotzdem wiederherstellen") {
+                question.restore()
+                restoreQuestion = nil
+                reload()
+            }
+            Button("Abbrechen", role: .cancel) { restoreQuestion = nil }
+        } message: { question in
+            Text(question.message)
+        }
         .onAppear(perform: reload)
+    }
+
+    // MARK: Restoring next to a live copy (v11 P2.6)
+
+    private struct RestoreQuestion: Identifiable {
+        let id = UUID()
+        /// "„Lesen am Abend“ gibt es in KW48 schon."
+        let title: String
+        let message: String
+        let restore: () -> Void
+    }
+
+    private var restoreTitle: String { restoreQuestion?.title ?? "" }
+
+    private var restoreIsPresented: Binding<Bool> {
+        Binding(get: { restoreQuestion != nil }, set: { if !$0 { restoreQuestion = nil } })
+    }
+
+    /// An item whose week has a live copy with the same code (two devices, an import) – asked first; else at once.
+    private func restore(_ item: PlanItem) {
+        let store = app.store
+        guard let title = store.restoreConflicts([item]).first else {
+            store.restore([item])
+            return
+        }
+        restoreQuestion = RestoreQuestion(title: Self.conflictTitle(title, week: item.weekKey),
+                                          message: "Wiederherstellen ersetzt den Punkt aus dem letzten Import.",
+                                          restore: { store.restore([item]) })
+    }
+
+    private func restore(_ measure: MeasureDefinition) {
+        let store = app.store
+        guard let title = store.restoreConflicts([measure]).first else {
+            store.restore([measure])
+            return
+        }
+        restoreQuestion = RestoreQuestion(title: Self.conflictTitle(title, week: measure.weekKey),
+                                          message: "Wiederherstellen ersetzt den Messwert aus dem letzten Import.",
+                                          restore: { store.restore([measure]) })
+    }
+
+    private static func conflictTitle(_ title: String, week: String) -> String {
+        "„\(title)“ gibt es in \(WeekKey(week)?.label ?? week) schon."
     }
 
     /// v10 (§1.1.3): results, reading-list entries and segments – their entries and readings go and

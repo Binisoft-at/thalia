@@ -9,8 +9,8 @@ import Foundation
 /// A list entry: a book, a course, a film …
 public struct ListItem: SettingRecord, Equatable {
     public static let prefix = SettingKeys.listItem
-    public static let fieldNames: Set<String> = ["id", "kind", "title", "subtitle", "total", "unit", "startedOn", "finishedOn", "abandoned",
-                                                 "result", "note", "position", "createdAt", "modifiedAt", "deletedAt"]
+    public static let fieldNames: Set<String> = ["id", "kind", "title", "subtitle", "total", "unit", "startAt", "startedOn", "finishedOn",
+                                                 "abandoned", "result", "note", "position", "createdAt", "modifiedAt", "deletedAt"]
 
     public var id: String
     /// "Buch" (default), "Kurs", "Film", "Podcast" … – free text.
@@ -22,6 +22,9 @@ public struct ListItem: SettingRecord, Equatable {
     public var total: Double?
     /// The unit of `total` and of every reading ("Seiten").
     public var unit: String
+    /// v11 P1.12: "Schon gelesen bis Seite" – where the entry started; it doesn't count as read (the first
+    /// reading counts from here), nil = from 0. Older builds keep the field but count without it.
+    public var startAt: Double?
     public var startedOn: DayKey?
     public var finishedOn: DayKey?
     /// Stopped without finishing.
@@ -36,14 +39,16 @@ public struct ListItem: SettingRecord, Equatable {
     public var unknown: [String: JSONValue]
 
     public init(id: String = ListItem.newID(), kind: String = ListItem.defaultKind, title: String, subtitle: String = "", total: Double? = nil,
-                unit: String? = nil, startedOn: DayKey? = nil, finishedOn: DayKey? = nil, abandoned: Bool = false, resultID: String? = nil,
-                note: String = "", position: Double = 0, createdAt: Date? = nil, modifiedAt: Date = Date(), deletedAt: Date? = nil) {
+                unit: String? = nil, startAt: Double? = nil, startedOn: DayKey? = nil, finishedOn: DayKey? = nil, abandoned: Bool = false,
+                resultID: String? = nil, note: String = "", position: Double = 0, createdAt: Date? = nil, modifiedAt: Date = Date(),
+                deletedAt: Date? = nil) {
         self.id = id
         self.kind = kind
         self.title = title
         self.subtitle = subtitle
         self.total = total
         self.unit = unit ?? ListItem.defaultUnit(kind: kind)
+        self.startAt = startAt.flatMap { $0 > 0 ? $0 : nil }
         self.startedOn = startedOn
         self.finishedOn = finishedOn
         self.abandoned = abandoned
@@ -64,6 +69,7 @@ public struct ListItem: SettingRecord, Equatable {
         subtitle = f.text("subtitle")
         total = f.number("total").flatMap { $0 > 0 ? $0 : nil }
         unit = f.optional("unit") ?? ListItem.defaultUnit(kind: kind)
+        startAt = f.number("startAt").flatMap { $0 > 0 ? $0 : nil }
         startedOn = f.day("startedOn")
         finishedOn = f.day("finishedOn")
         abandoned = f.bool("abandoned") ?? false
@@ -84,6 +90,7 @@ public struct ListItem: SettingRecord, Equatable {
         w.set("subtitle", subtitle)
         w.set("total", total)
         w.set("unit", unit)
+        w.set("startAt", startAt)
         w.set("startedOn", startedOn)
         w.set("finishedOn", finishedOn)
         w.set("abandoned", abandoned)
@@ -224,10 +231,11 @@ public enum ListMath {
 
     /// The amount per day of one entry: the increase over the highest earlier reading – in day order,
     /// whenever it was entered, never negative (a lower reading counts 0, the next one counts from the
-    /// highest so far). The sum is the highest reading.
-    public static func dailyAmounts(itemID: String, progress: [ListProgress]) -> [DayKey: Double] {
+    /// highest so far). The sum is the highest reading. `startAt` (v11 P1.12, "Schon gelesen bis Seite"):
+    /// the first reading counts from there, not from 0.
+    public static func dailyAmounts(itemID: String, progress: [ListProgress], startAt: Double? = nil) -> [DayKey: Double] {
         var result: [DayKey: Double] = [:]
-        var highest = 0.0
+        var highest = max(0, startAt ?? 0)
         for reading in readings(progress, itemID: itemID) {
             let amount = max(0, reading.reached - highest)
             highest = max(highest, reading.reached)
@@ -240,7 +248,7 @@ public enum ListMath {
     public static func dailyAmounts(items: [ListItem], progress: [ListProgress], kind: String? = nil) -> [DayKey: Double] {
         var result: [DayKey: Double] = [:]
         for item in items where item.deletedAt == nil && (kind.map(item.isKind) ?? true) {
-            for (day, amount) in dailyAmounts(itemID: item.id, progress: progress) { result[day, default: 0] += amount }
+            for (day, amount) in dailyAmounts(itemID: item.id, progress: progress, startAt: item.startAt) { result[day, default: 0] += amount }
         }
         return result
     }
@@ -256,25 +264,32 @@ public enum ListMath {
         readings(progress, itemID: itemID).last?.day
     }
 
+    /// Where an entry stands up to `day` (nil = all, v11 P1.12): the highest reading, at least `startAt`;
+    /// 0 without either. The base for "+ Seiten" and the book's texts.
+    public static func current(_ item: ListItem, progress: [ListProgress], through day: DayKey? = nil) -> Double {
+        max(reached(itemID: item.id, progress: progress, through: day) ?? 0, item.startAt ?? 0)
+    }
+
     /// Share of `total` reached, 0…1; 1 once finished; nil without a total.
     public static func fraction(_ item: ListItem, progress: [ListProgress]) -> Double? {
         if item.finishedOn != nil { return 1 }
         guard let total = item.total, total > 0 else { return nil }
-        return min(1, (reached(itemID: item.id, progress: progress) ?? 0) / total)
+        return min(1, current(item, progress: progress) / total)
     }
 
-    /// Planned without readings and start, running with them, finished with `finishedOn`, abandoned.
+    /// Planned without readings and start, running with them (or a `startAt`, v11), finished with
+    /// `finishedOn`, abandoned.
     public static func status(_ item: ListItem, progress: [ListProgress]) -> ListStatus {
         if item.abandoned { return .abandoned }
         if item.finishedOn != nil { return .finished }
-        if item.startedOn != nil || reached(itemID: item.id, progress: progress) != nil { return .running }
+        if item.startedOn != nil || (item.startAt ?? 0) > 0 || reached(itemID: item.id, progress: progress) != nil { return .running }
         return .planned
     }
 
-    /// "bis Seite = total" suggests "fertig".
+    /// "bis Seite = total" suggests "fertig" (a `startAt` at the end too, v11).
     public static func suggestsFinish(_ item: ListItem, reached: Double) -> Bool {
         guard let total = item.total, total > 0, item.finishedOn == nil, !item.abandoned else { return false }
-        return reached >= total - 1e-9
+        return max(reached, item.startAt ?? 0) >= total - 1e-9
     }
 
     /// Entries finished from `start` through `end` (not abandoned, not in the trash), oldest first.
@@ -319,9 +334,11 @@ public enum ListMath {
         return result
     }
 
-    /// "120 von 320 Seiten · 38 %", "120 Seiten" without a total, "320 Seiten · fertig".
+    /// "120 von 320 Seiten · 38 %", "120 Seiten" without a total, "320 Seiten · fertig" – from `current`, so
+    /// a book started with "Schon gelesen bis Seite 120" shows 120, not "noch nicht begonnen" (v11, KR3-12).
     public static func progressText(_ item: ListItem, progress: [ListProgress]) -> String {
-        let reached = reached(itemID: item.id, progress: progress)
+        let shown = current(item, progress: progress)
+        let reached: Double? = shown > 0 || self.reached(itemID: item.id, progress: progress) != nil ? shown : nil
         let unit = item.unit.isEmpty ? "" : " " + item.unit
         if item.finishedOn != nil {
             let total = item.total ?? reached

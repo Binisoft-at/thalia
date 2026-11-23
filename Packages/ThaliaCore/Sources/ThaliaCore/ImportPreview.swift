@@ -22,8 +22,12 @@ public struct ExistingState: Sendable {
     /// The stored archive grades per week (settings `archive.<week>`, v9).
     public var archiveGrades: [WeekKey: ArchiveWeek] = [:]
     /// The stored v10 records by key (`SettingKeys.all`, the newest copy each) – backups bring them as
-    /// `record` rows.
+    /// `record` rows. v11 P3.7: also the goal year and the catalog switch (`PlanCSV.plainSettings`), which the
+    /// import only fills in.
     public var records: [String: SettingRow] = [:]
+    /// v11 P3.3: the stored final scores of closed weeks (`WeekPlan.finalScore`, `finalGoalScores`,
+    /// `finalGoalsScored`) – compared with the file's `wertung` rows.
+    public var finalScores: [WeekKey: PlanCSV.FinalScore] = [:]
 
     public init() {}
 
@@ -171,7 +175,9 @@ public struct ImportWeekSummary: Equatable, Sendable {
 
 /// The preview shown before anything changes: per kind what is new, updated, unchanged – and which
 /// items of a re-planned week the new plan no longer has.
-public struct ImportPreview {
+/// v11 P3.10: `Sendable`, so a year's backup is compared off the main thread (`Task.detached`). Unchecked only
+/// because `ImportPlan` (BinisoftKit) doesn't declare it: every stored property is a `let` of plain values.
+public struct ImportPreview: @unchecked Sendable {
     public let document: PlanCSV.Document
     public let goals: ImportPlan<GoalRecord>
     public let categories: ImportPlan<CategoryRecord>
@@ -209,21 +215,44 @@ public struct ImportPreview {
     /// by key; a week in `replacingWeeks` has only the file's.
     public let archiveUpdates: [WeekKey: ArchiveWeek]
     /// v10 records of a backup (`record` rows) by key: a stored record with a newer `modifiedAt` stays
-    /// (counts as unchanged).
+    /// (counts as unchanged). v11: the goal year and the catalog switch only where the app has no value
+    /// (P3.7); a dated fact the app holds under another key (moved to another day) only when the file's
+    /// copy is newer – then `removedRecords` names the app's old key (P3.5).
     public let records: ImportPlan<SettingRow>
+    /// v11 P3.5: keys of stored records the import deletes – the app's copy of an entry or a reading the file
+    /// brings newer under another key (it was moved to another day), so it never counts twice.
+    public let removedRecords: [String]
+    /// v11 P3.3: the stored final scores of closed weeks (`wertung` rows) by week ("2026-W47"); the import
+    /// keeps them instead of scoring the weeks anew.
+    public let finalScores: ImportPlan<PlanCSV.FinalScore>
+    /// v11: what the import keeps against the file, one orange line each – a set "Urlaub"/"Krank" the file
+    /// calls a work day (P3.4: "Fr 27.11.: bleibt „Urlaub“ – die Datei sagt „Arbeitstag“."), a goal year the
+    /// app has otherwise (P3.7: "Zieljahr in der Datei: 1.6.2026–31.5.2027 – in der App bleibt …").
+    public let notices: [String]
 
     /// - Parameter replacing: "Archivdaten dieser Wochen ersetzen" – weeks whose data in the app goes to
     ///   the archive first; the preview compares the file with the app as it is afterwards. Weeks the
     ///   app has nothing for are simply new. (`ImportPreview.pastWeeks` picks them: past weeks only.)
     public init(document file: PlanCSV.Document, existing original: ExistingState, replacing: Set<WeekKey> = []) {
         let replacingSet = replacing.filter { original.hasArchiveContent($0) }
-        let existing = original.clearing(replacingSet)
+        var existing = original.clearing(replacingSet)
+        // A week that goes to the archive completely loses its final score too (`archiveWeek`).
+        for week in replacingSet { existing.finalScores[week] = nil }
         // v10: a measure the file gives no source keeps the one it has (this week or the week before).
         let document = ImportPreview.keepingSources(file, existing: existing)
         self.document = document
-        records = ImportPlan(incoming: document.records.map { row -> (key: String, record: SettingRow) in
-            (row.key, SettingRow.resolved(row, over: existing.records[row.key]))
-        }, existing: existing.records)
+        let resolvedRecords = ImportPreview.resolvedRecords(document.records, existing: existing.records)
+        records = ImportPlan(incoming: resolvedRecords.incoming, existing: resolvedRecords.compared)
+        removedRecords = resolvedRecords.removed
+        finalScores = ImportPlan(incoming: document.finalScores.sorted { $0.key < $1.key }.map { ($0.key.string, $0.value) },
+                                 existing: Dictionary(uniqueKeysWithValues: existing.finalScores.map { ($0.key.string, $0.value) }))
+        var notices: [String] = []
+        // v11 P3.4: the file wins as before, but an empty note keeps the app's (marks and days), and a set
+        // "Krank"/"Urlaub" stays when the file calls the day something else.
+        let resolvedDays = ImportPreview.resolvedDays(document.days, existing: existing.days, notices: &notices)
+        let resolvedMarks = document.marks.map { ImportPreview.resolvedMark($0, existing: existing.marks[$0.key]) }
+        if let goalYear = ImportPreview.goalYearNotice(document.records, existing: existing.records) { notices.append(goalYear) }
+        self.notices = notices
         replacingWeeks = replacingSet.sorted()
         grades = ImportPlan(incoming: document.grades.map { ($0.key, $0) }, existing: existing.gradeRecords)
         // The week row's note is kept as the source only where it names one: for a week value or grades.
@@ -241,15 +270,13 @@ public struct ImportPreview {
         goals = ImportPlan(incoming: document.goals.map { ($0.key, $0) }, existing: existing.goals)
         categories = ImportPlan(incoming: document.categories.map { ($0.key, $0) }, existing: existing.categories)
         weeks = ImportPlan(incoming: document.weeks.map { ($0.week.string, $0) }, existing: existing.weeks)
-        days = ImportPlan(incoming: document.days.map { ($0.day.string, $0) }, existing: existing.days)
+        days = ImportPlan(incoming: resolvedDays.map { ($0.day.string, $0) }, existing: existing.days)
         items = ImportPlan(incoming: document.items.map { ($0.key, $0) }, existing: existing.items)
         measures = ImportPlan(incoming: document.measures.map { ($0.key, $0) }, existing: existing.measures)
-        marks = ImportPlan(incoming: document.marks.map { ($0.key, $0) }, existing: existing.marks)
-        entries = ImportPlan(incoming: document.entries.map { entry in
-            var normalized = entry
-            normalized.order = 0
-            return (entry.key, normalized)
-        }, existing: ImportPreview.comparableEntries(document.entries, existing: existing.entries))
+        marks = ImportPlan(incoming: resolvedMarks.map { ($0.key, $0) }, existing: existing.marks)
+        // v11 P3.9: an entry keeps its time (`order`) for the import; comparing ignores it on both sides.
+        entries = ImportPlan(incoming: document.entries.map { ($0.key, $0) },
+                             existing: ImportPreview.comparableEntries(document.entries, existing: existing.entries))
         work = ImportPlan(incoming: document.work.map { ($0.id, $0) }, existing: existing.work)
         notes = ImportPlan(incoming: document.notes.map { ($0.id, $0) }, existing: existing.notes)
         reviews = ImportPlan(incoming: document.reviews.map { ($0.key, $0) }, existing: existing.reviews)
@@ -313,7 +340,8 @@ public struct ImportPreview {
                 || weeks.entries.contains { $0.record.week == week && $0.action != .unchanged }
                 || grades.entries.contains { $0.record.week == week && $0.action != .unchanged }
                 || archiveUpdates[week] != nil || replaced.contains(week) || newClosedWeeks.contains(week)
-            let excused = document.days.filter { week.contains($0.day) && DayTypes.isExcused($0.dayType) }.map(\.day).sorted()
+            // The day types as the import leaves them (a set "Urlaub" stays, v11 P3.4).
+            let excused = days.entries.map(\.record).filter { week.contains($0.day) && DayTypes.isExcused($0.dayType) }.map(\.day).sorted()
             let warnings = document.warnings.filter { $0.hasPrefix(week.label + ":") || $0.hasPrefix(week.label + " ") }
             let weekGrades = document.grades.filter { $0.week == week }
             return ImportWeekSummary(
@@ -348,7 +376,8 @@ public struct ImportPreview {
                 current.estimate = entry.estimate
                 current.text = entry.text
             }
-            current.order = 0
+            // The time of day is no difference (v11 P3.9): a re-import stays "unchanged".
+            current.order = entry.order
             result[entry.key] = current
         }
         return result
@@ -392,6 +421,7 @@ public struct ImportPreview {
             ("Eigene Wertungen", scores.creates, scores.updates, scores.unchanged),
             gradeCounts(.category),
             gradeCounts(.goal),
+            ("Wochenwertungen", finalScores.creates, finalScores.updates, finalScores.unchanged),
             ("Datensätze", records.creates, records.updates, records.unchanged),
         ]
     }
@@ -427,7 +457,7 @@ public struct ImportPreview {
 
     public var hasChanges: Bool {
         counts.contains { $0.1 + $0.2 > 0 } || !removedItems.isEmpty || !removedMeasures.isEmpty || !replacedWeeks.isEmpty
-            || !newClosedDays.isEmpty || !newClosedWeeks.isEmpty || !archiveUpdates.isEmpty
+            || !newClosedDays.isEmpty || !newClosedWeeks.isEmpty || !archiveUpdates.isEmpty || !removedRecords.isEmpty
     }
 
     /// "KW45 2026 (2.–8. Nov.): 180 Punkte in 18 Kategorien · 22 Messwerte"
@@ -443,8 +473,11 @@ public struct ImportPreview {
             let measures = document.measures.filter { $0.week == week }.count
             let grades = document.grades.filter { $0.week == week }.count
             var parts: [String] = []
-            if !items.isEmpty { parts.append("\(items.count) Punkte in \(categories) Kategorien") }
-            if measures > 0 { parts.append("\(measures) Messwerte") }
+            // v11 P1.14: "1 Punkt in 1 Kategorie", "1 Messwert".
+            if !items.isEmpty {
+                parts.append(Format.count(items.count, "Punkt", "Punkte") + " in " + Format.count(categories, "Kategorie", "Kategorien"))
+            }
+            if measures > 0 { parts.append(Format.count(measures, "Messwert", "Messwerte")) }
             if grades > 0 { parts.append(Format.count(grades, "Note", "Noten")) }
             if let recorded = document.weeks.first(where: { $0.week == week })?.recordedScore {
                 parts.append("Wertung \(Format.score(recorded)) \(ImportWeekSummary.recordedLabel)")
@@ -482,6 +515,145 @@ public struct ImportPreview {
     /// The week a plan import is about (to jump there afterwards).
     public var primaryWeek: WeekKey? {
         document.plannedWeeks.sorted().last ?? document.weeks.map(\.week).sorted().last
+    }
+
+    // MARK: Resolving the file over the app (v11)
+
+    /// P3.4 (a)(b), like `SettingRow.resolved`: the file's day wins, but an empty note keeps the app's, and a
+    /// set "Krank"/"Urlaub" stays when the file says something else – one line each in `notices` when the
+    /// file names another type ("Fr 27.11.: bleibt „Urlaub“ – die Datei sagt „Arbeitstag“.").
+    static func resolvedDays(_ incoming: [DayRecord], existing: [String: DayRecord], notices: inout [String]) -> [DayRecord] {
+        incoming.map { day in
+            guard let current = existing[day.day.string] else { return day }
+            var result = day
+            if result.note.isEmpty, !current.note.isEmpty { result.note = current.note }
+            if DayTypes.isExcused(current.dayType), !DayTypes.isExcused(day.dayType) {
+                result.dayType = current.dayType
+                let named = day.dayType.trimmingCharacters(in: .whitespaces)
+                if !named.isEmpty {
+                    let date = "\(day.day.weekday.short) \(Format.pad(day.day.day, 2)).\(Format.pad(day.day.month, 2))."
+                    notices.append("\(date): bleibt \u{201E}\(current.dayType)\u{201C} – die Datei sagt \u{201E}\(named)\u{201C}.")
+                }
+            }
+            return result
+        }
+    }
+
+    /// P3.4 (a): the file's mark wins – also a cleared one (v10 Grundregel 1) – but an empty note keeps the app's.
+    static func resolvedMark(_ mark: MarkRecord, existing: MarkRecord?) -> MarkRecord {
+        guard mark.note.isEmpty, let existing, !existing.note.isEmpty else { return mark }
+        var result = mark
+        result.note = existing.note
+        return result
+    }
+
+    /// The `record` rows against the app's records: what to write (the winner per key), what to compare with,
+    /// and the app's keys to delete.
+    /// - v10: newer `modifiedAt` wins (`SettingRow.resolved`).
+    /// - P3.7: the goal year and the catalog switch (`PlanCSV.plainSettings`) only where the app has no value –
+    ///   they carry no stamp, and an old backup must not replace a new goal year.
+    /// - P3.5 (3): an entry or a reading (`goal.entry.`, `list.progress.`) the app holds under another key (moved
+    ///   to another day): the app's copy newer or as new → unchanged; the file's newer → written, and the app's
+    ///   other keys of that id go (`removed`), as moving it in the app does.
+    static func resolvedRecords(_ rows: [SettingRow], existing: [String: SettingRow])
+        -> (incoming: [(key: String, record: SettingRow)], compared: [String: SettingRow], removed: [String]) {
+        var compared = existing
+        var removed: Set<String> = []
+        var byID: [String: [SettingRow]] = [:]
+        for row in existing.values {
+            guard let id = datedRecordID(row) else { continue }
+            byID[id, default: []].append(row)
+        }
+        let incoming = rows.map { row -> (key: String, record: SettingRow) in
+            let current = existing[row.key]
+            if PlanCSV.plainSettings.contains(row.key) {
+                guard let current, !current.value.trimmingCharacters(in: .whitespaces).isEmpty else { return (row.key, row) }
+                return (row.key, current)
+            }
+            if let id = datedRecordID(row) {
+                let others = (byID[id] ?? []).filter { $0.key != row.key }
+                if !others.isEmpty {
+                    let copies = others + (current.map { [$0] } ?? [])
+                    let newest = copies.max { ($0.stamp ?? .distantPast, $0.key) < ($1.stamp ?? .distantPast, $1.key) }
+                    if let newest, (row.stamp ?? .distantPast) > (newest.stamp ?? .distantPast) {
+                        removed.formUnion(others.map(\.key))
+                        return (row.key, SettingRow.resolved(row, over: current))
+                    }
+                    let kept = current ?? row
+                    compared[row.key] = kept
+                    return (row.key, kept)
+                }
+            }
+            return (row.key, SettingRow.resolved(row, over: current))
+        }
+        let fileKeys = Set(rows.map(\.key))
+        return (incoming, compared, removed.subtracting(fileKeys).sorted())
+    }
+
+    /// "goal.entry.|<id>" for an entry or a reading (dated keys, P3.5) – the same fact under any day; nil otherwise.
+    static func datedRecordID(_ row: SettingRow) -> String? {
+        guard let prefix = [SettingKeys.goalEntry, SettingKeys.listProgress].first(where: { row.key.hasPrefix($0) }),
+              let id = JSONText.object(row.value)?["id"]?.stringValue, !id.isEmpty else { return nil }
+        return prefix + "|" + id
+    }
+
+    /// P3.7: "Zieljahr in der Datei: 1.6.2026–31.5.2027 – in der App bleibt 1.6.2027–31.5.2028." – when the app
+    /// keeps another start or end than the file brings; nil when they match or the app fills them in.
+    static func goalYearNotice(_ rows: [SettingRow], existing: [String: SettingRow]) -> String? {
+        func day(_ row: SettingRow?) -> DayKey? { row.flatMap { DayKey($0.value.trimmingCharacters(in: .whitespaces)) } }
+        let fileStart = day(rows.last { $0.key == "goal.start" })
+        let fileEnd = day(rows.last { $0.key == "goal.end" })
+        guard fileStart != nil || fileEnd != nil else { return nil }
+        let keptStart = day(existing["goal.start"]) ?? fileStart
+        let keptEnd = day(existing["goal.end"]) ?? fileEnd
+        guard keptStart != fileStart || keptEnd != fileEnd else { return nil }
+        func text(_ day: DayKey?) -> String { day.map { "\($0.day).\($0.month).\($0.year)" } ?? "…" }
+        return "Zieljahr in der Datei: \(text(fileStart))–\(text(fileEnd)) – in der App bleibt \(text(keptStart))–\(text(keptEnd))."
+    }
+
+    // MARK: Backups (v11 P3.6)
+
+    /// "Sicherung vom 22.11.2026, 18:03 · Thalia 1.10.0 (58) · iPhone" – nil for a file without a `sicherung` row.
+    public var backupHeadline: String? { document.backupInfo?.headline() }
+
+    /// The orange line of a backup older than a day that changes what the app has: "Die Sicherung ist 9 Tage alt –
+    /// 37 Markierungen und 12 Werte in der App weichen ab und werden auf den Stand der Sicherung gesetzt." Counted are
+    /// the app's marks, values and other entries the file changes (new ones aren't "abweichend"); a re-planned week
+    /// says so in its own line (`replacements`). nil without a `sicherung` row, when it is younger or changes nothing.
+    public func backupAgeNotice(now: Date = Date(), timeZone: TimeZone = .current) -> String? {
+        guard let info = document.backupInfo, now.timeIntervalSince(info.date) > 86_400 else { return nil }
+        let changedMarks = marks.updates
+        let changedValues = entries.updates
+        let other = days.updates + work.updates + notes.updates + reviews.updates + scores.updates + weeks.updates
+            + goals.updates + categories.updates
+        guard changedMarks + changedValues + other > 0 else { return nil }
+        var parts: [String] = []
+        if changedMarks > 0 { parts.append(Format.count(changedMarks, "Markierung", "Markierungen")) }
+        if changedValues > 0 { parts.append(Format.count(changedValues, "Wert", "Werte")) }
+        if other > 0 {
+            parts.append(parts.isEmpty ? Format.count(other, "Angabe", "Angaben") : Format.count(other, "weitere Angabe", "weitere Angaben"))
+        }
+        var list = parts.joined(separator: ", ")
+        if parts.count > 1, let last = parts.last { list = parts.dropLast().joined(separator: ", ") + " und " + last }
+        let one = changedMarks + changedValues + other == 1
+        let age = max(1, DayKey(date: now, timeZone: timeZone).ordinal - DayKey(date: info.date, timeZone: timeZone).ordinal)
+        return "Die Sicherung ist \(Format.count(age, "Tag", "Tage")) alt – \(list) in der App \(one ? "weicht" : "weichen") ab und "
+            + "\(one ? "wird" : "werden") auf den Stand der Sicherung gesetzt."
+    }
+
+    /// "Diese Sicherung stammt von einer älteren Thalia-Version – Ergebnisse, Leseliste und verbundene Apps fehlen
+    /// darin." – a file without `sicherung` and `record` rows that looks like a whole backup: annual goals and
+    /// categories, and marks, values, work, notes or closings in more than one week. nil for plans, a week's CSV,
+    /// archive snapshots and backups of 1.10.0.
+    public var olderBackupNotice: String? {
+        guard document.backupInfo == nil, document.records.isEmpty, !document.goals.isEmpty, !document.categories.isEmpty else { return nil }
+        var used = document.closedWeeks
+        for mark in document.marks where mark.mark != nil { used.insert(mark.week) }
+        for day in document.entries.map(\.day) + document.work.map(\.day) + document.notes.map(\.day) + Array(document.closedDays) {
+            used.insert(day.week)
+        }
+        guard used.count > 1 else { return nil }
+        return "Diese Sicherung stammt von einer älteren Thalia-Version – Ergebnisse, Leseliste und verbundene Apps fehlen darin."
     }
 }
 
@@ -534,6 +706,13 @@ extension PlanCSV.Document {
                 probe.items += existing.items.values.filter { $0.week == week }
             }
             probe.days += existing.days.values.filter { week.contains($0.day) && !typedDays.contains($0.day) }
+        }
+        // v11 P3.4: a set "Krank"/"Urlaub" stays against the file's day type – no ✗ fills such a day.
+        probe.days = probe.days.map { day in
+            guard let current = existing.days[day.day.string], DayTypes.isExcused(current.dayType), !DayTypes.isExcused(day.dayType) else { return day }
+            var kept = day
+            kept.dayType = current.dayType
+            return kept
         }
         let kept = existing.marks.values.filter { mark in
             weeks.contains(mark.week) && !replaced.contains(mark.week) && mark.mark != nil && !fileMarks.contains(mark.key)

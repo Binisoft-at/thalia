@@ -75,11 +75,72 @@ extension WeekContext {
     /// the "Archiv" card takes the place of "Noch kein Plan".
     var isArchiveWeek: Bool { !hasPlan && showsArchive }
 
-    /// The number in the week's hero (decision 9): the Scorer's for a week with items; for a week
-    /// without items the value laut Unterlagen, else the recalculation.
+    /// The number in the week's hero (decision 9): the Scorer's for a week with items (v11 P6.1: a frozen
+    /// closed week its stored score); for a week without items the value laut Unterlagen, else the recalculation.
     var heroScore: Double? {
-        guard !hasPlan else { return score.overall }
+        guard !hasPlan else { return shownScore }
         return WeekLine.historyScore(recorded: recordedScore, computed: recalculatedScore)
+    }
+
+    /// v11 P6.1 (§1.2.7): a closed week with items before the current segment keeps the score it stored – everywhere
+    /// (hero, goal bars, the week's PDF, the share image). "Nach heutigem Stand" is only a second line
+    /// (`FrozenWeekNote`); category rows stay live. Running, open and other closed weeks stay live; a week without
+    /// items keeps its archive numbers as before.
+    var keepsStoredScore: Bool { hasPlan && isClosed && isFrozen }
+
+    /// v11 P6.1: the week's score as shown – the stored one for a frozen closed week (`recalculatedScore`),
+    /// else the Scorer's.
+    var shownScore: Double? {
+        keepsStoredScore ? recalculatedScore : score.overall
+    }
+
+    /// v11 P6.1: the goal scores the frozen closed week stored, nil for any other week (and for a frozen
+    /// week that stored none – then the live ones show).
+    var storedGoalScores: [String: Double]? {
+        guard keepsStoredScore, let stored = plan?.finalGoalScoreMap, !stored.isEmpty else { return nil }
+        return stored
+    }
+
+    /// v11 P6.1: every goal's score as shown, in the order of `goals` (read once for all bars).
+    func shownGoalScores(_ goals: [AnnualGoal]) -> [Double?] {
+        if hasPlan, let stored = storedGoalScores { return goals.map { stored[$0.key] } }
+        return goals.map { shownGoalScore($0.key) }
+    }
+
+    /// v11 P6.1: the goal's week score – the stored one of a frozen closed week, else the Scorer's (no archive values:
+    /// the closing sheet, the report and the share image as before).
+    func scoredGoalScore(_ key: String) -> Double? {
+        if let stored = storedGoalScores { return stored[key] }
+        return score.goalWeek[key]?.score
+    }
+
+    /// v11 P6.3: how many goals the week scored as shown – the stored count for a frozen closed week.
+    var shownGoalsScored: Int {
+        guard storedGoalScores != nil, let plan else { return score.goalsScored }
+        return plan.finalGoalsScored
+    }
+
+    /// v11 (P7.1, P6.14): a progress item of the week counts through an Apple Health measure – the same rule as
+    /// `TrackerStore.weekReadsHealth`, from what the week already read.
+    var readsHealthProgress: Bool {
+        items.contains { item in
+            guard item.schedule == .progress, !item.measureCode.isEmpty, let source = measure(code: item.measureCode) else { return false }
+            return record(source)?.isHealth ?? false
+        }
+    }
+
+    /// v11 P6.14 (3): the line under the hero of the running week on Mac and iPad (`lacksHealthValues`).
+    static let lacksHealthHint = "Ohne Werte aus Apple Health – am iPhone kann die Wertung höher sein."
+
+    /// v11 P6.14 (3): the running week reads Apple Health and this device lacks such a value on a day so far
+    /// (Mac, Watch – `isHealthElsewhere(_:on:)`, which P9 turns off for days the iPhone shares).
+    var lacksHealthValues: Bool {
+        guard !isClosed, week == today.week, readsHealthProgress else { return false }
+        let days: [DayKey] = week.days.filter { $0 <= today }
+        return measures.contains { measure in
+            guard record(measure)?.isHealth ?? false else { return false }
+            return days.contains { isHealthElsewhere(measure, on: $0) }
+        }
     }
 
     /// What the hero's number is for a week without items; nil for a week with items or without a number.
@@ -89,10 +150,13 @@ extension WeekContext {
         return recalculatedScore == nil ? nil : ArchiveLabels.recalculated
     }
 
-    /// A goal's score as the week shows it: the Scorer's; for a week without items the archive's
-    /// value under today's rules.
+    /// A goal's score as the week shows it: the Scorer's (v11 P6.1: a frozen closed week's stored one); for a
+    /// week without items the archive's value under today's rules.
     func shownGoalScore(_ key: String) -> Double? {
-        if hasPlan { return score.goalWeek[key]?.score }
+        if hasPlan {
+            if let stored = storedGoalScores { return stored[key] }
+            return score.goalWeek[key]?.score
+        }
         return archiveRecalculation?.goals[key]
     }
 

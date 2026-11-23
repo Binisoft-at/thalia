@@ -316,17 +316,47 @@ struct MeasureSheet: View {
     }
 }
 
+/// "Messwert eintragen" (also ⇧⌘E on the Mac): v11 P5.4 – "Heute" (due today, not weekly) and "Diese Woche" (weekly
+/// ones and those not due today), each row with its key and current value; the chosen one opens with the value
+/// field focused.
 struct MeasurePicker: View {
     let context: WeekContext
     let day: DayKey
     @State private var chosen: String?
 
+    /// Due on the day and counted per day.
+    private var todays: [MeasureDefinition] {
+        context.measures.filter { context.applies($0, on: day) && $0.record?.period != .week }
+    }
+
+    /// Weekly ones and those not due on the day.
+    private var thisWeek: [MeasureDefinition] {
+        context.measures.filter { !context.applies($0, on: day) || $0.record?.period == .week }
+    }
+
+    /// "Heute", or the shown day's short label when the sheet records on another day (R41).
+    private var dayTitle: String {
+        day == context.today ? "Heute" : day.shortLabel
+    }
+
     var body: some View {
-        List(context.measures) { measure in
-            NavigationLink {
-                MeasureForm(measure: measure, day: day, context: context)
-            } label: {
-                LabeledContent(measure.title, value: context.dayValue(measure, on: day).map { Format.measure($0, unit: measure.unit) } ?? "–")
+        let today: [MeasureDefinition] = todays
+        let week: [MeasureDefinition] = thisWeek
+        let todayTitle: String = dayTitle
+        List {
+            if !today.isEmpty {
+                Section(todayTitle) {
+                    ForEach(today) { measure in
+                        row(measure, weekly: false)
+                    }
+                }
+            }
+            if !week.isEmpty {
+                Section("Diese Woche") {
+                    ForEach(week) { measure in
+                        row(measure, weekly: measure.record?.period == .week)
+                    }
+                }
             }
         }
         .overlay {
@@ -336,6 +366,35 @@ struct MeasurePicker: View {
         }
         .navigationTitle("Messwert eintragen")
         .inlineNavigationTitle()
+    }
+
+    private func row(_ measure: MeasureDefinition, weekly: Bool) -> some View {
+        NavigationLink {
+            MeasureForm(measure: measure, day: day, context: context, autofocus: true)
+        } label: {
+            HStack(spacing: 10) {
+                if !measure.categoryKey.isEmpty {
+                    KeyBadge(key: measure.categoryKey)
+                }
+                Text(measure.title)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(currentValue(measure, weekly: weekly))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// The day's value, for a weekly one the week's ("Woche 6 PH"); "–" without.
+    private func currentValue(_ measure: MeasureDefinition, weekly: Bool) -> String {
+        let unit: String = measure.record?.isWork == true ? "PH" : measure.unit
+        if weekly {
+            guard let value = context.weekValue(measure) else { return "–" }
+            return "Woche \(Format.measure(value, unit: unit))"
+        }
+        guard let value = context.dayValue(measure, on: day) else { return "–" }
+        return Format.measure(value, unit: unit)
     }
 }
 
@@ -359,11 +418,15 @@ struct MeasureForm: View {
     /// The spending being changed in the spending row (R3, R46).
     @State private var editingExpense: MeasureEntry? = nil
     @FocusState private var valueFocused: Bool
+    /// v11 P5.4: chosen in "Messwert eintragen" – the value field takes the focus; Today's ⓘ and "Verlauf und
+    /// Einträge…" open without.
+    private let autofocus: Bool
 
-    init(measure: MeasureDefinition, day: DayKey, context: WeekContext) {
+    init(measure: MeasureDefinition, day: DayKey, context: WeekContext, autofocus: Bool = false) {
         self.measure = measure
         self.day = day
         self.context = context
+        self.autofocus = autofocus
         let code = measure.code
         let days = (0..<14).map { day.adding(days: -$0).string }
         _history = Query(filter: #Predicate<MeasureEntry> { $0.code == code && $0.deletedAt == nil && days.contains($0.dayKey) })
@@ -396,6 +459,22 @@ struct MeasureForm: View {
     private var dayValueText: String {
         guard let value = context.dayValue(measure, on: day) else { return "–" }
         return Format.measure(value, unit: measure.unit)
+    }
+
+    // HEALTHSHARE: the Apple Health section's texts while Health values are shared (TestFlight only, §1.4.10, P9.4).
+    private var sharesHealth: Bool { app.healthShare.sharesHealth(store: app.store) }
+
+    // HEALTHSHARE
+    private var adoptTitle: String {
+        sharesHealth ? "Übernehmen" : "Übernehmen (bleibt auf diesem Gerät)"
+    }
+
+    // HEALTHSHARE
+    private var adoptFooter: String {
+        guard sharesHealth else {
+            return "Ein Vorschlag, kein automatischer Eintrag. Gesundheitsdaten werden nie in iCloud gespeichert; ein eigener Eintrag hat Vorrang."
+        }
+        return "Ein Vorschlag, kein automatischer Eintrag. Übernommene Werte gehen an Mac und Watch (nur TestFlight); ein eigener Eintrag hat Vorrang."
     }
 
     private var weekValueText: String {
@@ -465,10 +544,29 @@ struct MeasureForm: View {
                     Button {
                         app.store.adoptHealth(code: measure.code, day: day, value: suggestion)
                     } label: {
-                        Label("Übernehmen (bleibt auf diesem Gerät)", systemImage: "heart.text.square")
+                        // HEALTHSHARE: `adoptTitle` – "Übernehmen" while Health values are shared (P9.4).
+                        Label(adoptTitle, systemImage: "heart.text.square")
                     }
                 } footer: {
-                    Text("Ein Vorschlag, kein automatischer Eintrag. Gesundheitsdaten werden nie in iCloud gespeichert; ein eigener Eintrag hat Vorrang.")
+                    // HEALTHSHARE: `adoptFooter` (P9.4).
+                    Text(adoptFooter)
+                }
+            }
+            // HEALTHSHARE: Mac, watch, iPad – the day's value is the one the iPhone shares (§1.4.8).
+            if context.sharedHealthValue(measure, on: day) != nil {
+                Section {
+                    Label(HealthShareController.sharedCaption, systemImage: "iphone")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } footer: {
+                    Text("Ein eigener Wert für den Tag geht vor.")
+                }
+                // HEALTHSHARE: read on the iPhone, taken over nowhere – only shown.
+            } else if let phone = context.sharedHealthSuggestion(measure, on: day) {
+                Section {
+                    Label(HealthShareController.phoneSuggestionText(phone, unit: measure.unit), systemImage: "iphone")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
             if context.health.contains(where: { $0.code == measure.code && $0.dayKey == day.string }) {
@@ -531,6 +629,14 @@ struct MeasureForm: View {
                 .environment(app)
                 .modelContainer(app.container)
                 .toastHost(app)
+        }
+        // v11 P5.4: only a typed number gets the focus – times, text, work, spending and reading have their own ways.
+        // A moment after appearing: a focus set while the page is still being pushed can get lost.
+        .task {
+            guard autofocus, !isTime, !isText, !isWork, !isExpense, !isList else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            valueFocused = true
         }
     }
 
@@ -1769,6 +1875,9 @@ struct ThaliaCreateSheet: View {
         )
     }
 
+    /// The four tiles (Power-Hours, Ausgabe, Messwert eintragen, Notiz), then the list – v11 P5.10: what is entered
+    /// often first (Lesen, Tag abschließen, Jahresziel eintragen), creating and importing after, "Fokus ansehen"
+    /// (only a view) last.
     private func options(day: DayKey) -> [CreateOption] {
         let app: AppModel = self.app
         return [
@@ -1776,25 +1885,26 @@ struct ThaliaCreateSheet: View {
                          symbol: "bolt.fill") { app.sheet = .work(WorkDraft(day: day)) },
             CreateOption(id: "expense", title: "Ausgabe", subtitle: "Betrag und wofür – Tag und Woche im Blick",
                          symbol: "eurosign.circle.fill", tint: .green) { app.sheet = .expenses(day) },
-            CreateOption(id: "focus", title: "Fokus ansehen", subtitle: "Power-Hours an diesem Tag und in der Woche, je Bereich",
-                         symbol: "chart.bar.fill", tint: .orange, isFeatured: false) { app.sheet = .focus(day) },
             CreateOption(id: "measure", title: "Messwert eintragen", subtitle: "Gewicht, Aufschläge, Schlaf, TEREA …",
                          symbol: "ruler.fill", tint: .teal) { app.sheet = .measure(code: "", day: day) },
             CreateOption(id: "note", title: "Notiz", subtitle: NoteKind.listText,
                          symbol: "note.text", tint: .indigo) { app.sheet = .note(nil, day) },
-            // v10 (§1.2.6, §1.3): on the day shown – also back in time.
-            CreateOption(id: "goal-entry", title: "Jahresziel eintragen", subtitle: "Abhaken, +1 oder Wert – auch rückwirkend",
-                         symbol: "flag.checkered", tint: .orange, isFeatured: false) { app.sheet = .goalEntry(day, resultID: nil) },
             CreateOption(id: "reading", title: "Lesen", subtitle: "Bis Seite oder + Seiten – für das laufende Buch",
                          symbol: "book", tint: .brown, isFeatured: false) { app.sheet = .reading(day, itemID: nil) },
             CreateOption(id: "close", title: "Tag abschließen", subtitle: "Offenes ergänzen, Journal abhaken, Wertung sehen",
                          symbol: "moon.stars.fill", tint: .purple, isFeatured: false) { app.sheet = .closeDay(app.dayToClose(showing: day)) },
+            // v10 (§1.2.6, §1.3): on the day shown – also back in time. v11 P7.9: results have the trophy, the flag
+            // stays with closing the week.
+            CreateOption(id: "goal-entry", title: "Jahresziel eintragen", subtitle: "Abhaken, +1 oder Wert – auch rückwirkend",
+                         symbol: "trophy", tint: .orange, isFeatured: false) { app.sheet = .goalEntry(day, resultID: nil) },
             CreateOption(id: "item", title: "Punkt anlegen", subtitle: "Ein bewerteter Punkt für diese Woche",
                          symbol: "checklist", tint: .green, isFeatured: false) { app.sheet = .newItem(day.week, categoryKey: nil) },
             CreateOption(id: "new-measure", title: "Messwert anlegen", subtitle: "Neuer Wert mit Ziel – auch für die nächsten Wochen",
                          symbol: "plus.forwardslash.minus", tint: .mint, isFeatured: false) { app.sheet = .editMeasure(nil, day.week, categoryKey: nil) },
             CreateOption(id: "import", title: "Wochenplan importieren", subtitle: "Planungs-Prompt kopieren, CSV aus ChatGPT einfügen, Vorschau",
                          symbol: "square.and.arrow.down", tint: .pink, isFeatured: false) { app.sheet = .importPlan(prompt: true) },
+            CreateOption(id: "focus", title: "Fokus ansehen", subtitle: "Power-Hours an diesem Tag und in der Woche, je Bereich",
+                         symbol: "chart.bar.fill", tint: .orange, isFeatured: false) { app.sheet = .focus(day) },
         ]
     }
 }

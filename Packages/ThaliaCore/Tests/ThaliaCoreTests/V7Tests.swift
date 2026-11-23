@@ -261,7 +261,9 @@ struct V7SummaryTests {
         #expect(ReminderSettings.snoozeActionID == "thalia.snooze")
         #expect(ReminderSettings.eveningCategoryID == "thalia.evening")
         #expect(ReminderSettings.snoozeMinutes == 30)
-        #expect(ReminderSettings().requests().first?.body == "Kurz in Thalia schauen: was heute ansteht – und ob gestern noch offen ist.")
+        // v11 P4.17: the mornings are planned per day too (`morningRequests`), `requests()` has no repeats.
+        #expect(ReminderSettings().morningRequests(from: start, isSkipped: { _ in false }).first?.body
+                == "Kurz in Thalia schauen: was heute ansteht – und ob gestern noch offen ist.")
     }
 
     @Test func journalFromItem() {
@@ -471,7 +473,8 @@ struct V7ImportTests {
         #expect(report.start == first && report.end == week)
         #expect(report.goals.first { $0.key == "1" }?.average == 7)
         #expect(report.goals.first { $0.key == "3" }?.average == 8)
-        #expect(report.goals.first { $0.key == "1" }?.firstFour == 7)
+        // v11 P1.17: two scored weeks give no trend (windows of min(4, n ÷ 2) weeks, at least 2).
+        #expect(report.goals.first { $0.key == "1" }?.firstFour == nil && report.goals.first { $0.key == "1" }?.window == 0)
         #expect(report.missed == [PeriodReport.MissedItem(title: "Dehnen", categoryKey: "1.1", count: 3)])
         #expect(report.work == [PeriodReport.WorkLine(categoryKey: "3.2", title: "Thema B", powerHours: 8)])
         #expect(report.measures.first?.first == 20)

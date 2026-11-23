@@ -275,7 +275,8 @@ final class ExchangeMonitor {
         }
         guard let root, let scan else { return }
         let store = TrackerStore(context: container.mainContext)
-        if !scan.isEmpty { store.storeInbox(files: scan.files, sources: scan.sources) }
+        // v11 P2.4: background work – ⌘Z never takes back what the inbox stored.
+        if !scan.isEmpty { store.withoutUndo { store.storeInbox(files: scan.files, sources: scan.sources) } }
         known = scan.seen
         lastRead = Date()
         // A refused file is read again on every look (its reason stays listed) – logged only when it is new.

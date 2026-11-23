@@ -329,12 +329,15 @@ struct ContentTests {
 
     @Test func remindersUseApplesWeekdays() {
         var settings = ReminderSettings()
-        let requests = settings.requests()
-        #expect(requests.count == 6, "5 mornings, 1 weekly – the evening is planned per day")
-        #expect(requests.first { $0.id == "thalia.weekly" }?.gregorianWeekday == 1)
-        #expect(requests.first { $0.id == "thalia.weekly" }?.destination == "close-week")
-        #expect(requests.first { $0.id == "thalia.morning.1" }?.gregorianWeekday == 2)
-        #expect(!requests.contains { $0.id.hasPrefix("thalia.evening") })
+        // v11 P4.17: no repeating reminders any more – mornings and the weekly review are planned per day.
+        #expect(settings.requests().isEmpty)
+        let mornings = settings.morningRequests(from: today, isSkipped: { _ in false })
+        #expect(mornings.count == 5, "Mon–Fri of the next 7 days")
+        #expect(mornings.allSatisfy { $0.destination == "today" && $0.hour == 8 && $0.minute == 15 })
+        let weeklies = settings.weeklyRequests(from: today, isClosed: { _ in false }, hasPlan: { _ in false })
+        #expect(weeklies.count == 1 && weeklies.first?.day.weekday == .sunday)
+        #expect(weeklies.first?.destination == "close-week:\(today.week.string)")
+        #expect(DayKey(year: 2026, month: 11, day: 8).weekday.gregorianWeekday == 1, "Apple's weekday: Sunday = 1")
         let evenings = settings.eveningRequests(from: today, isClosed: { _ in false })
         #expect(evenings.first?.hour == 21)
         #expect(evenings.first?.minute == 45)
@@ -346,30 +349,36 @@ struct ContentTests {
 
     @Test func tourCatalogIsValid() {
         #expect(ThaliaTour.catalog.problems().isEmpty)
-        // v10 (TASKS-v10 §1.7.1): four new cards, tour version 10.
-        #expect(ThaliaTour.version == 10)
-        // v10: welcome, 19 steps, finish.
-        #expect(ThaliaTour.catalog.allSteps.count == 21)
+        // v11 (TASKS-v11 P1.19): tour version 11 – "Sicherung" and "Genauer gerechnet"; "Health am Mac und auf
+        // der Watch" only with `catalog(healthShare: true)` (V11Tests).
+        #expect(ThaliaTour.version == 11)
+        // v11 without the TestFlight step: welcome, 21 steps, finish.
+        #expect(ThaliaTour.catalog.allSteps.count == 23)
         #expect(ThaliaTour.catalog.steps(newerThan: 0).first?.id == "welcome")
         #expect(ThaliaTour.catalog.steps(newerThan: ThaliaTour.version).isEmpty)
-        // v9 took the tour → "Neu in Thalia" with the four v10 cards.
+        // v10 took the tour → "Neu in Thalia" with the two v11 cards.
+        let v11 = ThaliaTour.catalog.steps(newerThan: 10).map(\.id)
+        #expect(v11 == ["whats-new", "backup", "rules-11", "finish"])
+        // v9 took the tour → the four v10 cards and the v11 cards.
         let v10 = ThaliaTour.catalog.steps(newerThan: 9).map(\.id)
-        #expect(v10 == ["whats-new", "goal-results", "reading", "segments", "connected-apps", "finish"])
-        // v8 took the tour → the v9 card and the v10 cards.
+        #expect(v10 == ["whats-new", "goal-results", "reading", "segments", "connected-apps", "backup", "rules-11", "finish"])
+        // v8 took the tour → the v9 card, the v10 cards and the v11 cards.
         let v9 = ThaliaTour.catalog.steps(newerThan: 8).map(\.id)
-        #expect(v9 == ["whats-new", "archive", "goal-results", "reading", "segments", "connected-apps", "finish"])
-        // v7 took the tour → the three v8 cards, the v9 card and the v10 cards.
+        #expect(v9 == ["whats-new", "archive", "goal-results", "reading", "segments", "connected-apps", "backup", "rules-11", "finish"])
+        // v7 took the tour → the three v8 cards, the v9 card, the v10 cards and the v11 cards.
         let v8 = ThaliaTour.catalog.steps(newerThan: 7).map(\.id)
         #expect(v8 == ["whats-new", "excused", "past-weeks", "archive", "goal-results", "reading", "segments", "range-pdf",
-                       "connected-apps", "finish"])
-        // v6 took the tour → the eight v7 steps, the three v8 cards, the v9 card and the v10 cards, in tour order.
+                       "connected-apps", "backup", "rules-11", "finish"])
+        // v6 took the tour → the eight v7 steps, the three v8 cards, the v9 card, the v10 and v11 cards, in tour order.
         let v7 = ThaliaTour.catalog.steps(newerThan: 6).map(\.id)
         #expect(v7 == ["whats-new", "day", "excused", "mark", "work", "measure", "glance", "week", "past-weeks", "archive",
-                       "review", "goal-results", "reading", "segments", "range-pdf", "everywhere", "connected-apps", "finish"])
+                       "review", "goal-results", "reading", "segments", "range-pdf", "everywhere", "connected-apps", "backup", "rules-11",
+                       "finish"])
         // The new cards name the window's three ways and the sick-day rule in the app's words.
         let steps = Dictionary(uniqueKeysWithValues: ThaliaTour.catalog.allSteps.map { ($0.id, $0) })
         let pastWeeks = steps["past-weeks"]?.body ?? ""
-        for way in ["„Plan übernehmen“", "„Mit ChatGPT“", "„Nur Wertung“"] {
+        // v11 P1.18: the switch is called „Vom Plan“.
+        for way in ["„Vom Plan“", "„Mit ChatGPT“", "„Nur Wertung“"] {
             #expect(pastWeeks.contains(way), "\(way)")
             #expect(steps["past-weeks"]?.macBody.contains(way) == true, "\(way)")
         }

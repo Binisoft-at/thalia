@@ -1,7 +1,11 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import BinisoftKit
 import ThaliaCore
+#if os(macOS)
+import AppKit
+#endif
 
 /// iPhone/iPad: tab bar (a sidebar on iPad) with a bottom accessory. Mac: split view.
 struct RootView: View {
@@ -78,6 +82,10 @@ private struct PhoneRoot: View {
         .tabViewBottomAccessory {
             TodayAccessory()
         }
+        // v11 P4.18: a lasting sync problem above the content.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SyncProblemBar()
+        }
     }
 
     /// Tapping "Heute" again while it is shown goes back to today (R7).
@@ -102,7 +110,8 @@ private struct TodayAccessory: View {
 
     var body: some View {
         let day: DayKey = app.selectedDay
-        WeekReader(week: day.week, today: app.today) { context in
+        // v11 P2.14: the day's line needs no goal year.
+        WeekReader(week: day.week, today: app.today, goalYear: false) { context in
             HStack(spacing: 12) {
                 if context.hasPlan {
                     statusButton(context, day: day)
@@ -131,7 +140,8 @@ private struct TodayAccessory: View {
                         .foregroundStyle(Brand.accent)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Tag abschließen")
+                // v11 P5.6: says what the button does on a closed day.
+                .accessibilityLabel(context.isClosed(day) ? "Tagesabschluss ansehen" : "Tag abschließen")
                 Button {
                     app.sheet = .create
                 } label: {
@@ -233,21 +243,35 @@ private struct TodayAccessory: View {
 #if os(macOS)
 private struct MacRoot: View {
     @Environment(AppModel.self) private var app
+    /// v11 P4.1: whether the sidebar shows (Darstellung → Seitenleiste ausblenden, P4.6) – for the room the
+    /// inspectors have.
+    @State private var columns: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
         let _ = diagBody("MacRoot")
-        @Bindable var app = app
-        NavigationSplitView {
-            List(selection: $app.sidebar) {
+        NavigationSplitView(columnVisibility: $columns) {
+            // v11 P4.4: a click into the empty part of the list keeps the page (the sidebar never becomes nil).
+            List(selection: sidebarSelection) {
                 Label("Heute", systemImage: "sun.max").tag(AppTab.today)
                 Label("Woche", systemImage: "tablecells").tag(AppTab.week)
                 Label("Ziele", systemImage: "target").tag(AppTab.goals)
                 Label("Rückblick", systemImage: "chart.bar.xaxis").tag(AppTab.review)
             }
+            .diagWidth("sidebar")
+            // v11 P4.1: the sidebar's width (the room for page and inspector is the window without it).
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                if abs(app.sidebarWidth - width) >= 1 { app.sidebarWidth = width }
+            }
             .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
             .safeAreaInset(edge: .bottom) {
-                // F4.1: today and the week in a few grey lines, always in view.
-                SidebarGlance()
+                VStack(alignment: .leading, spacing: 8) {
+                    // v11 P4.18: a lasting sync problem at the foot of the sidebar.
+                    SyncProblemBar(compact: true)
+                    // F4.1: today and the week in a few grey lines, always in view.
+                    SidebarGlance()
+                }
             }
         } detail: {
             NavigationStack {
@@ -258,19 +282,128 @@ private struct MacRoot: View {
                 case .review: ReviewView()
                 }
             }
+            // v11 P4.1: the detail as a whole; with the window and the sidebar it gives the room the inspectors
+            // have (`AppModel.roomWidth`) – the same whether an inspector sits inside the detail or next to it.
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                diagMeasure("detail", width)
+                if abs(app.detailWidth - width) >= 1 { app.detailWidth = width }
+            }
         }
         // One window with a minimum size; sheets are sized to fit into it (R15).
         .frame(minWidth: 900, minHeight: 620)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            diagNote("main window height \(Int(height))")
-            app.mainWindowHeight = height
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            diagNote("main window \(Int(size.width)) × \(Int(size.height))")
+            diagMeasure("window", size.width)
+            if abs(app.mainWindowHeight - size.height) >= 1 { app.mainWindowHeight = size.height }
+            if abs(app.mainWindowWidth - size.width) >= 1 { app.mainWindowWidth = size.width }
+        }
+        .onChange(of: columns) { _, visibility in
+            app.showsSidebar = visibility != .detailOnly
+        }
+        // v11 P4.9: Ablage → "Sicherung erstellen…" – the save panel, on a view of its own (other windows and
+        // sheets keep their own file exporters).
+        .background {
+            BackupExporter(app: app)
         }
         .onAppear { diagNote("MacRoot appeared") }
     }
+
+    private var sidebarSelection: Binding<AppTab?> {
+        let model: AppModel = app
+        return Binding(get: { model.sidebar }, set: { tab in
+            if let tab { model.sidebar = tab }
+        })
+    }
+}
+
+/// v11 P4.9: saves the backup Ablage → "Sicherung erstellen…" built (`AppModel.backupFile`): "Thalia Sicherung
+/// 2026-11-23.csv", then `backup.last` and "Sicherung gespeichert" (`AppModel.backupSaved`).
+private struct BackupExporter: View {
+    let app: AppModel
+
+    var body: some View {
+        Color.clear
+            .fileExporter(isPresented: isExporting, document: app.backupFile, contentType: .commaSeparatedText,
+                          defaultFilename: BackupWriter.exportName(today: app.today)) { result in
+                app.backupSaved(result)
+            }
+    }
+
+    private var isExporting: Binding<Bool> {
+        let model: AppModel = app
+        return Binding(get: { model.backupFile != nil }, set: { if !$0 { model.backupFile = nil } })
+    }
 }
 #endif
+
+/// v11 P4.18: one calm line for a lasting sync problem – the store couldn't be opened (red, stays), iCloud off, no
+/// iCloud account, iCloud full (orange, closed until the next launch). A tap opens Einstellungen (iCloud & Daten).
+/// Nothing in the demo, on the practice page or for short network errors (`AppModel.syncProblem`).
+struct SyncProblemBar: View {
+    var compact = false
+    @Environment(AppModel.self) private var app
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
+
+    var body: some View {
+        if let problem = app.visibleSyncProblem {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Button {
+                    openSyncSettings()
+                } label: {
+                    Label(problem.text, systemImage: problem.symbol)
+                        .font(textFont)
+                        .foregroundStyle(tint(problem))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Öffnet Einstellungen – iCloud & Daten")
+                if !problem.isCritical {
+                    Button {
+                        app.syncProblemDismissed = true
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Hinweis ausblenden")
+                    .help("Bis zum nächsten Start ausblenden")
+                }
+            }
+            .padding(.horizontal, compact ? 10 : 16)
+            .padding(.vertical, 8)
+            .background(.bar)
+        }
+    }
+
+    private var textFont: Font {
+        compact ? Font.caption : Font.footnote.weight(.medium)
+    }
+
+    /// Red when nothing is saved (the marks' readable red, R44), else orange.
+    private func tint(_ problem: SyncProblem) -> Color {
+        problem.isCritical ? Color("MarkMissedText") : Color.orange
+    }
+
+    private func openSyncSettings() {
+        #if os(macOS)
+        openSettings()
+        NSApp.activate()
+        #else
+        guard !app.blocksSheetCommands else { return }
+        app.sheet = .settings
+        #endif
+    }
+}
 
 /// The sheets any screen can open, toasts and undo. Shared by the window and the tour's practice page.
 struct AppChrome: ViewModifier {
@@ -295,8 +428,26 @@ private struct SheetContent: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        content
+        shown
             .toastHost(app)
+    }
+
+    /// v11 P4.19: the tour's practice page offers nothing that reaches real things (import, past weeks, the PDF
+    /// report, the trash, the archive, settings with the real reminders) – it says so instead.
+    @ViewBuilder
+    private var shown: some View {
+        if app.isSandbox && isUnavailableInPractice {
+            PracticeUnavailableView { app.sheet = nil }
+        } else {
+            content
+        }
+    }
+
+    private var isUnavailableInPractice: Bool {
+        switch sheet {
+        case .importPlan, .importPast, .planWeek, .rangePDF, .trash, .archive, .settings, .settingsPage: return true
+        default: return false
+        }
     }
 
     @ViewBuilder
@@ -357,6 +508,11 @@ private struct SheetContent: View {
         case .settings:
             NavigationStack {
                 SettingsView()
+            }
+            .thaliaSheetFrame(width: 540, height: 760)
+        case .settingsPage(let page):
+            NavigationStack {
+                SettingsView(initialPage: page)
             }
             .thaliaSheetFrame(width: 540, height: 760)
         case .weeklyGoals(let week):

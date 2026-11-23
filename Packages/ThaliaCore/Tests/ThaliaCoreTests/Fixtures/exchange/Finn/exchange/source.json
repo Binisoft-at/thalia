@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "source": "finn",
+  "app": "Finn",
+  "appVersion": "1.0",
+  "generatedAt": "2026-11-22T20:00:00Z",
+  "refs": [
+    { "id": "grp-lebensmittel", "title": "Lebensmittel", "kind": "group" },
+    { "id": "grp-freizeit", "title": "Freizeit", "kind": "group" },
+    { "id": "acc-giro", "title": "Girokonto", "kind": "account" },
+    { "id": "accgrp-sparen", "title": "Sparen", "kind": "account" }
+  ]
+}

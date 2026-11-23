@@ -18,7 +18,7 @@ with Thalia's values – a numbered checklist whose steps are ticked off one by 
 | Shared keychain group | `$(AppIdentifierPrefix)at.binisoft.shared` (no portal step) |
 | TestFlight group | `Binisoft Team`, automatic distribution |
 | Extra capability | **HealthKit** on `at.binisoft.thalia` only (read-only suggestions; values stay on the device) |
-| No portal step | local notifications, Live Activity (widget extension), App Shortcuts, URL scheme `thalia://` |
+| No portal step | local notifications, App Shortcuts, Control Center buttons (widget extension), URL scheme `thalia://` |
 
 All identifiers are defined in [`Config/Base.xcconfig`](../Config/Base.xcconfig).
 

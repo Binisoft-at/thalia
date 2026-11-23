@@ -47,14 +47,14 @@ struct ExplainerView: View {
                  text: "Durchschnitt seiner Kategorien – gleich gewichtet innerhalb des Ziels.",
                  example: "Fit Body = (8,0 + 6,0) ÷ 2 = 7,0")
             Step(number: 4, title: "Woche",
-                 text: "Durchschnitt der zehn Jahresziele. Jedes Ziel ist 10 % – Fit Body mit zwei Kategorien wiegt so viel wie Schlaf mit einer, Binisoft mit fünf nicht mehr.",
+                 text: "Durchschnitt der Jahresziele. Jedes Jahresziel zählt gleich viel – Fit Body mit zwei Kategorien wiegt so viel wie Schlaf mit einer, Binisoft mit fünf nicht mehr.",
                  example: "Fit Body 7,0 und Schlaf 4,0 → (7,0 + 4,0) ÷ 2 = 5,5 – nicht (8 + 6 + 4) ÷ 3")
             VStack(alignment: .leading, spacing: 8) {
                 Label("Wichtig", systemImage: "exclamationmark.circle")
                     .font(.headline)
                 Text("• Nicht geplant ist nicht verpasst. Ein überfälliger Punkt wird aber nicht zu „Entfällt“, nur um die Wertung zu schützen.")
                 Text("• Optional heißt nicht automatisch erfolgreich: Eine ganz optionale Woche bleibt unbewertet – weder geschenkte 10 noch automatische 0.")
-                Text("• Fehlende Abdeckung bleibt sichtbar: „9/10 Ziele bewertet – nicht voll vergleichbar“.")
+                Text("• Fehlende Abdeckung bleibt sichtbar: z. B. „9 von 10 Zielen bewertet“ – nicht voll vergleichbar.")
                 Text("• „n× pro Woche“: jedes Erledigt, Teilweise oder Nicht erledigt verbraucht einen Platz; was am Wochenende fehlt, zählt als nicht erledigt – außer es ging wegen Krank oder Urlaub nicht mehr: dann zählt es halb.")
                 Text("• Krank- und Urlaubstage zählen nicht in die Wochenwertung. Ist die ganze Woche krank oder Urlaub, bleibt sie ohne Wertung: „Woche zählt nicht (krank/Urlaub)“.")
                 Text("• Persönliche Null-Regeln (z. B. Schlaf): Nicht erledigt setzt die Kategorie an dem Tag auf 0 – die Messwerte bleiben erhalten.")
@@ -248,7 +248,7 @@ enum FeatureExplainer: String, CaseIterable, Identifiable {
         case .excused: "cross.case"
         case .pastWeeks: "clock.arrow.circlepath"
         case .rangePDF: "doc.richtext"
-        case .goalResults: "flag.checkered"
+        case .goalResults: "trophy"
         case .reading: "books.vertical"
         case .segments: "square.split.2x1"
         case .connectedApps: "arrow.left.arrow.right"
@@ -406,7 +406,7 @@ struct FeatureExplainerView: View {
                  text: "Letzte 4, 8 oder 13 Wochen (bis zur letzten fertigen Woche), Zieljahr bis heute oder ein eigener Zeitraum von–bis. Umfang: nur Übersicht, + Wochenübersicht je Woche (Deckblatt und Tabellen) oder + Rückblick-Texte.",
                  example: "Letzte 8 Wochen · + Wochenübersicht je Woche · 42 Seiten")
             Step(number: 3, title: "Was drinsteht",
-                 text: "Deckblatt mit Ø-Ring, Kacheln, Balken je Woche und den 10 Zielen mit Ø und Trend; eine Übersicht mit einer Zeile je Woche (Wertung, Ziele in Zielfarbe, PH, abgeschlossene Tage, Krank/Urlaub, Wochenziele); Power-Hours je Bereich; danach die Wochenseiten. Die Seitenzahlen laufen durch.",
+                 text: "Deckblatt mit Ø-Ring, Kacheln, Balken je Woche und den Jahreszielen mit Ø und Trend; eine Übersicht mit einer Zeile je Woche (Wertung, Ziele in Zielfarbe, PH, abgeschlossene Tage, Krank/Urlaub, Wochenziele); Power-Hours je Bereich; danach die Wochenseiten. Die Seitenzahlen laufen durch.",
                  example: "1 Fit Body · Ø 7,2 · ↑ steigend")
             Step(number: 4, title: "Erzeugen und teilen",
                  text: rangePDFShareText,
@@ -415,7 +415,7 @@ struct FeatureExplainerView: View {
                 Label("Wichtig", systemImage: "exclamationmark.circle")
                     .font(.headline)
                 Text("• Der Ø zählt nur gleich gewichtete Wochen (ab KW42 2026) mit Wertung; entschuldigte Wochen (krank/Urlaub) fallen weg.")
-                Text("• Trend je Ziel: die letzten vier gegen die ersten vier Wochen; bei mehr als 0,25 Unterschied steigend oder fallend – wie in der Zielüberprüfung.")
+                Text("• Trend je Ziel: die letzten gegen die ersten Wochen – je bis zu vier, ohne Überschneidung, erst ab 4 gewerteten Wochen; bei mehr als 0,25 Unterschied steigend oder fallend – wie in der Zielüberprüfung.")
                 Text("• Wochen ohne Punkte (Papier-Wertung oder Archiv) stehen als Zeile in der Übersicht, ohne eigene Seiten; ihre Wertung ist die laut Unterlagen.")
             }
             .font(.subheadline)
@@ -447,7 +447,7 @@ struct FeatureExplainerView: View {
                  text: "Ziele → ein Ziel → „Ergebnisse“ → „Ergebnis anlegen“. Drei Arten: abhaken (erledigt am Tag des Eintrags), zählen (Einträge, fertige Bücher der Leseliste, ein Messwert oder eine verbundene App) und Zielwert (der letzte Wert zählt, mit Startwert).",
                  example: "Website online ✓ · Bücher 3 von 10 · Zielwert auf Kurs")
             Step(number: 2, title: "Stand und Tempo",
-                 text: "Die Zeile zeigt Stand, Ziel und Status: „auf Kurs“, wenn der Stand mindestens dem gleichmäßigen Tempo bis heute entspricht, sonst „hinten“; „erreicht“, sobald das Ziel erfüllt ist. Ohne Ziel steht nur der Stand.",
+                 text: "Die Zeile zeigt Stand, Ziel und Status: „auf Kurs“, wenn der Stand mindestens dem gleichmäßigen Tempo bis heute entspricht, sonst „im Rückstand“; „erreicht“, sobald das Ziel erfüllt ist. Eine Grenze wie „höchstens 20 Packungen“ ist „im Rahmen“, „zu schnell“ oder „überschritten“ und am Ende „eingehalten“. Ohne Ziel steht nur der Stand.",
                  example: "7 von 10 · davon 4 in Abschnitt 2 · auf Kurs")
             Step(number: 3, title: "Eintragen – auch rückwirkend",
                  text: goalEntryText,
@@ -537,7 +537,7 @@ struct FeatureExplainerView: View {
                  text: "Sie stehen in Heute „aus Theo“ und zählen für das Wochenziel. „Übernehmen“ macht einen eigenen Eintrag daraus, der den aus Theo ersetzt. Gruppen ohne Kategorie stehen unter „Ohne Zuordnung“ – in Theo oder unter Einstellungen → Verbundene Apps eine Kategorie wählen.",
                  example: "1,5 PH · Arbeit/Kunden · aus Theo · Übernehmen")
             Step(number: 4, title: "Messwerte verbinden",
-                 text: "Messwert bearbeiten → „Quelle“ → „Verbundene App“ → App → Art → Eintrag. Ausgaben aus Finn erscheinen in der Ausgabenliste „aus Finn – in Finn ändern“; eigene Ausgaben kommen dazu.",
+                 text: "Messwert bearbeiten → „Quelle“ → „Verbundene App“ → App → Art → Eintrag. Ausgaben aus Finn erscheinen in der Ausgabenliste „aus Finn – in Finn ändern“; eigene Ausgaben kommen dazu. Vermögen, Sparquote und Kontostände zählen für ein Ergebnis (Art „Zielwert“), nicht als Messwert – ein Kontostand immer für ein bestimmtes Konto.",
                  example: "George · Workouts · Push → Krafttraining ✓")
             VStack(alignment: .leading, spacing: 8) {
                 Label("Wichtig", systemImage: "exclamationmark.circle")

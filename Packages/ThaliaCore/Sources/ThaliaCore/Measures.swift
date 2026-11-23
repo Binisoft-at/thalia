@@ -26,9 +26,11 @@ public enum Measures {
         guard !values.isEmpty else { return nil }
         if measure.aggregation == .sum { return values.reduce(0, +) }
         if measure.isTime {
-            // Average bedtimes around midnight correctly: 23:30 and 00:30 average to 00:00.
-            let reference = measure.target?.value ?? 23 * 60
-            let normalized = values.map { Target.normalizedTime($0, reference: reference) }
+            // Average bedtimes around midnight correctly: 23:30 and 00:30 average to 00:00. A night target
+            // (v11 P1.2: ≥ 12:00 or < 04:00, "≤ 00:30") and a time without a target (reference 23:00) count
+            // times before 12:00 as the next day; a morning target ("≤ 06:30") averages as is.
+            let night = measure.target.map { $0.isNight || (!$0.isTime && $0.value >= 12 * 60) } ?? true
+            let normalized = values.map { night ? Target.nightMinutes($0) : $0 }
             return normalized.reduce(0, +) / Double(normalized.count)
         }
         return values.reduce(0, +) / Double(values.count)
@@ -148,15 +150,16 @@ public enum Measures {
     /// A weekly measurement's pace with the v8 rules: scaled target, work-free days left out for work
     /// measurements, excused days left out. nil for daily measurements, without a target, or when
     /// every one of its days is excused (share 0: not scored this week).
+    /// `weekOver` (v11 P1.16): the week is closed or past – nil means `today > week.sunday`.
     public static func weeklyPace(_ measure: MeasureRecord, done: Double, week: WeekKey, today: DayKey, excused: Set<DayKey>,
-                                  workFree: Set<DayKey> = [], workCategories: Set<String> = []) -> Pace? {
+                                  workFree: Set<DayKey> = [], workCategories: Set<String> = [], weekOver: Bool? = nil) -> Pace? {
         guard measure.period == .week, measure.target != nil,
               targetShare(for: measure, week: week, excused: excused, workFree: workFree, workCategories: workCategories) > 1e-9,
               let target = effectiveTarget(for: measure, week: week, excused: excused, workFree: workFree, workCategories: workCategories)
         else { return nil }
         let notPlanned: Set<DayKey> = isWorkMeasure(measure, workCategories: workCategories) ? workFree : []
         return Pace(done: done, target: target.scaleMax, days: measure.days, week: week, today: today, excluding: notPlanned,
-                    excused: excused)
+                    excused: excused, weekOver: weekOver)
     }
 }
 
@@ -197,8 +200,11 @@ public struct WorkTotals: Equatable, Sendable {
     public var netHours: Double { netMinutes / 60 }
     public var isEmpty: Bool { powerHours <= 0 }
 
-    /// "3 h 20 min": the net time in hours and minutes (R52).
-    public var netText: String { Format.duration(minutes: Int(netMinutes.rounded())) }
+    /// "3 h 20 min": the net time in hours and minutes (R52); "–" when too large to show (v11 P1.1).
+    public var netText: String {
+        guard netMinutes.isFinite, abs(netMinutes) < 1e15 else { return "–" }
+        return Format.duration(minutes: Int(netMinutes.rounded()))
+    }
 
     /// "28 PH × 50 min = 23 h 20 min netto"
     public var explanation: String {

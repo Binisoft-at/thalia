@@ -163,22 +163,42 @@ public struct Target: Equatable, Hashable, Sendable {
         self.isTime = isTime
     }
 
+    /// Reads a stored or typed target. Leading words (v11 P1.3, whole words only): "spätestens", "bis",
+    /// "bis zu", "höchstens", "maximal", "max", "nicht mehr als" → ≤; "weniger als", "unter" → <;
+    /// "frühestens", "ab", "mindestens", "min" → ≥; "mehr als", "über" → >. "bis" between two numbers is a
+    /// range ("22:30 bis 23:00"); a unit at the end is fine ("≥150 g"). A text starting with an unknown word
+    /// ("ca 150") falls back to its number as in 1.9.0 – stored targets never lose their meaning silently;
+    /// the editors and the CSV check read strictly (`parse(_:strict:)`).
     public static func parse(_ raw: String) -> Target? {
+        parse(raw, strict: false)
+    }
+
+    /// `strict` (editors, the CSV check): a text that starts with a letter but no known word is nil
+    /// ("Ziel „ca 150“ nicht lesbar"); otherwise as `parse(_:)`.
+    public static func parse(_ raw: String, strict: Bool) -> Target? {
         var t = raw.trimmingCharacters(in: .whitespaces).lowercased()
         guard !t.isEmpty else { return nil }
         t = t.replacingOccurrences(of: "≥", with: ">=").replacingOccurrences(of: "≤", with: "<=")
-            .replacingOccurrences(of: "–", with: "-").replacingOccurrences(of: "bis", with: "-")
+            .replacingOccurrences(of: "–", with: "-")
             .replacingOccurrences(of: "uhr", with: "")
+            .trimmingCharacters(in: .whitespaces)
         var comparison: Comparison?
         for (prefix, value) in [(">=", Comparison.atLeast), ("=>", .atLeast), ("<=", .atMost), ("=<", .atMost),
-                                ("mindestens", .atLeast), ("mind.", .atLeast), ("min.", .atLeast), ("min", .atLeast),
-                                ("höchstens", .atMost), ("maximal", .atMost), ("max.", .atMost), ("max", .atMost),
-                                ("unter", .below), ("über", .above),
                                 (">", .above), ("<", .below), ("=", .equal)] where t.hasPrefix(prefix) {
             comparison = value
             t = String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
             break
         }
+        if comparison == nil {
+            for (word, value) in Target.leadingWords {
+                guard let rest = Target.dropWord(word, from: t) else { continue }
+                comparison = value
+                t = rest
+                break
+            }
+        }
+        if comparison == nil, strict, t.first?.isLetter == true { return nil }
+        t = Target.rangeWord(t)
         let numberish = t.trimmingCharacters(in: CharacterSet(charactersIn: "0123456789.,:- ").inverted)
         if comparison == nil, let dash = numberish.dropFirst().firstIndex(of: "-") {
             let low = String(numberish[numberish.startIndex..<dash])
@@ -188,6 +208,48 @@ public struct Target: Equatable, Hashable, Sendable {
         }
         guard let (value, isTime) = parseNumber(numberish) else { return nil }
         return Target(comparison ?? .atLeast, value, isTime: isTime)
+    }
+
+    /// The words a target may start with (v11 P1.3), longest first, so "bis zu" wins over "bis" and
+    /// "nicht mehr als" over "mehr als".
+    static let leadingWords: [(String, Comparison)] = [
+        ("nicht mehr als", .atMost), ("weniger als", .below), ("mehr als", .above), ("bis zu", .atMost),
+        ("spätestens", .atMost), ("höchstens", .atMost), ("maximal", .atMost), ("max.", .atMost), ("max", .atMost), ("bis", .atMost),
+        ("frühestens", .atLeast), ("mindestens", .atLeast), ("mind.", .atLeast), ("min.", .atLeast), ("min", .atLeast), ("ab", .atLeast),
+        ("unter", .below), ("über", .above),
+    ]
+
+    /// The text after `word` when it starts with it as a whole word – followed by a space, a digit or the
+    /// end ("ab 8", "max6"; not "abends", "minuten"); a word ending in "." needs nothing after it.
+    static func dropWord(_ word: String, from text: String) -> String? {
+        guard text.hasPrefix(word) else { return nil }
+        let rest = text.dropFirst(word.count)
+        if !word.hasSuffix("."), let next = rest.first, !(next == " " || next.isNumber) { return nil }
+        return String(rest).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// "22:30 bis 23:00" → "22:30 - 23:00": "bis" only between two numbers.
+    static func rangeWord(_ text: String) -> String {
+        guard let found = text.range(of: "bis") else { return text }
+        let before = text[..<found.lowerBound]
+        let after = text[found.upperBound...]
+        guard before.contains(where: \.isNumber), after.contains(where: \.isNumber) else { return text }
+        return before + "-" + after
+    }
+
+    /// v11 P1.2: a time target around midnight – one compared value ≥ 12:00 (as before) or < 04:00, a range
+    /// only when both ends are ≥ 12:00 or < 04:00 ("23:00–00:30", "22:30–23:00"; "10:00–18:00" is a day
+    /// window). Only the comparison changes (`isMet`, `label`), never what is stored.
+    public var isNight: Bool {
+        guard isTime else { return false }
+        func late(_ minutes: Double) -> Bool { minutes >= 12 * 60 || minutes < 4 * 60 }
+        if comparison == .range { return late(value) && late(upper ?? value) }
+        return late(value)
+    }
+
+    /// The minutes of a night target's comparison: times before 12:00 count as the next day (00:30 → 24:30).
+    public static func nightMinutes(_ minutes: Double) -> Double {
+        minutes < 12 * 60 ? minutes + 24 * 60 : minutes
     }
 
     /// "150", "2,5", "23:00" → (value, isTime).
@@ -203,14 +265,25 @@ public struct Target: Equatable, Hashable, Sendable {
     }
 
     public func isMet(_ measured: Double) -> Bool {
-        let v = isTime ? Target.normalizedTime(measured, reference: value) : measured
+        var v = isTime ? Target.normalizedTime(measured, reference: value) : measured
+        var low = value
+        var high = upper ?? value
+        if isNight {
+            // v11 P1.2: measured value and bounds on the night scale; a range's mapped bounds sorted
+            // ("23:00–00:30" stored as 00:30–23:00 is the evening window).
+            v = Target.nightMinutes(measured)
+            let a = Target.nightMinutes(value)
+            let b = Target.nightMinutes(upper ?? value)
+            low = comparison == .range ? min(a, b) : a
+            high = comparison == .range ? max(a, b) : a
+        }
         switch comparison {
-        case .atLeast: return v >= value - 1e-9
-        case .atMost: return v <= value + 1e-9
-        case .above: return v > value
-        case .below: return v < value
-        case .equal: return abs(v - value) < 1e-9
-        case .range: return v >= value - 1e-9 && v <= (upper ?? value) + 1e-9
+        case .atLeast: return v >= low - 1e-9
+        case .atMost: return v <= low + 1e-9
+        case .above: return v > low
+        case .below: return v < low
+        case .equal: return abs(v - low) < 1e-9
+        case .range: return v >= low - 1e-9 && v <= high + 1e-9
         }
     }
 
@@ -226,9 +299,13 @@ public struct Target: Equatable, Hashable, Sendable {
         return comparison.rawValue + a
     }
 
-    /// "≥ 150", "≤ 23:00", "150–180"
+    /// "≥ 150", "≤ 23:00", "150–180"; a night window in its order ("23:00–00:30", v11 P1.2).
     public var label: String {
         let a = isTime ? Format.clock(value) : Format.number(value)
+        if comparison == .range, isNight {
+            let ends = [value, upper ?? value].sorted { Target.nightMinutes($0) < Target.nightMinutes($1) }
+            return "\(Format.clock(ends[0]))–\(Format.clock(ends[1]))"
+        }
         switch comparison {
         case .atLeast: return "≥ \(a)"
         case .atMost: return "≤ \(a)"
@@ -352,6 +429,42 @@ public enum Units {
         default: return unit.trimmingCharacters(in: .whitespaces)
         }
     }
+
+    /// Decimals shown for a value of this unit (v11 P1.6): PH and litres 2 (quarter hours, 0,25 l), kg and h 1,
+    /// counted units 0 (Stk., Seiten, Schritte, min, kcal, g, ml); 1 for everything else. € goes through
+    /// `Format.euro` (cents), times through `Format.clock`.
+    public static func decimals(_ unit: String) -> Int {
+        switch normalized(unit) {
+        case "ph", "l", "€": return 2
+        case "kg", "h": return 1
+        case "stück", "seiten", "schritte", "min", "kcal", "g", "ml": return 0
+        default: return 1
+        }
+    }
+
+    /// A unit after "von" (v11 P1.14): words ending in -e, -er or -el get an "n" ("von 10 Büchern", "Kursen",
+    /// "Kapiteln", "Litern"); words already ending in -n or -s and short forms (PH, km, kg, Stk., min, €)
+    /// stay ("von 300 Seiten", "von 12 PH").
+    public static func dative(_ unit: String) -> String {
+        let trimmed = unit.trimmingCharacters(in: .whitespaces)
+        let lower = trimmed.lowercased()
+        // Nouns only (capitalised, more than three letters, no "."): short forms like "kcal" stay.
+        guard trimmed.count > 3, trimmed.first?.isUppercase == true, !trimmed.contains("."),
+              lower.hasSuffix("e") || lower.hasSuffix("er") || lower.hasSuffix("el") else { return trimmed }
+        return trimmed + "n"
+    }
+
+    /// A plural unit for the value 1 without a target (v11 P1.14): "1 Buch", "1 Seite"; unknown units stay.
+    public static func singular(_ unit: String) -> String {
+        let trimmed = unit.trimmingCharacters(in: .whitespaces)
+        guard let found = singulars.first(where: { $0.0.lowercased() == trimmed.lowercased() })?.1 else { return trimmed }
+        return trimmed.first?.isUppercase == true ? found : found.lowercased()
+    }
+
+    static let singulars: [(String, String)] = [
+        ("Bücher", "Buch"), ("Seiten", "Seite"), ("Packungen", "Packung"), ("Workouts", "Workout"), ("Lektionen", "Lektion"),
+        ("Folgen", "Folge"), ("Kurse", "Kurs"), ("Filme", "Film"), ("Minuten", "Minute"), ("Stunden", "Stunde"), ("Schritte", "Schritt"),
+    ]
 
     /// The units offered when creating a measurement (R77) – power-hours come from work, not from here.
     public static let choices: [String] = ["", "kg", "g", "l", "min", "h", "Uhrzeit", "€", "Stück", "Seiten", "Schritte", "Text"]

@@ -79,8 +79,10 @@ struct RangePDFWeeks: Hashable {
         return "\(from.longLabel) – \(through.longLabel)"
     }
 
-    /// "28. Sep. – 22. Nov. 2026".
+    /// "28. Sep. – 22. Nov. 2026", "28. Dez. 2026 – 3. Jan. 2027"; v11 P1.8: one week as `rangeLabelWithYear`
+    /// ("16.–22. Nov. 2026").
     var dateText: String {
+        if from == through { return from.rangeLabelWithYear }
         let start: DayKey = from.monday
         let end: DayKey = through.sunday
         if start.year == end.year { return "\(RangePDFWeeks.dayText(start)) – \(RangePDFWeeks.dayText(end)) \(end.year)" }
@@ -181,6 +183,9 @@ struct RangePDFRow: Identifiable {
     let line: WeekLine
     let context: WeekContext
     let state: RangeWeekState
+    /// v11 P6.1, P6.13: the week lies before the current segment (its context is read without the goal year, so it
+    /// can't tell) – a closed one shows its stored score on its own cover too.
+    var isFrozen = false
 
     var id: String { line.week.string }
     var week: WeekKey { line.week }
@@ -200,14 +205,16 @@ struct RangePDFData {
     /// Weeks per overview page (22 pt rows).
     static let rowsPerPage = 28
 
-    init(weeks: RangePDFWeeks, contexts: [WeekContext], report: RangeReport, today: DayKey) {
+    /// `isFrozen`: the freeze rule read once (`TrackerStore.freezeRule`), for weeks read without the goal year (P6.13).
+    init(weeks: RangePDFWeeks, contexts: [WeekContext], report: RangeReport, today: DayKey, isFrozen: (WeekKey) -> Bool = { _ in false }) {
         self.weeks = weeks
         self.report = report
         var lines: [String: WeekLine] = [:]
         for line in report.lines { lines[line.week.string] = line }
         self.rows = contexts.compactMap { context -> RangePDFRow? in
             guard let line = lines[context.week.string] else { return nil }
-            return RangePDFRow(line: line, context: context, state: RangeWeekState.of(line, context: context, current: today.week))
+            return RangePDFRow(line: line, context: context, state: RangeWeekState.of(line, context: context, current: today.week),
+                               isFrozen: isFrozen(context.week))
         }
         self.goals = contexts.last?.goals ?? []
     }
@@ -227,6 +234,19 @@ struct RangePDFData {
 
     /// Days that count in the weeks with a plan (sick and holiday days don't).
     var countedDays: Int { planRows.reduce(0) { $0 + 7 - $1.line.excusedDays } }
+
+    /// v11 P6.2: closed days of the weeks with a plan – counted like `countedDays`, without sick and holiday days
+    /// (`WeekLine.closedDays`), so "Tage abgeschlossen" never shows more than it counts.
+    var closedCountedDays: Int { planRows.reduce(0) { $0 + $1.line.closedDays } }
+
+    /// v11 P6.2: weeks that are done – closed, or without items (a paper or archive week has only its score or
+    /// grades); the running week counts as open, also before it has a plan.
+    var finishedWeeks: Int {
+        rows.filter { row in
+            guard row.state != .running else { return false }
+            return row.line.isClosed || !row.hasPages
+        }.count
+    }
 
     func goalLine(_ key: String) -> RangeReport.GoalLine? {
         report.goals.first { $0.key == key }
@@ -294,7 +314,7 @@ extension PDFExport {
         for row in data.rows where data.weekPageCount(row, scope: scope) > 0 {
             bookmarks.append(RangePDFBookmark(title: "\(row.week.longLabel) · \(row.week.rangeLabel)", page: drawn))
             // Built only now, one week at a time.
-            for page in weekPages(row.context, sections: scope.sections, firstPage: drawn + 1, total: total) {
+            for page in weekPages(row.context, sections: scope.sections, firstPage: drawn + 1, total: total, frozen: row.isFrozen) {
                 render(page, into: pdf, vectorBands: true)
                 drawn += 1
                 progress(drawn, total)
@@ -314,8 +334,8 @@ extension PDFExport {
         return url
     }
 
-    /// Lets the screen show the progress; false once the task is cancelled.
-    private static func pause() async -> Bool {
+    /// Lets the screen show the progress; false once the task is cancelled (v11 P6.12: also the week's and day's PDF).
+    static func pause() async -> Bool {
         await Task.yield()
         try? await Task.sleep(nanoseconds: 1_000_000)
         return !Task.isCancelled
@@ -382,7 +402,7 @@ private enum RangeColumns {
     }
 }
 
-/// "7,3" with one decimal (table cells).
+/// "7,3" with one decimal – only the power-hours cells; scores show up to two places (`Format.score`, rule V6).
 private func oneDecimal(_ value: Double?) -> String {
     guard let value else { return "–" }
     return Format.number(value, decimals: 1)
@@ -411,7 +431,13 @@ private struct RangeGoalTile: View {
 
     private var average: Double? { line?.average }
     private var trendSymbol: String { line?.trendSymbol ?? "minus" }
-    private var trendWord: String { line?.trendWord ?? "noch kein Trend" }
+    /// v11 P1.17: "steigend (je 3)" – the first and the last k scored weeks, never overlapping; "Trend –" with
+    /// fewer than 4 scored weeks.
+    private var trendWord: String {
+        guard let line, line.window > 0, line.trend != nil else { return "Trend –" }
+        return "\(line.trendWord) (je \(line.window))"
+    }
+    private var hasTrend: Bool { (line?.window ?? 0) > 0 && line?.trend != nil }
 
     var body: some View {
         HStack(spacing: 9) {
@@ -429,7 +455,9 @@ private struct RangeGoalTile: View {
                     .monospacedDigit()
                     .foregroundStyle(average == nil ? muted : ink)
                 HStack(spacing: 2) {
-                    Image(systemName: trendSymbol)
+                    if hasTrend {
+                        Image(systemName: trendSymbol)
+                    }
                     Text(trendWord)
                 }
                 .font(.system(size: 7, weight: .semibold))
@@ -455,7 +483,8 @@ private struct RangeBar: View {
     static let height: CGFloat = 92
 
     private var score: Double? { row.line.score }
-    private var valueText: String { row.state == .excused ? "–" : oneDecimal(score) }
+    /// v11 P6.4: up to two places like the ring and the rows ("6,81", "7,95").
+    private var valueText: String { row.state == .excused ? "–" : Format.score(score, outOf: false) }
     private var barHeight: CGFloat { RangeBar.height * CGFloat(min(1, max(0, (score ?? 0) / 10))) }
 
     var body: some View {
@@ -605,7 +634,8 @@ struct RangeCoverPage: View {
                 }
                 PDFSectionTitle(text: "Wertung je Woche")
                 RangeWeekBars(rows: data.rows)
-                PDFSectionTitle(text: "Jahresziele · Ø im Zeitraum und Trend")
+                // v11 P1.17: the trend compares the first and the last weeks (je k).
+                PDFSectionTitle(text: "Jahresziele · Ø im Zeitraum · Trend erste/letzte Wochen")
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 6) {
                     ForEach(data.goals) { goal in
                         RangeGoalTile(goal: goal, line: data.goalLine(goal.key))
@@ -627,13 +657,14 @@ struct RangeCoverPage: View {
         let scored: String = "\(report.scoredWeeks)/\(data.rows.count)"
         var closedWeeks: String = "–"
         var closedDays: String = "–"
-        // Papier- und Archiv-Wochen (nur Wertung oder Noten nachgetragen) sind fertig und zählen als abgeschlossen.
-        let paperWeeks: Int = data.rows.filter { RangeCoverPage.isFinishedWithoutPlan($0) }.count
-        if planWeeks + paperWeeks > 0 {
-            closedWeeks = "\(report.closedWeeks + paperWeeks)/\(planWeeks + paperWeeks)"
+        // v11 P6.2: closed weeks and weeks without items (paper or archive – only a score or grades) are done, of all
+        // weeks in the report; the running week counts as open. Never "4/3".
+        if !data.rows.isEmpty {
+            closedWeeks = "\(data.finishedWeeks)/\(data.rows.count)"
         }
+        // v11 P6.2: closed days without sick and holiday days, of the days that count.
         if planWeeks > 0 {
-            closedDays = "\(report.closedDays)/\(data.countedDays)"
+            closedDays = "\(data.closedCountedDays)/\(data.countedDays)"
         }
         var targets: String = "–"
         if report.weeklyTargetsCount > 0 { targets = "\(report.weeklyTargetsMet)/\(report.weeklyTargetsCount)" }
@@ -647,12 +678,6 @@ struct RangeCoverPage: View {
         list.append(("Wochenziele erreicht", targets, reach))
         list.append(("Krank/Urlaub", RangeCoverPage.excusedText(report), muted))
         return list
-    }
-
-    /// A paper or archive week that isn't closed: finished all the same (only its score or grades exist).
-    static func isFinishedWithoutPlan(_ row: RangePDFRow) -> Bool {
-        guard !row.line.isClosed else { return false }
-        return row.state == .paper || row.state == .archive
     }
 
     /// "182/224 PH", "182 PH", "–".
@@ -763,9 +788,12 @@ private struct RangeScoreChip: View {
     }
 
     var body: some View {
-        Text(oneDecimal(score))
+        // v11 P6.4: up to two places (`Format.score`), the chip column is 38 pt.
+        Text(Format.score(score, outOf: false))
             .font(.system(size: 8.5, weight: .heavy, design: .rounded))
             .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
             .foregroundStyle(score == nil ? muted : Color.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 1.5)
@@ -793,7 +821,8 @@ private struct RangeGoalCell: View {
     }
 
     var body: some View {
-        Text(oneDecimal(score))
+        // v11 P6.4: up to two places (`Format.score`) in the 19-pt cell, scaled down where needed.
+        Text(Format.score(score, outOf: false))
             .font(.system(size: 7, weight: .bold, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(textColor)
@@ -917,7 +946,8 @@ private struct RangeTableTotal: View {
             .frame(width: RangeColumns.goals)
             PowerHoursCell(powerHours: report.powerHours, target: report.powerHoursTarget)
                 .frame(width: RangeColumns.powerHours, alignment: .trailing)
-            Text("\(report.closedDays)/\(data.countedDays)").frame(width: RangeColumns.days, alignment: .trailing)
+            // v11 P6.2: closed days without sick and holiday days, like each row.
+            Text("\(data.closedCountedDays)/\(data.countedDays)").frame(width: RangeColumns.days, alignment: .trailing)
             Text(excusedText).frame(width: RangeColumns.excused, alignment: .trailing)
             Text(targetsText).frame(width: RangeColumns.targets, alignment: .trailing)
             Text("\(report.scoredWeeks) bewertet")
@@ -1447,14 +1477,17 @@ struct RangePDFSheet: View {
         data = nil
         let store = app.store
         let today: DayKey = app.today
+        // v11 P6.13: the pages read no segment titles or results – each week without the goal year; which weeks are
+        // frozen (their own cover shows the stored score, P6.1) is read once here.
+        let isFrozen: (WeekKey) -> Bool = store.freezeRule(today: today)
         var contexts: [WeekContext] = []
         for week in store.rangeWeeks(from: range.from, through: range.through) {
-            contexts.append(store.weekContext(for: week, today: today))
+            contexts.append(store.weekContext(for: week, today: today, goalYear: false))
             await Task.yield()
             if Task.isCancelled { return }
         }
         let report: RangeReport = store.rangeReport(contexts: contexts)
-        data = RangePDFData(weeks: range, contexts: contexts, report: report, today: today)
+        data = RangePDFData(weeks: range, contexts: contexts, report: report, today: today, isFrozen: isFrozen)
         if autoStarts, !autoStarted {
             autoStarted = true
             start()

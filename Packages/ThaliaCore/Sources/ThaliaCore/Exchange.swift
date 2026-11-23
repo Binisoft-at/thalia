@@ -109,16 +109,27 @@ public struct AppSource: Equatable, Hashable, Sendable {
     /// counted, summed, then the metrics of `ExchangeMetric.table`.
     public static let kindChoices: [String] = ["workout", "task", "habit", "ph", "spending"] + ExchangeMetric.table.map(\.id)
 
+    /// The kinds that feed a result (v11 §1.5.4, Art "Zielwert", latest value) and not a measure: net worth,
+    /// savings rate, account balances – a measure in € counts as spending (`isExpense`). Thalia's own list
+    /// (not in the copied `ExchangeFormat.swift`).
+    public static let resultOnlyKinds: Set<String> = ["net_worth", "savings_rate", "account_balance"]
+
+    /// v11 §1.5.4: the source needs a `ref` – no "alle" in the editors (the latest balance of any account means
+    /// nothing): `account_balance`.
+    public var requiresRef: Bool { kind == "account_balance" }
+
     /// The refs of `source.json` that fit this kind ("Eintrag aus refs"): workouts for `workout`, groups
-    /// for tasks, power-hours and spending, habits for `habit`. A ref without a kind fits every kind.
-    /// A metric ("kcal", "net_worth") has none: a value fact's `ref` is the metric itself, so another
-    /// metric's ref would match nothing and "alle" is the only sensible choice.
+    /// for tasks, power-hours and spending, habits for `habit`, accounts and account groups for
+    /// `account_balance` (v11). A ref without a kind fits every kind. Another metric ("kcal", "net_worth")
+    /// has none: a value fact's `ref` is the metric itself, so another metric's ref would match nothing and
+    /// "alle" is the only sensible choice.
     public func refChoices(_ refs: [ExchangeRef]) -> [ExchangeRef] {
         let fitting: Set<String>
         switch kind {
         case "workout": fitting = ["workout", "template"]
         case "task", "ph", "spending": fitting = ["group"]
         case "habit": fitting = ["habit"]
+        case "account_balance": fitting = ["account"]
         default: return []
         }
         return refs.filter { ref in
@@ -153,8 +164,7 @@ public struct AppSource: Equatable, Hashable, Sendable {
             let matching = own.filter { $0.knownKind == summed && $0.value != nil }
             guard !matching.isEmpty else { return nil }
             let values = matching.map { fact -> Double in
-                let value = fact.value ?? 0
-                return summed == .powerHours && Units.normalized(fact.unit ?? "") == "min" ? value / Double(PowerHour.minutes) : value
+                summed == .powerHours ? (fact.powerHoursValue ?? 0) : (fact.value ?? 0)
             }
             return (values.reduce(0, +), matching)
         }
@@ -176,6 +186,18 @@ public struct AppSource: Equatable, Hashable, Sendable {
             return ta != tb ? ta < tb : a.offset < b.offset
         }.map(\.element)
     }
+}
+
+extension ExchangeFact {
+    /// A `ph` fact's power-hours (v11 P1.4): `value` in PH, or minutes ÷ 50 when `unit` is "min" ("55 min" =
+    /// 1,1 PH); nil without a value. Thalia's own (not in the copied `ExchangeFormat.swift`).
+    public var powerHoursValue: Double? {
+        guard let value else { return nil }
+        return Units.normalized(unit ?? "") == "min" ? value / Double(PowerHour.minutes) : value
+    }
+
+    /// The fact was written in minutes ("min").
+    var isInMinutes: Bool { Units.normalized(unit ?? "") == "min" }
 }
 
 extension MeasureRecord {
@@ -309,9 +331,21 @@ public enum ExchangeInbox {
 
     public static func keys(sources: [String], week: WeekKey) -> [String] { keys(sources: sources, days: week.days) }
 
-    /// The setting's value for a day file (canonical JSON).
-    public static func value(_ file: ExchangeDayFile) -> String {
-        guard let data = try? file.encoded(), let text = String(data: data, encoding: .utf8) else { return "{}" }
+    /// The setting's value for a day file (canonical JSON) – v11 P1.1: a fact that can't be encoded is left
+    /// out, never "{}" over a stored copy; nil only when nothing can be written (callers skip it then).
+    public static func value(_ file: ExchangeDayFile) -> String? { encodedValue(file) }
+
+    /// The value where a text is required (a `SettingRow`, `StoredSetting`, `file(_:)`): callers of 1.9.0 keep
+    /// compiling (§0.9 – removed once no caller uses it). As `value(_:) -> String?`, "" in the case that can't
+    /// happen (nothing encodable) – unreadable like any broken copy, so it never counts.
+    @_disfavoredOverload
+    public static func value(_ file: ExchangeDayFile) -> String { encodedValue(file) ?? "" }
+
+    static func encodedValue(_ file: ExchangeDayFile) -> String? {
+        if let data = try? file.encoded(), let text = String(data: data, encoding: .utf8) { return text }
+        var kept = file
+        kept.facts = file.facts.filter { (try? BinisoftExchange.encode($0)) != nil }
+        guard let data = try? kept.encoded(), let text = String(data: data, encoding: .utf8) else { return nil }
         return text
     }
 
@@ -342,7 +376,7 @@ public enum ExchangeInbox {
         let dateA = a.generatedDate ?? .distantPast
         let dateB = b.generatedDate ?? .distantPast
         if dateA != dateB { return dateA > dateB }
-        return value(a) > value(b)
+        return (encodedValue(a) ?? "") > (encodedValue(b) ?? "")
     }
 
     /// The day files among `settings` (`x.<source>.<day>` only, the key must match the file), one copy
@@ -374,7 +408,7 @@ public enum ExchangeInbox {
         guard let (source, day) = parse(settingKey: key) else { return value }
         guard let stored = file(value), BinisoftExchange.sourceID(stored.source) == source, stored.day == day.string else { return nil }
         let kept = syncable(stored)
-        return kept == stored ? value : self.value(kept)
+        return kept == stored ? value : encodedValue(kept)
     }
 }
 
@@ -652,8 +686,7 @@ public enum ExchangeDerivation {
             for day in week.days {
                 for fact in factsByDay[source]?[day] ?? [] where fact.knownKind == .powerHours {
                     let id = importID(source: source, factID: fact.id)
-                    guard !ownWorkIDs.contains(id), var hours = fact.value, hours > 0 else { continue }
-                    if Units.normalized(fact.unit ?? "") == "min" { hours /= Double(PowerHour.minutes) }
+                    guard !ownWorkIDs.contains(id), let hours = fact.powerHoursValue, hours > 0 else { continue }
                     let category = self.category(of: fact, source: source, rules: rules, known: known, choices: choices[source] ?? [:])
                     let task = fact.title ?? (fact.refTitle.isEmpty ? (names[source] ?? source) : fact.refTitle)
                     let block = WorkRecord(id: id, day: day, categoryKey: category ?? "", task: task, powerHours: hours)
@@ -917,7 +950,7 @@ extension ExchangeCatalog {
             measures: measures.filter { week == nil || $0.week == week }.sorted { ($0.position, $0.code) < ($1.position, $1.code) }
                 .map { MeasureEntry(code: $0.code, title: $0.title, unit: $0.unit, link: $0.source.raw, category: $0.categoryKey) },
             results: results.filter { $0.deletedAt == nil }.sorted { ($0.goalKey.count, $0.goalKey, $0.position) < ($1.goalKey.count, $1.goalKey, $1.position) }
-                .map { ResultEntry(id: $0.id, title: $0.title, kind: $0.kindText, goal: $0.goalKey) })
+                .map { ResultEntry(id: $0.id, title: $0.title, kind: $0.kindText, goal: $0.goalKey, source: $0.source) })
     }
 }
 
@@ -978,12 +1011,17 @@ extension ExchangeOverview {
                 case .workoutDone: detail = "Workout\(group)"
                 case .habitDone: detail = "Gewohnheit\(group)"
                 case .powerHours:
-                    detail = Format.powerHours(fact.value ?? 0) + (category.map { " → \($0)" } ?? " · ohne Zuordnung")
+                    // v11 P1.4: minutes as power-hours – "55 min = 1,1 PH".
+                    let hours = Format.powerHours(fact.powerHoursValue ?? 0)
+                    let amount = fact.isInMinutes ? "\(Format.number(fact.value ?? 0, decimals: 0)) min = \(hours)" : hours
+                    detail = amount + (category.map { " → \($0)" } ?? " · ohne Zuordnung")
                 case .spending: detail = "Ausgabe \(Format.euro(fact.value ?? 0))\(group)"
                 case .value:
                     let metric = fact.knownMetric
                     let unit = metric?.unit ?? (fact.unit ?? "")
-                    detail = "\(metric?.title ?? fact.metric ?? "Wert") \(Format.measure(fact.value ?? 0, unit: unit))"
+                    // v11 §1.5.4: a metric per account names it – "Kontostand 1.234 € · Girokonto".
+                    let named = !fact.ref.isEmpty && fact.ref != metric?.id && !fact.refTitle.isEmpty ? " · \(fact.refTitle)" : ""
+                    detail = "\(metric?.title ?? fact.metric ?? "Wert") \(Format.measure(fact.value ?? 0, unit: unit))\(named)"
                 }
                 result.append(ExchangeArrival(day: day, source: name, title: title, detail: detail, isUsed: true))
             }

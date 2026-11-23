@@ -313,17 +313,32 @@ public struct ResultProgress: Equatable, Sendable {
         /// No target: only the value is shown.
         case untargeted
 
-        /// "offen", "auf Kurs", "hinten", "erreicht", "nicht erreicht", "".
+        /// "offen", "auf Kurs", "im Rückstand" (v11, KR2-13: one word set with the app), "erreicht", "nicht erreicht", "".
         public var label: String {
             switch self {
             case .open: "offen"
             case .onTrack: "auf Kurs"
-            case .behind: "hinten"
+            case .behind: "im Rückstand"
             case .reached: "erreicht"
             case .missed: "nicht erreicht"
             case .untargeted: ""
             }
         }
+
+        /// The words of a count with a limit ("höchstens 20 Packungen", v11 P1.10): "im Rahmen", "zu schnell",
+        /// "eingehalten", "überschritten"; open and untargeted as `label`.
+        public var limitLabel: String {
+            switch self {
+            case .onTrack: "im Rahmen"
+            case .behind: "zu schnell"
+            case .reached: "eingehalten"
+            case .missed: "überschritten"
+            case .open, .untargeted: label
+            }
+        }
+
+        /// `limitLabel` for a limit, else `label`.
+        public func label(isLimit: Bool) -> String { isLimit ? limitLabel : label }
     }
 
     public var kind: GoalResult.Kind
@@ -357,8 +372,12 @@ public struct ResultProgress: Equatable, Sendable {
     public var from: DayKey
     public var through: DayKey
 
-    /// "offen", "auf Kurs" …
-    public var statusText: String { status.label }
+    /// A count with a limit ("≤ 20 Packungen", v11 P1.10): less is fine, never "erreicht" before the end –
+    /// "im Rahmen", "zu schnell", "eingehalten", "überschritten". `value` results ("≤ 85 kg") aren't limits.
+    public var isLimit: Bool { kind == .count && (target?.isLimit ?? false) }
+
+    /// "offen", "auf Kurs", "im Rückstand" …; for a limit "im Rahmen", "zu schnell" …
+    public var statusText: String { status.label(isLimit: isLimit) }
 
     public init(kind: GoalResult.Kind, current: Double? = nil, total: Double? = nil, target: Target? = nil, targetValue: Double? = nil,
                 start: Double = 0, fraction: Double? = nil, expected: Double? = nil, status: Status = .open, doneOn: DayKey? = nil,
@@ -386,8 +405,9 @@ public struct ResultProgress: Equatable, Sendable {
     /// The current segment's contribution.
     public var inSegment: Double? { segment.flatMap { bySegment[$0.id] } }
 
-    /// count: "7 von 10 · davon 4 in Abschnitt 2", with a segment target "3 von 6 in Abschnitt 2 · 7 im
-    /// Zieljahr", without a target "7 Bücher"; value: "86,4 kg · Ziel ≤ 85 kg · −1,2 kg in Abschnitt 2";
+    /// count: "7 von 10 Büchern · davon 4 in Abschnitt 2" (v11 P1.14: the unit after "von" in the dative), with
+    /// a segment target "3 von 6 in Abschnitt 2 · 7 im Zieljahr", without a target "7 Bücher" / "1 Buch", a
+    /// limit "5 von höchstens 20 Packungen" (P1.10); value: "86,4 kg · Ziel ≤ 85 kg · −1,2 kg in Abschnitt 2";
     /// check: "erledigt am Di, 17. Nov." / "offen".
     public var text: String {
         switch kind {
@@ -397,9 +417,10 @@ public struct ResultProgress: Equatable, Sendable {
             let value = current ?? 0
             var parts: [String]
             if let targetValue {
-                parts = ["\(amount(value)) von \(amount(targetValue))\(unitSuffix)"]
+                let limit = isLimit ? (target?.comparison.choiceLabel).map { $0 + " " } ?? "" : ""
+                parts = ["\(amount(value)) von \(limit)\(amount(targetValue))\(unitSuffix(dative: true))"]
             } else {
-                parts = ["\(amount(value))\(unitSuffix)"]
+                parts = ["\(amount(value))\(unitSuffix(singular: abs(value - 1) < 1e-9))"]
             }
             if usesSegmentTarget, let segment {
                 parts[0] += " in \(segment.title)"
@@ -431,9 +452,15 @@ public struct ResultProgress: Equatable, Sendable {
         }
     }
 
-    var unitSuffix: String {
+    var unitSuffix: String { unitSuffix() }
+
+    /// " Bücher"; after "von" " Büchern" (`dative`), for exactly 1 without a target " Buch" (`singular`).
+    func unitSuffix(dative: Bool = false, singular: Bool = false) -> String {
         let shown = Units.display(unit)
-        return shown.isEmpty || Units.normalized(unit) == "€" ? "" : " " + shown
+        guard !shown.isEmpty, Units.normalized(unit) != "€" else { return "" }
+        if dative { return " " + Units.dative(shown) }
+        if singular { return " " + Units.singular(shown) }
+        return " " + shown
     }
 
     func amount(_ value: Double) -> String {
@@ -464,8 +491,10 @@ extension ResultProgress {
     ///   - items: the list entries (for a `list` source).
     ///   - series: the source's day values (for `measure:` and `app:` sources), computed by the caller –
     ///     `health:` measures only on the device.
+    ///   - resultIDs: v11 P1.11 – the ids of the results not in the trash; a list entry counting for an id
+    ///     not among them counts as unassigned. nil: every id counts as a result.
     public static func compute(_ result: GoalResult, segments: Segments, today: DayKey, entries: [GoalEntry] = [], items: [ListItem] = [],
-                               series: [DayKey: Double] = [:]) -> ResultProgress {
+                               series: [DayKey: Double] = [:], resultIDs: Set<String>? = nil) -> ResultProgress {
         let period = segments.period
         let from = result.fromSegment.flatMap(segments.span(id:))?.startDay ?? period.start
         let through = result.endedAfter.flatMap(segments.span(id:))?.endDay ?? period.end
@@ -493,15 +522,20 @@ extension ResultProgress {
             case .entries, .other:
                 facts = own.map { (day: $0.day, value: $0.value ?? 1) }
             case .list(let kind):
+                // v11 P1.11: the finished entries of the kind that count for no result, and every entry that
+                // counts for this one ("zählt für", e.g. an audio book) – each once. Entries of another result
+                // stay out; one counting for a deleted result counts as unassigned.
                 let live = items.filter { $0.deletedAt == nil }
-                let assigned = live.filter { $0.resultID == result.id }
-                let counted: [ListItem]
-                if !assigned.isEmpty {
-                    counted = ListMath.finished(assigned, from: from, through: through)
-                } else {
-                    let unassigned = live.filter { $0.resultID == nil || $0.resultID?.isEmpty == true }
-                    counted = ListMath.finished(unassigned, from: from, through: through, kind: kind ?? ListItem.kindKey(ListItem.defaultKind))
+                func owner(_ item: ListItem) -> String? {
+                    guard let id = item.resultID?.trimmingCharacters(in: .whitespaces), !id.isEmpty else { return nil }
+                    if let resultIDs, id != result.id, !resultIDs.contains(id) { return nil }
+                    return id
                 }
+                let assigned = ListMath.finished(live.filter { owner($0) == result.id }, from: from, through: through)
+                let byKind = ListMath.finished(live.filter { owner($0) == nil }, from: from, through: through,
+                                               kind: kind ?? ListItem.kindKey(ListItem.defaultKind))
+                var seen: Set<String> = []
+                let counted = (assigned + byKind).filter { seen.insert($0.id).inserted }
                 facts = counted.compactMap { item in item.finishedOn.map { (day: $0, value: 1.0) } }
             case .measure, .app:
                 facts = series.filter { $0.key >= from && $0.key <= through }.map { (day: $0.key, value: $0.value) }
@@ -581,6 +615,21 @@ extension ResultProgress {
         }
         let distance = aim - progress.start
         progress.fraction = abs(distance) < 1e-9 ? (target.isMet(value) ? 1 : 0) : min(1, max(0, (value - progress.start) / distance))
+        if progress.isLimit {
+            // v11 P1.10: a limit ("höchstens 20 Packungen") is kept or exceeded – never "erreicht" before the end.
+            // Over the limit: "überschritten"; time span over: "eingehalten"; running: "zu schnell" above
+            // limit × the share gone by × 1,15, else "im Rahmen". The bar is value ÷ limit.
+            progress.expected = aim * elapsed
+            progress.fraction = aim > 1e-9 ? min(1, max(0, value / aim)) : (target.isMet(value) ? 0 : 1)
+            if !target.isMet(value) {
+                progress.status = .missed
+            } else if today > paceThrough {
+                progress.status = .reached
+            } else {
+                progress.status = value > aim * elapsed * 1.15 + 1e-9 ? .behind : .onTrack
+            }
+            return progress
+        }
         if target.isMet(value) {
             progress.status = .reached
         } else if today > paceThrough {
@@ -614,30 +663,38 @@ public struct GoalResultLine: Equatable, Sendable {
     public var status: String
     /// "7/10"
     public var shortText: String
+    /// v11 (P7.2): the status behind `status`, for the colour on screen only (`StatusTint`) – the prompt and
+    /// the reports keep the text. `.untargeted` (grey) when the value is hidden.
+    public var statusKind: ResultProgress.Status
 
-    /// `hidesValue`: the value comes from Apple Health – it never leaves the device, the line says so.
-    public init(result: GoalResult, goal: GoalRecord?, progress: ResultProgress, hidesValue: Bool = false) {
+    /// `hidesValue`: the value comes from Apple Health – it never leaves the device, the line says so
+    /// ("Wert nur auf dem Gerät", or `hiddenText` – v11 P7.5: the Mac's hint where the value is).
+    public init(result: GoalResult, goal: GoalRecord?, progress: ResultProgress, hidesValue: Bool = false, hiddenText: String? = nil) {
         goalKey = result.goalKey
         goalTitle = goal?.title ?? ""
         title = result.title
         if hidesValue {
-            text = "Wert nur auf dem Gerät"
+            text = hiddenText ?? "Wert nur auf dem Gerät"
             status = ""
             shortText = "–"
+            statusKind = .untargeted
         } else {
             text = progress.text
             status = progress.statusText
             shortText = progress.shortText
+            statusKind = progress.status
         }
     }
 
-    public init(goalKey: String, goalTitle: String = "", title: String, text: String, status: String = "", shortText: String = "") {
+    public init(goalKey: String, goalTitle: String = "", title: String, text: String, status: String = "", shortText: String = "",
+                statusKind: ResultProgress.Status = .untargeted) {
         self.goalKey = goalKey
         self.goalTitle = goalTitle
         self.title = title
         self.text = text
         self.status = status
         self.shortText = shortText
+        self.statusKind = statusKind
     }
 
     /// "- 5 Bücher · Bücher gelesen: 3 von 10 · auf Kurs"

@@ -99,11 +99,14 @@ struct SegmentPageData {
             }
             return GoalLine(goal: goal, average: average, weeksGood: good.good, weeksScored: good.scored, categories: categories)
         }
+        // v11 P1.11: a book counting for a deleted result counts by its kind.
+        let resultIDs: Set<String> = Set(context.results.map(\.id))
         let results: [ResultLine] = context.results.filter { $0.isActive(in: span, segments: segments) }.map { result in
             let series: [DayKey: Double] = context.needsSeries(result)
                 ? store.resultSeries(result, period: context.goalPeriod, today: span.endDay) : [:]
             let progress: ResultProgress = ResultProgress.compute(result, segments: segments, today: span.endDay,
-                                                                  entries: context.goalEntries, items: context.listItems, series: series)
+                                                                  entries: context.goalEntries, items: context.listItems, series: series,
+                                                                  resultIDs: resultIDs)
             return ResultLine(result: result, progress: progress)
         }
         let books: [ListItem] = ListMath.finished(context.listItems, from: span.startDay, through: span.endDay)
@@ -758,20 +761,66 @@ struct GoalStructureRow: View {
 
 /// A closed week before the current segment: never scored again by itself – "Neu berechnen" scores it
 /// under today's rules on request (`TrackerStore.recompute`).
+/// v11 P7.1: on a device that can't score the week (`TrackerStore.canScore` – Mac, Watch, iPad for a week that reads
+/// Apple Health) "Hier fehlen die Werte aus Apple Health." and "Am iPhone neu berechnen" (a `force` request) instead;
+/// "Neu berechnen" shows the old and the new score with "Widerrufen" (`ClosedWeekSnapshot`).
+/// v11 P6.1: a second line "Nach heutigem Stand: 7,41" when today's rules give another score and this device can
+/// score the week – the stored score stays what the week shows.
 struct FrozenWeekNote: View {
     let context: WeekContext
     @Environment(AppModel.self) private var app
 
+    static let missingHealthText = "Hier fehlen die Werte aus Apple Health."
+
     var body: some View {
+        let canScore: Bool = app.store.canScore(context.week)
+        let todayLine: String? = FrozenWeekNote.todayLine(stored: context.plan?.finalScore, live: context.score.overall,
+                                                          canScore: canScore)
         VStack(alignment: .leading, spacing: 8) {
             Label(FrozenWeekNote.text(context), systemImage: "snowflake")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Neu berechnen", systemImage: "arrow.clockwise", action: recompute)
-                .buttonStyle(.bordered)
+            if let todayLine {
+                Text(todayLine)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            if canScore {
+                Button("Neu berechnen", systemImage: "arrow.clockwise", action: recompute)
+                    .buttonStyle(.bordered)
+            } else {
+                Label(FrozenWeekNote.missingHealthText, systemImage: "heart.text.square")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Am iPhone neu berechnen", systemImage: "iphone", action: requestOnPhone)
+                    .buttonStyle(.bordered)
+            }
         }
         .padding(.vertical, 2)
+    }
+
+    /// "Nach heutigem Stand: 7,41" – only when today's rules differ from the stored score by at least 0,01 (as shown)
+    /// and this device can score the week; nil otherwise.
+    static func todayLine(stored: Double?, live: Double?, canScore: Bool) -> String? {
+        guard canScore, let stored, let live, stored.isFinite, live.isFinite else { return nil }
+        guard abs((live * 100).rounded() - (stored * 100).rounded()) >= 1 else { return nil }
+        return "Nach heutigem Stand: " + Format.score(live)
+    }
+
+    /// The toast after "Neu berechnen": "KW44: 7,84 → 8,02"; "KW44 neu berechnet · 7,84" when the score stays.
+    static func recomputedText(_ week: WeekKey, before: Double?, after: Double?) -> String {
+        let old: String = Format.score(before, outOf: false)
+        let new: String = Format.score(after, outOf: false)
+        guard old != new else { return "\(week.label) neu berechnet · \(new)" }
+        return "\(week.label): \(old) → \(new)"
+    }
+
+    /// "KW44 wird nach dem Abgleich am iPhone neu berechnet."
+    static func requestedText(_ week: WeekKey) -> String {
+        "\(week.label) wird nach dem Abgleich am iPhone neu berechnet."
     }
 
     /// "Vor Abschnitt 2 (seit KW50): KW44 wird nicht mehr von selbst neu gewertet."
@@ -782,10 +831,31 @@ struct FrozenWeekNote: View {
         return "Vor \(current.title) (seit \(current.startWeek.label)): " + rest
     }
 
+    /// Scores the week again under today's rules; the toast's "Widerrufen" writes the week back as it was.
     private func recompute() {
         let week: WeekKey = context.week
-        let changed: Bool = app.store.recompute(week)
-        let message: String = changed ? "\(week.label) neu berechnet" : "\(week.label): Wertung unverändert"
-        app.toasts.show(message, symbol: "arrow.clockwise")
+        let store: TrackerStore = app.store
+        let snapshot: ClosedWeekSnapshot? = store.closedWeekSnapshot(week)
+        guard store.recompute(week) else {
+            app.toasts.show("\(week.label): Wertung unverändert", symbol: "arrow.clockwise")
+            return
+        }
+        let after: Double? = store.closedWeekSnapshot(week)?.finalScore
+        let message: String = FrozenWeekNote.recomputedText(week, before: snapshot?.finalScore, after: after)
+        guard let snapshot else {
+            app.toasts.show(message, symbol: "arrow.clockwise")
+            return
+        }
+        app.toasts.show(message, symbol: "arrow.clockwise") {
+            store.restore(snapshot)
+        }
+    }
+
+    /// Mac, Watch, iPad: the iPhone scores the week with its Health values after the next sync (`force`: also a
+    /// frozen week); nothing is stored here.
+    private func requestOnPhone() {
+        let week: WeekKey = context.week
+        app.store.requestRescore(week, force: true)
+        app.toasts.show(FrozenWeekNote.requestedText(week), symbol: "iphone")
     }
 }

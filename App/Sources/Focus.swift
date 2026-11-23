@@ -366,11 +366,13 @@ struct FocusContent: View {
         return totals.powerHours / target
     }
 
-    /// "Heute" (or the day: "So, 15. Nov.", R22), "Soll bis heute" (R47), "Ø pro Arbeitstag".
+    /// "Heute" (or the day: "So, 15. Nov.", R22), "Soll bis heute" (R47) – v11 P1.16: "Wochenziel" in a past
+    /// week, where the even pace is the whole target –, "Ø pro Arbeitstag".
     private func facts(_ totals: WorkTotals, areas: [MeasureDefinition]) -> [(String, String)] {
-        [(day.relativeLabel(today: app.today), dayText),
-         ("Soll bis heute", expectedText(areas)),
-         ("Ø pro Arbeitstag", average(totals.powerHours))]
+        let paceTitle: String = context.today > context.week.sunday ? "Wochenziel" : "Soll bis heute"
+        return [(day.relativeLabel(today: app.today), dayText),
+                (paceTitle, expectedText(areas)),
+                ("Ø pro Arbeitstag", average(totals.powerHours))]
     }
 
     /// The day's power-hours; "–" in another week (R88).
@@ -411,8 +413,9 @@ struct FocusContent: View {
     }
 }
 
-/// One area against its weekly goal: bar with the even-pace tick, "6 von 8 PH – im Plan" and the
-/// three biggest topics; a tap opens the power-hour editor with the area chosen (R47, R53).
+/// One area against its weekly goal: bar with the even-pace tick, where it stands ("im Plan", "noch 0,8 PH
+/// offen") over "6 / 8 PH", and the three biggest topics; a tap opens the power-hour editor with the area chosen
+/// (R47, R53). v11 P1.16: the status with its amount where no "von" stands, coloured by `StatusTint`.
 private struct AreaRow: View {
     let context: WeekContext
     let measure: MeasureDefinition
@@ -429,11 +432,18 @@ private struct AreaRow: View {
                     Text(measure.title)
                         .font(.body.weight(.semibold))
                     Spacer(minLength: 6)
-                    Text(status)
-                        .font(.callout.weight(.semibold))
-                        .monospacedDigit()
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(statusColor)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(status)
+                            .font(.callout.weight(.semibold))
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(statusColor)
+                        if let amounts {
+                            Text(amounts)
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 if let pace, pace.target > 0 {
                     GoalBar(fraction: pace.fraction, expected: expectedFraction(pace), reached: pace.isReached, tint: tint)
@@ -470,15 +480,29 @@ private struct AreaRow: View {
         context.weeklyTargetHint(code: measure.code)
     }
 
+    /// "im Plan", "hinter dem Plan", "noch 0,8 PH offen", "erreicht", "nicht erreicht" (`PaceStatus.label(remaining:unit:)`);
+    /// without a target the week's power-hours.
     private var status: String {
         guard let pace else { return Format.powerHours(context.weekValue(measure) ?? 0) }
-        return pace.label(unit: "PH")
+        return pace.status.label(remaining: pace.remaining, unit: "PH")
+    }
+
+    /// "6 / 8 PH" (v11 P1.7: rounded for the screen, the target in the direction of its comparison); nil without a
+    /// target.
+    private var amounts: String? {
+        guard let pace, pace.target > 0 else { return nil }
+        let goal: String = target.map { Format.amount(target: $0, unit: "PH") } ?? Format.amount(pace.target, unit: "PH")
+        return "\(Format.amount(pace.done, unit: "PH")) / \(goal) PH"
+    }
+
+    /// The target as it counts this week (scaled for sick and holiday days).
+    private var target: Target? {
+        measure.record.flatMap { context.effectiveTarget($0) }
     }
 
     private var statusColor: Color {
         guard let pace else { return .primary }
-        if pace.isReached { return .green }
-        return pace.isBehind ? .orange : .primary
+        return StatusTint(pace.status).color
     }
 
     private func expectedFraction(_ pace: Pace) -> Double? {
@@ -486,12 +510,16 @@ private struct AreaRow: View {
         return min(1, pace.expected / pace.target)
     }
 
-    /// "heute +2 PH" / "So, 15. Nov. noch nichts"; nothing in another week.
+    /// "heute +2 PH" / "So, 15. Nov. noch nichts"; nothing in another week. v11 P5.7: with nothing logged, a sick or
+    /// holiday day says "heute krank" / "heute Urlaub", a day the area doesn't work on "heute frei".
     private var dayLine: String? {
         guard context.week.contains(day) else { return nil }
         let hours: Double = context.dayValue(measure, on: day) ?? 0
         let label: String = day == today ? "heute" : day.shortLabel
-        return hours > 0 ? "\(label) +\(Format.powerHours(hours))" : "\(label) noch nichts"
+        if hours > 0 { return "\(label) +\(Format.powerHours(hours))" }
+        if context.isExcused(day) { return "\(label) \(context.excusedWord([day]))" }
+        if !context.applies(measure, on: day) { return "\(label) frei" }
+        return "\(label) noch nichts"
     }
 }
 

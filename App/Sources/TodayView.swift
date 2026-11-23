@@ -114,7 +114,6 @@ struct TodayContent: View {
     #endif
 
     private var day: DayKey { app.selectedDay }
-    private var pages: [TrackCategory] { context.todayCategories(day) }
 
     private var usesSplit: Bool {
         #if os(macOS)
@@ -126,7 +125,7 @@ struct TodayContent: View {
 
     /// R6: reads only the stored page – the start page is chosen once per day (`choosePage`), so
     /// ticking an item never moves the page. Until then the first category stands in.
-    private var page: Binding<TodayPage> {
+    private func page(_ pages: [TrackCategory]) -> Binding<TodayPage> {
         let model: AppModel = app
         let fallback: TodayPage = pages.first.map { TodayPage.category($0.key) } ?? .day
         return Binding(get: { model.todayPage ?? fallback },
@@ -143,12 +142,15 @@ struct TodayContent: View {
     }
 
     var body: some View {
+        // v11 P2.12: the day's categories once per body – the layouts, the start page and its check share them.
+        let pages: [TrackCategory] = context.todayCategories(day)
         Group {
             if !context.hasPlan {
                 List {
                     if day == app.today {
                         Section {
-                            YesterdayBanner(today: app.today)
+                            // v11 P5.1: Tue–Sun yesterday is in this week – no reader of its own.
+                            YesterdayBanner(today: app.today, context: context)
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Color.clear)
                         }
@@ -163,9 +165,9 @@ struct TodayContent: View {
                 }
                 .compactListSections()
             } else if usesSplit {
-                TodaySplit(context: context, day: day, pages: pages, page: page)
+                TodaySplit(context: context, day: day, pages: pages, page: page(pages))
             } else {
-                TodayPager(context: context, day: day, pages: pages, page: page)
+                TodayPager(context: context, day: day, pages: pages, page: page(pages))
             }
         }
         .navigationTitle(title)
@@ -286,7 +288,7 @@ private struct TodayPager: View {
     var body: some View {
         VStack(spacing: 0) {
             if day == app.today {
-                YesterdayBanner(today: app.today)
+                YesterdayBanner(today: app.today, context: context)
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
             }
@@ -312,7 +314,8 @@ private struct TodayPager: View {
 }
 
 /// iPad (wide) and Mac: categories on the left, the page on the right, "Heute im Blick" as the right
-/// column (R59). Mac: the list can be dragged between 220 and 400 pt (R60); iPad keeps 270 pt.
+/// column (R59). Mac: the list can be dragged between 220 and 340 pt (R60, v11 P4.1); iPad keeps 270 pt.
+/// v11 P4.1: the column shows only while it fits – the stored choice stays, too narrow opens it as a sheet.
 private struct TodaySplit: View {
     let context: WeekContext
     let day: DayKey
@@ -320,11 +323,17 @@ private struct TodaySplit: View {
     @Binding var page: TodayPage
     @Environment(AppModel.self) private var app
 
+    /// Shown while chosen and fitting; closing it (✕, ⌘0) changes the stored choice.
+    private var inspectorShown: Binding<Bool> {
+        let model: AppModel = app
+        return Binding(get: { model.showsGlanceColumn }, set: { model.showsGlanceInspector = $0 })
+    }
+
     var body: some View {
-        @Bindable var app = app
         split
-            .inspector(isPresented: $app.showsGlanceInspector) {
+            .inspector(isPresented: inspectorShown) {
                 GlanceList(context: context, day: day, onOpen: { page = $0 })
+                    .diagWidth("today inspector")
                     .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
             }
     }
@@ -334,9 +343,11 @@ private struct TodaySplit: View {
         #if os(macOS)
         HSplitView {
             list
-                .frame(minWidth: 220, idealWidth: 270, maxWidth: 400)
+                .frame(minWidth: 220, idealWidth: 270, maxWidth: 340)
+                .diagWidth("today list")
             detail
                 .frame(minWidth: 420, maxWidth: .infinity)
+                .diagWidth("today page")
         }
         #else
         HStack(spacing: 0) {
@@ -360,7 +371,7 @@ private struct TodaySplit: View {
         List(selection: selection) {
             if day == app.today {
                 Section {
-                    YesterdayBanner(today: app.today)
+                    YesterdayBanner(today: app.today, context: context)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
@@ -412,7 +423,10 @@ private struct TodaySplit: View {
                 DayPage(context: context, day: day)
             }
         case .day:
+            // v11 P5.12: "Abschluss & Notizen" has no keys – a pending focus request ends here, so a later click in the
+            // category list keeps the focus there.
             DayPage(context: context, day: day)
+                .onAppear { if app.focusTodayPage { app.focusTodayPage = false } }
         }
     }
 }
@@ -479,13 +493,19 @@ struct TodayFillButton: View {
         context.isExcused(day) ? DayTypes.symbol(for: context.dayType(day)) : nil
     }
 
+    /// v11 P4.1: the column only while it fits – otherwise the ring opens "Heute im Blick" as a sheet.
+    private var helpText: String {
+        guard opensColumn else { return "Heute im Blick" }
+        return app.fitsGlanceInspector ? "Heute im Blick ein- oder ausblenden (⌘0)" : "Fenster breiter ziehen, um die Spalte zu zeigen"
+    }
+
     var body: some View {
         let overall: DayOverall? = context.score.days[day]
         let closed: Bool = context.isClosed(day)
         let shownScore: Double? = closed ? overall?.score : nil
         Button {
             if opensColumn {
-                app.showsGlanceInspector.toggle()
+                app.showDayOverview(day)
             } else {
                 app.sheet = .dayOverview(day)
             }
@@ -501,9 +521,9 @@ struct TodayFillButton: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help(opensColumn ? "Heute im Blick ein- oder ausblenden (⌘0)" : "Heute im Blick")
+        .help(helpText)
         .accessibilityLabel(spoken)
-        .accessibilityHint(opensColumn ? "Blendet „Heute im Blick“ ein oder aus" : "Öffnet „Heute im Blick“")
+        .accessibilityHint(opensColumn && app.fitsGlanceInspector ? "Blendet „Heute im Blick“ ein oder aus" : "Öffnet „Heute im Blick“")
     }
 }
 
@@ -809,10 +829,7 @@ private struct CategoryPicker: View {
                                             ProgressView(value: entry.due > 0 ? entry.fill : 0)
                                                 .tint(entry.isComplete ? .green : category.color)
                                         }
-                                        Text(entry.due == 0 ? "–" : (entry.isComplete ? Format.score(entry.score, outOf: false) : "\(percent(entry.fill)) %"))
-                                            .font(.callout.weight(.semibold))
-                                            .monospacedDigit()
-                                            .foregroundStyle(entry.isComplete ? .primary : .secondary)
+                                        CategoryEntryTrailing(entry: entry)
                                             .frame(width: 56, alignment: .trailing)
                                     }
                                 }
@@ -842,6 +859,35 @@ private struct CategoryPicker: View {
             }
         }
     }
+}
+
+/// The picker's right side: "–" with nothing due, the score once complete, ✓ when complete without a score
+/// (v11 P5.14: everything recorded, nothing to score today), else "62 %".
+private struct CategoryEntryTrailing: View {
+    let entry: CategoryDay
+
+    var body: some View {
+        if entry.due > 0, entry.isComplete, entry.score == nil {
+            Image(systemName: "checkmark")
+                .font(.callout.weight(.bold))
+                .foregroundStyle(.green)
+                .help(CategoryEntryTrailing.completeHelp)
+                .accessibilityLabel("alles erfasst")
+        } else {
+            Text(text)
+                .font(.callout.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(entry.isComplete ? .primary : .secondary)
+        }
+    }
+
+    private var text: String {
+        if entry.due == 0 { return "–" }
+        if entry.isComplete { return Format.score(entry.score, outOf: false) }
+        return "\(percent(entry.fill)) %"
+    }
+
+    static let completeHelp = "Alles erfasst – heute nichts zu werten"
 }
 
 private struct MiniFill: View {
@@ -879,6 +925,13 @@ private struct CategoryListRow: View {
                     Text(Format.score(score))
                         .font(.callout.weight(.semibold))
                         .monospacedDigit()
+                } else if entry.isComplete {
+                    // v11 P5.14: complete without a score – ✓, not "100 %".
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.green)
+                        .help(CategoryEntryTrailing.completeHelp)
+                        .accessibilityLabel("alles erfasst")
                 } else {
                     Text("\(percent(entry.fill)) %")
                         .font(.caption)
@@ -913,6 +966,8 @@ struct CategoryPage: View {
     @State private var showsDone = false
     /// The selected item (R35).
     @State private var selectedItemCode: String?
+    /// v11 P5.12: the selectable list has the keyboard focus – 1–4 work without a click.
+    @FocusState private var listFocused: Bool
     /// The spending being changed in the input row (R46).
     @State private var editingExpense: MeasureEntry?
 
@@ -963,6 +1018,7 @@ struct CategoryPage: View {
         Group {
             if selectable {
                 List(selection: $selectedItemCode) { sections }
+                    .focused($listFocused)
             } else {
                 List { sections }
             }
@@ -974,6 +1030,38 @@ struct CategoryPage: View {
             handleKey(press.characters)
         }
         .environment(\.markKeyHints, selectable)
+        // v11 P5.12: ⌘1, ⌥⌘↓ / ⌥⌘↑, "Weiter" and the main window becoming key ask the page's list to take the keys.
+        .onAppear(perform: takeFocusIfAsked)
+        .onChange(of: app.focusTodayPage) { _, _ in takeFocusIfAsked() }
+        .onChange(of: listFocused) { _, focused in
+            if focused { selectFirstOpenIfNeeded() }
+        }
+    }
+
+    // MARK: Focus (v11 P5.12)
+
+    /// The list takes the keyboard focus when the app asks for it (`AppModel.focusTodayPage`); a click into the
+    /// category list leaves the focus there.
+    private func takeFocusIfAsked() {
+        // Only the page on screen – not one that is just being replaced by ⌥⌘↓ / "Weiter".
+        guard selectable, app.focusTodayPage, page == .category(category.key) else { return }
+        listFocused = true
+        app.focusTodayPage = false
+        selectFirstOpenIfNeeded()
+    }
+
+    /// The list got the focus without a selection: the first open item is marked, before the first key works –
+    /// a key on an item that isn't marked would be blind (KR2-7).
+    private func selectFirstOpenIfNeeded() {
+        guard selectable else { return }
+        let items: [PlanItem] = visibleItems()
+        if let code = selectedItemCode, items.contains(where: { $0.code == code }) { return }
+        selectedItemCode = firstOpenItem(in: items)?.code
+    }
+
+    /// The first item without a mark that can be marked (the `nextOpenItem` rule from the top).
+    private func firstOpenItem(in items: [PlanItem]) -> PlanItem? {
+        items.first { context.mark($0, on: day) == nil && !context.options($0, on: day).isEmpty }
     }
 
     @ViewBuilder
@@ -1152,6 +1240,8 @@ struct CategoryPage: View {
 
     private func goToNextPage() {
         let target: TodayPage = nextPage
+        // v11 P5.12: the next page's list takes the keys 1–4 right away (Mac, iPad).
+        if selectable { app.focusTodayPage = true }
         withAnimation(.snappy) { page = target }
     }
 
@@ -1217,9 +1307,10 @@ struct CategoryPage: View {
         return lines.joined(separator: "\n")
     }
 
-    /// The category head in its goal's colour, one line (R38): key and title, "3 von 5", a small
-    /// ring, ⓘ for details, and "Alle …" – or, once everything is recorded, "Weiter: 1.2" /
-    /// "Zum Abschluss" (R74). "Alle leeren" sits in the head's context menu.
+    /// The category head in its goal's colour (R38): key and title, "3 von 5", a small ring, ⓘ for
+    /// details, and "Alle …" – or, once everything is recorded, "Weiter: 1.2" / "Zum Abschluss" (R74).
+    /// "Alle leeren" sits in the head's context menu. v11 P5.18 (KR2-9): a long title takes a second
+    /// line instead of being cut ("Ernährung und Gewicht" whole).
     private func header(_ entry: CategoryDay, tickable: [PlanItem]) -> some View {
         let isComplete: Bool = entry.due > 0 && entry.isComplete
         let marked: [PlanItem] = tickable.filter { context.recordedMark($0, on: day) != nil }
@@ -1228,9 +1319,10 @@ struct CategoryPage: View {
             HStack(spacing: 8) {
                 Text("\(category.key)  \(category.title)")
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.8)
                     .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
                 Spacer(minLength: 4)
                 if entry.knockedOut || entry.overridden {
@@ -1694,7 +1786,12 @@ struct MeasureRow: View {
     private var isWeekly: Bool { record?.period == .week }
 
     /// H1: the value comes from Apple Health on the iPhone – nothing to type in here.
-    private var isHealthElsewhere: Bool { value == nil && context.isHealthElsewhere(measure) }
+    // HEALTHSHARE: not on a day the iPhone shares (`isHealthElsewhere(_:on:)`, §1.4.7).
+    private var isHealthElsewhere: Bool { value == nil && context.isHealthElsewhere(measure, on: day) }
+    // HEALTHSHARE: the day's value is the one the iPhone shares – shown, never an input (§1.4.8).
+    private var sharedValue: Double? { context.sharedHealthValue(measure, on: day) }
+    // HEALTHSHARE: read on the iPhone, taken over nowhere ("Health am iPhone: … – dort übernehmen").
+    private var phoneSuggestion: Double? { context.sharedHealthSuggestion(measure, on: day) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1736,9 +1833,18 @@ struct MeasureRow: View {
                         .controlSize(.mini)
                         .tint(.pink)
                     }
+                    // HEALTHSHARE: only read – the iPhone takes it over.
+                    if let phoneSuggestion {
+                        Text(HealthShareController.phoneSuggestionText(phoneSuggestion, unit: measure.unit))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 6)
-                if !isHealthElsewhere {
+                // HEALTHSHARE: a shared value is shown with "Eigenen Wert eintragen…", never typed over (§1.4.8).
+                if let sharedValue {
+                    SharedHealthInput(measure: measure, day: day, value: sharedValue)
+                } else if !isHealthElsewhere {
                     MeasureInput(measure: measure, context: context, day: day, offersWorkButton: offersWorkButton)
                 }
             }
@@ -1761,7 +1867,10 @@ struct MeasureRow: View {
             parts.append("Woche \(context.weekValue(measure).map { Format.measure($0, unit: measure.unit) } ?? "0")")
         }
         // v10: a value from a connected app or the reading list says where it comes from.
-        if let source = context.valueSource(measure, on: day) {
+        // HEALTHSHARE: so does a value the iPhone shares ("aus Health am iPhone").
+        if sharedValue != nil {
+            parts.append(HealthShareController.sharedCaption)
+        } else if let source = context.valueSource(measure, on: day) {
             parts.append(ConnectedAppsTexts.fromSource(source))
         } else if record?.source.listKind != nil {
             parts.append("aus der Leseliste")
@@ -1780,7 +1889,9 @@ struct MeasureMenu: View {
 
     /// v10: the day's value is an own one – not the reading list's, not only a connected app's.
     private var hasOwnValue: Bool {
+        // HEALTHSHARE: nor the value the iPhone shares.
         measure.record?.source.listKind == nil && context.valueSource(measure, on: day) == nil
+            && context.sharedHealthValue(measure, on: day) == nil
     }
 
     var body: some View {
@@ -1900,7 +2011,8 @@ struct MeasureInput: View {
                         commit(set)
                         focused = false
                     }
-                    .accessibilityLabel("\(measure.title) in \(unit), tippen zum Eintippen")
+                    // v11 P5.6: what the field is – VoiceOver says itself that it can be edited.
+                    .accessibilityLabel(unit.isEmpty ? measure.title : "\(measure.title) in \(unit)")
                 if !unit.isEmpty {
                     Text(unit)
                         .font(.caption2.weight(.semibold))
@@ -1971,6 +2083,9 @@ struct MeasureInput: View {
         set(result)
     }
 
+    /// v11 P5.19 (KR1-7): compared with the value as the field shows it, not the exact one – clicking into a field
+    /// with 7,316 h and out again saves nothing (an own 7,32 would hide a value from Health for good). An emptied
+    /// field still clears the value.
     private func commit(_ set: (Double?) -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         let parsed: Double? = typedValue()
@@ -1978,7 +2093,8 @@ struct MeasureInput: View {
             text = value.map { Format.number($0) } ?? ""
             return
         }
-        guard parsed != value else { return }
+        let shown: Double? = value.flatMap { Format.parse(Format.number($0)) }
+        guard parsed != shown else { return }
         set(parsed)
     }
 
@@ -2095,24 +2211,36 @@ struct WeeklyGoalRow: View {
     var body: some View {
         let weekValue: Double = context.weekValue(goal.measure) ?? 0
         let today: Double = context.dayValue(goal.measure, on: day) ?? 0
-        let targetValue: Double = effectiveTargetValue
+        let target: Target? = effectiveTarget
+        let targetValue: Double = target?.scaleMax ?? 0
+        let isLimit: Bool = target?.isLimit ?? false
         let fraction: Double = targetValue > 0 ? min(1, weekValue / targetValue) : 0
-        let reached: Bool = targetValue > 0 && weekValue >= targetValue - 1e-9
+        // A limit ("≤ 6") is never "erreicht" – it is kept or exceeded (`status`).
+        let reached: Bool = !isLimit && targetValue > 0 && weekValue >= targetValue - 1e-9
         let pace: Pace? = context.pace(for: goal.measure)
+        let status: PaceStatus? = paceStatus(pace, target: target, weekValue: weekValue)
         let hint: String? = scaledHint
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(goal.item?.title ?? goal.measure.title)
                     .font(.body.weight(.semibold))
                 Spacer(minLength: 6)
-                percentButton(fraction: fraction, reached: reached, pace: pace)
+                percentButton(fraction: fraction, reached: reached, pace: pace, status: status)
             }
             GoalBar(fraction: fraction, expected: expectedFraction(pace, target: targetValue), reached: reached,
                     tint: GoalPalette.color(category: goal.measure.categoryKey))
             HStack(spacing: 10) {
-                Text(amountsText(weekValue, target: targetValue))
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
+                HStack(spacing: 6) {
+                    Text(amountsText(weekValue, target: target))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                    // v11 P1.16: the short word next to "x von y" ("hinter dem Plan", "noch offen") – the chip says "erreicht".
+                    if let status, !reached, status != .reached {
+                        Text(status.label)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(StatusTint(status).color)
+                    }
+                }
                 Text(todayText(today))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2141,18 +2269,21 @@ struct WeeklyGoalRow: View {
         .contextMenu { MeasureMenu(measure: goal.measure, context: context, day: day) }
     }
 
-    /// "62 %" / "erreicht" – a tap explains the bar and how the target counts.
-    private func percentButton(fraction: Double, reached: Bool, pace: Pace?) -> some View {
-        Button {
+    /// "62 %" / "erreicht" – a tap explains the bar and how the target counts. v11 P1.16: coloured by the status
+    /// alone (`StatusTint`) – orange "hinter dem Plan" / "noch offen", red "nicht erreicht"; a limit says "im Rahmen" /
+    /// "überschritten".
+    private func percentButton(fraction: Double, reached: Bool, pace: Pace?, status: PaceStatus?) -> some View {
+        let tint: Color = chipTint(status: status, reached: reached)
+        return Button {
             showsExplanation = true
         } label: {
-            Text(percentLabel(fraction: fraction, reached: reached))
+            Text(percentLabel(fraction: fraction, reached: reached, status: status))
                 .font(.caption.weight(.bold))
                 .monospacedDigit()
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .foregroundStyle(reached ? Color.white : Brand.accent)
-                .background(reached ? Color.green : Brand.accent.opacity(0.14), in: .capsule)
+                .foregroundStyle(reached ? Color.white : tint)
+                .background(reached ? tint : tint.opacity(0.14), in: .capsule)
         }
         .buttonStyle(.borderless)
         .accessibilityHint("Erklärt, wie das Wochenziel zählt")
@@ -2179,9 +2310,25 @@ struct WeeklyGoalRow: View {
     private var unit: String { isWork ? "PH" : goal.measure.unit }
 
     /// v8: the target as it counts this week – scaled for sick and holiday days.
-    private var effectiveTargetValue: Double {
-        guard let record, let target = context.effectiveTarget(record) else { return 0 }
-        return target.scaleMax
+    private var effectiveTarget: Target? {
+        guard let record else { return nil }
+        return context.effectiveTarget(record)
+    }
+
+    /// v11 P1.16: where the weekly target stands – a limit "im Rahmen" / "überschritten", else the pace's status
+    /// ("im Plan", "hinter dem Plan", "noch offen", "nicht erreicht"); nil without a target that counts.
+    private func paceStatus(_ pace: Pace?, target: Target?, weekValue: Double) -> PaceStatus? {
+        guard let target, target.scaleMax > 0 else { return nil }
+        if target.isLimit { return PaceStatus.limit(isMet: target.isMet(weekValue)) }
+        return pace?.status
+    }
+
+    /// The chip's colour: green once reached, grey when the target doesn't count, else the status colour.
+    private func chipTint(status: PaceStatus?, reached: Bool) -> Color {
+        if reached { return StatusTint(kind: .reached).color }
+        if let record, record.target != nil, context.targetShare(record) <= 1e-9 { return .secondary }
+        guard let status else { return Brand.accent }
+        return StatusTint(status).color
     }
 
     /// v8: "4,8 statt 8 PH – 2 Tage krank" when sick or holiday days scale the target; "zählt nicht
@@ -2190,26 +2337,43 @@ struct WeeklyGoalRow: View {
         context.weeklyTargetHint(code: goal.measure.code)
     }
 
-    /// "62 %" · "erreicht"; v8: "zählt nicht" when every day of the target is a sick or holiday day.
-    private func percentLabel(fraction: Double, reached: Bool) -> String {
+    /// "62 %" · "erreicht"; v8: "zählt nicht" when every day of the target is a sick or holiday day; v11: a limit
+    /// "im Rahmen" / "überschritten".
+    private func percentLabel(fraction: Double, reached: Bool, status: PaceStatus?) -> String {
         if reached { return "erreicht" }
         if let record, record.target != nil, context.targetShare(record) <= 1e-9 { return "zählt nicht" }
+        if let status, status == .withinLimit || status == .overLimit { return status.label }
         return "\(percent(fraction)) %"
     }
 
-    /// "3 von 8 PH"; v8: "3 PH in der Woche" when the target doesn't count this week (share 0).
-    private func amountsText(_ weekValue: Double, target: Double) -> String {
-        guard target > 0 else { return "\(amount(weekValue)) in der Woche" }
-        return "\(amount(weekValue)) von \(amount(target))"
+    /// "3 von 8 PH", "150 von 86 Stk." (v11 P1.7: rounded for the screen, the target in the direction of its
+    /// comparison – `Format.amount`); v8: "3 PH in der Woche" when the target doesn't count this week (share 0).
+    private func amountsText(_ weekValue: Double, target: Target?) -> String {
+        guard let target, target.scaleMax > 0 else { return "\(amount(weekValue)) in der Woche" }
+        return "\(Format.amount(weekValue, unit: unit)) von \(Format.amount(target: target, unit: unit))\(unitSuffix)"
+    }
+
+    /// The unit after "x von y": " PH", " Stk.", " €"; nothing for times.
+    private var unitSuffix: String {
+        if Units.isTime(unit) { return "" }
+        if Units.normalized(unit) == "€" { return " €" }
+        let shown: String = Units.display(unit)
+        return shown.isEmpty ? "" : " " + shown
     }
 
     private func amount(_ value: Double) -> String {
         Format.measure(value, unit: unit)
     }
 
-    /// "heute +2 PH" / "heute noch nichts".
+    /// "heute +2 PH" / "heute noch nichts"; v11 P5.7: work on a sick or holiday day "heute krank", on a free day
+    /// "heute frei".
     private func todayText(_ today: Double) -> String {
-        today > 0 ? "heute +\(amount(today))" : "heute noch nichts"
+        if today > 0 { return "heute +\(amount(today))" }
+        if isWork {
+            if context.isExcused(day) { return "heute \(context.excusedWord([day]))" }
+            if !context.applies(goal.measure, on: day) { return "heute frei" }
+        }
+        return "heute noch nichts"
     }
 
     /// Where an even pace stands today, 0…1 of the bar.
@@ -2368,7 +2532,16 @@ struct DayPageSections: View {
                 }
                 .contentShape(.rect)
                 .onTapGesture { app.sheet = .note(note, day) }
+                // v11 P5.6: VoiceOver hears a button that opens the note.
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Öffnet die Notiz")
                 .swipeActions(edge: .trailing) {
+                    Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([note]) }
+                }
+                // v11 P5.13: with the mouse, too – like every other swipe row.
+                .contextMenu {
+                    Button("Bearbeiten…", systemImage: "pencil") { app.sheet = .note(note, day) }
                     Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([note]) }
                 }
             }
@@ -2820,6 +2993,9 @@ struct ExpenseEntryRow: View {
         .onTapGesture {
             onEdit?()
         }
+        // v11 P5.6: one element; a button where a tap changes the spending.
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(onEdit == nil ? [] : .isButton)
         .accessibilityHint(onEdit == nil ? "" : "Tippen zum Bearbeiten")
         .swipeActions(edge: .trailing) {
             Button("Löschen", systemImage: "trash", role: .destructive) { app.trash([entry]) }
@@ -2951,6 +3127,13 @@ struct NoPlanView: View {
             Text("Sonntags: Reflexion und Zusagen an ChatGPT schicken – mit dem Planungs-Prompt aus Thalia kommt eine CSV zurück, die du hier einfügst.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            if let syncLine {
+                // v11 P3.16 (KR2-27): a plan from another device may still be on its way – don't plan twice.
+                Label(syncLine, systemImage: "icloud")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Button {
                 app.sheet = .planWeek(week)
             } label: {
@@ -2980,6 +3163,18 @@ struct NoPlanView: View {
             sourceWeek = app.store.planningSourceWeek(for: week)
         }
     }
+
+    /// v11 P3.16: while iCloud syncs, or when the last sync is more than 10 minutes ago – only where Thalia syncs
+    /// (never in the practice or a local store). The time of the last import counts first (`lastReceived`).
+    private var syncLine: String? {
+        let state: SyncState = app.sync.state
+        guard state.mode.isSynced else { return nil }
+        if state.isSyncing { return "iCloud gleicht gerade ab – ein Plan von einem anderen Gerät kann gleich ankommen." }
+        guard let last = app.lastReceived ?? state.lastSync else { return nil }
+        let now = Date()
+        guard now.timeIntervalSince(last) > 10 * 60 else { return nil }
+        return "Letzter Abgleich \(SyncDevice.seenText(last, now: now)) – ein Plan von einem anderen Gerät ist vielleicht noch unterwegs."
+    }
 }
 
 /// Toolbar of Today (R62). iPhone: the date as a title menu and the ring (R38); "+" sits at the
@@ -2997,6 +3192,11 @@ struct TodayToolbar: ToolbarContent {
     private var closeTitle: String { context.isClosed(day) ? "Abgeschlossen" : "Tag abschließen" }
     private var closeSymbol: String { context.isClosed(day) ? "checkmark.seal.fill" : "moon.stars" }
 
+    /// v11 P4.1: says why the button opens a sheet when the window is too narrow for the column.
+    @MainActor private var glanceHelp: String {
+        app.fitsGlanceInspector ? "Heute im Blick ein- oder ausblenden (⌘0)" : "Fenster breiter ziehen, um die Spalte zu zeigen"
+    }
+
     var body: some ToolbarContent {
         #if os(macOS)
         ToolbarItem(placement: .navigation) {
@@ -3006,7 +3206,8 @@ struct TodayToolbar: ToolbarContent {
         ToolbarItem(placement: .navigation) {
             Button("Zu heute") { app.goToToday() }
                 .disabled(day == app.today)
-                .help("Zu heute (⇧⌘T)")
+                // v11 P6.15: one command "Zu heute" ⌘T in "Gehe zu".
+                .help("Zu heute (⌘T)")
         }
         ToolbarItem(placement: .navigation) {
             Button { app.selectedDay = day.adding(days: 1) } label: { Label("Nächster Tag", systemImage: "chevron.right") }
@@ -3027,15 +3228,18 @@ struct TodayToolbar: ToolbarContent {
             } label: {
                 Label("Erfassen", systemImage: "plus")
             }
+            // v11 P6.15: with its word, like on Woche, Ziele and Rückblick.
+            .labelStyle(.titleAndIcon)
             .help("Erfassen (⇧⌘N)")
         }
         ToolbarItem(placement: .primaryAction) {
             Button {
-                app.showsGlanceInspector.toggle()
+                // v11 P4.1: the column while it fits, else "Heute im Blick" as a sheet.
+                app.showDayOverview(day)
             } label: {
                 Label("Heute im Blick", systemImage: "sidebar.trailing")
             }
-            .help("Heute im Blick ein- oder ausblenden (⌘0)")
+            .help(glanceHelp)
         }
         #else
         ToolbarItem(placement: .principal) {
@@ -3062,21 +3266,32 @@ struct TodayToolbar: ToolbarContent {
                 Button("Heute im Blick", systemImage: "info.circle") { app.sheet = .dayOverview(day) }
                 Button("Fokus (Power-Hours)", systemImage: "bolt") { app.sheet = .focus(day) }
                 Button("Ausgaben", systemImage: "eurosign.circle") { app.sheet = .expenses(day) }
-                Button("Wochenplan importieren", systemImage: "square.and.arrow.down") { app.sheet = .importPlan(prompt: true) }
-                // v8: past weeks and several weeks as one PDF.
-                Button("Vergangene Woche nachtragen", systemImage: "clock.arrow.circlepath") { app.sheet = .importPast(nil) }
-                Button("Mehrere Wochen als PDF", systemImage: "doc.richtext") { app.sheet = .rangePDF }
-                Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
-                Divider()
+                // v11 P4.19: import, catching up, PDFs, the trash and Settings work on real data – not in the practice.
                 if !app.isSandbox {
-                    Button("Thalia-Tour", systemImage: "graduationcap") { app.startTour() }
+                    MoreMenuDataItems()
                 }
-                Button("Einstellungen", systemImage: "gear") { app.sheet = .settings }
             } label: {
                 Label("Mehr", systemImage: "ellipsis")
             }
         }
         #endif
+    }
+}
+
+/// The "Mehr" menus' entries that work on the real data (Heute, Woche, Ziele, Rückblick): import, catching up,
+/// PDFs, the trash, the tour and Settings. v11 P4.19: never in the practice; P5.9: "…" where a window follows.
+private struct MoreMenuDataItems: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Button("Wochenplan importieren", systemImage: "square.and.arrow.down") { app.sheet = .importPlan(prompt: true) }
+        // v8: past weeks and several weeks as one PDF.
+        Button("Vergangene Woche nachtragen…", systemImage: "clock.arrow.circlepath") { app.sheet = .importPast(nil) }
+        Button("Mehrere Wochen als PDF…", systemImage: "doc.richtext") { app.sheet = .rangePDF }
+        Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
+        Divider()
+        Button("Thalia-Tour", systemImage: "graduationcap") { app.startTour() }
+        Button("Einstellungen", systemImage: "gear") { app.sheet = .settings }
     }
 }
 
@@ -3178,19 +3393,13 @@ struct MainToolbar: ToolbarContent {
         }
         #else
         ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Button("Wochenplan importieren", systemImage: "square.and.arrow.down") { app.sheet = .importPlan(prompt: true) }
-                // v8: past weeks and several weeks as one PDF.
-                Button("Vergangene Woche nachtragen", systemImage: "clock.arrow.circlepath") { app.sheet = .importPast(nil) }
-                Button("Mehrere Wochen als PDF", systemImage: "doc.richtext") { app.sheet = .rangePDF }
-                Button("Zuletzt gelöscht", systemImage: "trash") { app.sheet = .trash }
-                Divider()
-                if !app.isSandbox {
-                    Button("Thalia-Tour", systemImage: "graduationcap") { app.startTour() }
+            // v11 P4.19: nothing in the practice works on real data – there the menu isn't offered at all.
+            if !app.isSandbox {
+                Menu {
+                    MoreMenuDataItems()
+                } label: {
+                    Label("Mehr", systemImage: "ellipsis")
                 }
-                Button("Einstellungen", systemImage: "gear") { app.sheet = .settings }
-            } label: {
-                Label("Mehr", systemImage: "ellipsis")
             }
         }
         #endif

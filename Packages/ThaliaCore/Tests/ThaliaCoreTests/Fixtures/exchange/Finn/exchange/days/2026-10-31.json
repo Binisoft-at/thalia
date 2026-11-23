@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "source": "finn",
+  "day": "2026-10-31",
+  "generatedAt": "2026-10-31T21:30:00Z",
+  "facts": [
+    { "id": "nw-2026-10-31", "kind": "value", "ref": "net_worth", "refTitle": "Vermögen", "metric": "net_worth", "value": 51000,
+      "currency": "EUR", "origin": "app" },
+    { "id": "sr-2026-10", "kind": "value", "ref": "savings_rate", "refTitle": "Sparquote", "metric": "savings_rate", "value": 18.5,
+      "unit": "%", "origin": "app" },
+    { "id": "kb-acc-giro-2026-10-31", "kind": "value", "ref": "acc-giro", "refTitle": "Girokonto", "metric": "account_balance",
+      "value": 980, "currency": "EUR", "origin": "app" }
+  ]
+}

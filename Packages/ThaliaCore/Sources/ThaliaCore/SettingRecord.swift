@@ -322,6 +322,23 @@ public enum SettingKeys {
     /// `score.<week>` – the stored category week scores ("1.1=8.2;1.2=6.5").
     public static let categoryScores = "score."
 
+    // v11 – device and request records. None of them is in `all`: never in a backup, `record` rows or the
+    // week's prefix queries; `week(of:)` gives nil; older builds never read them.
+
+    /// `rescore.<week>` – a request to the iPhone to score a closed week anew (`RescoreRequest`, P2.1).
+    public static let rescoreRequest = "rescore."
+    /// `sync.build.<install id>` – the build a device runs (`SyncBuild`, P2.1 (d)). Not `sync.seen.`, the only
+    /// device prefix 1.9.0 reads.
+    public static let buildPrefix = "sync.build."
+    /// `backup.last` – the last full backup made by hand on any device (`BackupStamp`, P3.13).
+    public static let backupLast = "backup.last"
+
+    /// The goal year (`GoalPeriod`): start, end, review week, motto – plain text settings (v11 P3.7: backed up
+    /// as `record` rows, the import only fills in what the app lacks).
+    public static let goalYearKeys: [String] = ["goal.start", "goal.end", "goal.review", "goal.motto"]
+    /// The switch "Thalia-Katalog bereitstellen" (v11 P3.7, also a `record` row).
+    public static let catalogSwitch = "exchange.catalog"
+
     /// Every v10 prefix, for prefix queries and the backup (`record` rows).
     public static let all: [String] = [goalResult, goalEntry, goalSegment, listItem, listProgress, linkRule, inbox, categoryScores]
 
@@ -377,12 +394,23 @@ public enum SettingRecords {
     }
 
     /// The records of `type` among `settings` (its prefix only, newest copy per key), sorted by key;
-    /// those in the trash only with `includeDeleted`.
+    /// those in the trash only with `includeDeleted`. Dated facts (`goal.entry.`, `list.progress.`, v11 P3.5):
+    /// one record per id – moving one to another day is a new key, and an older backup can bring the old key
+    /// back; the newest `modifiedAt` counts (a tie: the greater key).
     public static func decode<T: SettingRecord>(_ type: T.Type, from settings: [StoredSetting], includeDeleted: Bool = false) -> [T] {
-        newest(settings.filter { $0.key.hasPrefix(T.prefix) }).values
+        var records: [(key: String, record: T)] = newest(settings.filter { $0.key.hasPrefix(T.prefix) }).values
             .sorted { $0.key < $1.key }
-            .compactMap { T(settingValue: $0.value, key: $0.key) }
-            .filter { includeDeleted || $0.deletedAt == nil }
+            .compactMap { setting in T(settingValue: setting.value, key: setting.key).map { (key: setting.key, record: $0) } }
+        if T.prefix == SettingKeys.goalEntry || T.prefix == SettingKeys.listProgress {
+            var best: [String: (key: String, record: T)] = [:]
+            for entry in records where !entry.record.id.isEmpty {
+                if let current = best[entry.record.id],
+                   (current.record.modifiedAt, current.key) >= (entry.record.modifiedAt, entry.key) { continue }
+                best[entry.record.id] = entry
+            }
+            records = records.filter { $0.record.id.isEmpty || best[$0.record.id]?.key == $0.key }
+        }
+        return records.map(\.record).filter { includeDeleted || $0.deletedAt == nil }
     }
 
     /// When a value says it was written: its `modifiedAt` (records) or `generatedAt` (day files).
@@ -447,5 +475,167 @@ public struct SettingRow: Equatable, Sendable {
             return merged == current ? existing : SettingRow(key: incoming.key, value: merged.value)
         }
         return wins(incoming, over: existing) ? incoming : existing
+    }
+}
+
+/// Small JSON helpers for the v11 records (`RescoreRequest`, `SyncBuild`, `BackupStamp`): tolerant reading,
+/// keys sorted when written, dates as ISO 8601 with milliseconds (`JSONText.timestamp`).
+enum SettingJSON {
+    static func string<T: Encodable>(_ value: T) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8) else { return "{}" }
+        return text
+    }
+
+    static func decode<T: Decodable>(_ value: String) -> T? {
+        guard JSONText.object(value) != nil, let data = value.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
+
+    static func text<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> String? {
+        ((try? c.decodeIfPresent(JSONValue.self, forKey: key)) ?? nil)?.stringValue
+    }
+
+    static func int<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Int? {
+        guard let number = ((try? c.decodeIfPresent(JSONValue.self, forKey: key)) ?? nil)?.numberValue,
+              number.isFinite, abs(number) < 1e15 else { return nil }
+        return Int(number.rounded())
+    }
+
+    static func bool<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Bool? {
+        ((try? c.decodeIfPresent(JSONValue.self, forKey: key)) ?? nil)?.boolValue
+    }
+
+    static func date<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Date? {
+        guard let value = (try? c.decodeIfPresent(JSONValue.self, forKey: key)) ?? nil else { return nil }
+        if case .number(let seconds) = value, seconds.isFinite { return Date(timeIntervalSince1970: seconds) }
+        return value.stringValue.flatMap(ExchangeDate.parse)
+    }
+}
+
+/// `rescore.<week>` (v11 P2.1): Mac, watch or iPad ask the iPhone to score a closed week anew with the
+/// full data (Health values only exist there). `{"at":"…","by":"<install id>","force":false,"v":1}`.
+/// `force`: also a frozen week (closing on another device, "Am iPhone neu berechnen"). The iPhone deletes
+/// the request once it is older than 10 minutes. Not in `SettingKeys.all`.
+public struct RescoreRequest: Codable, Equatable, Sendable {
+    public var v: Int
+    /// The install id of the device that asked.
+    public var by: String
+    /// When it asked.
+    public var at: Date
+    public var force: Bool
+
+    /// A request is kept this long (seconds): its week's `closedAt` or marks may arrive after it.
+    public static let lifetime: TimeInterval = 10 * 60
+
+    public init(v: Int = 1, by: String, at: Date = Date(), force: Bool = false) {
+        self.v = v
+        self.by = by
+        self.at = at
+        self.force = force
+    }
+
+    enum CodingKeys: String, CodingKey { case v, by, at, force }
+
+    /// Tolerant: missing or odd fields read as defaults (an unreadable `at` as long ago).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        v = SettingJSON.int(c, .v) ?? 1
+        by = SettingJSON.text(c, .by) ?? ""
+        at = SettingJSON.date(c, .at) ?? Date(timeIntervalSince1970: 0)
+        force = SettingJSON.bool(c, .force) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(v, forKey: .v)
+        try c.encode(by, forKey: .by)
+        try c.encode(JSONText.timestamp(at), forKey: .at)
+        try c.encode(force, forKey: .force)
+    }
+
+    /// "rescore.2026-W47"
+    public static func key(_ week: WeekKey) -> String { SettingKeys.rescoreRequest + week.string }
+
+    /// The week in "rescore.2026-W47"; nil for other keys.
+    public static func week(settingKey key: String) -> WeekKey? {
+        guard key.hasPrefix(SettingKeys.rescoreRequest) else { return nil }
+        return WeekKey(String(key.dropFirst(SettingKeys.rescoreRequest.count)))
+    }
+
+    /// The setting's value (JSON, keys sorted).
+    public var value: String { SettingJSON.string(self) }
+
+    /// The request in a setting's value; nil when it isn't one.
+    public init?(value: String) {
+        guard let decoded: RescoreRequest = SettingJSON.decode(value) else { return nil }
+        self = decoded
+    }
+
+    /// Older than `lifetime` at `now`.
+    public func isExpired(now: Date = Date()) -> Bool { now.timeIntervalSince(at) > RescoreRequest.lifetime }
+
+    /// Of several copies of one week's request: `force` if any asked for it, the latest `at`, the device of
+    /// the latest – nil without copies.
+    public static func merged(_ requests: [RescoreRequest]) -> RescoreRequest? {
+        guard let latest = requests.max(by: { $0.at < $1.at }) else { return nil }
+        var result = latest
+        result.force = requests.contains { $0.force }
+        return result
+    }
+}
+
+/// `backup.last` (v11 P3.13, KR2-2): the last full backup made by hand – on any device, synced, so a Mac
+/// doesn't remind when the iPhone was backed up yesterday. `{"at":"…","device":"iPhone","v":1}` – the kind of
+/// device, never its name. Not in `SettingKeys.all`: never in the backup itself.
+public struct BackupStamp: Codable, Equatable, Sendable {
+    public var v: Int
+    public var at: Date
+    /// "iPhone", "iPad", "Mac" (`SyncDeviceKind`).
+    public var device: String
+
+    public init(v: Int = 1, at: Date = Date(), device: String) {
+        self.v = v
+        self.at = at
+        self.device = device
+    }
+
+    enum CodingKeys: String, CodingKey { case v, at, device }
+
+    /// Tolerant: missing or odd fields read as defaults (an unreadable `at` as long ago).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        v = SettingJSON.int(c, .v) ?? 1
+        at = SettingJSON.date(c, .at) ?? Date(timeIntervalSince1970: 0)
+        device = SettingJSON.text(c, .device) ?? ""
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(v, forKey: .v)
+        try c.encode(JSONText.timestamp(at), forKey: .at)
+        try c.encode(device, forKey: .device)
+    }
+
+    /// The setting's value (JSON, keys sorted).
+    public var value: String { SettingJSON.string(self) }
+
+    /// The stamp in a setting's value; nil when it isn't one.
+    public init?(value: String) {
+        guard let decoded: BackupStamp = SettingJSON.decode(value) else { return nil }
+        self = decoded
+    }
+
+    /// Of several copies (two devices backed up before they synced): the latest.
+    public static func latest(_ values: [String]) -> BackupStamp? {
+        values.compactMap(BackupStamp.init(value:)).max { $0.at < $1.at }
+    }
+
+    /// Whole days from the backup to `now` in `calendar` ("vor 3 Tagen"); 0 the same day.
+    public func days(until now: Date = Date(), calendar: Calendar = .current) -> Int {
+        let start = calendar.startOfDay(for: at)
+        let end = calendar.startOfDay(for: now)
+        return max(0, calendar.dateComponents([.day], from: start, to: end).day ?? 0)
     }
 }

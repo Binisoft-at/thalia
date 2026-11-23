@@ -43,6 +43,46 @@ struct SheetCloseButton: View {
     }
 }
 
+/// v11 P4.19: what the tour's practice page shows instead of a sheet that would reach real things (import,
+/// backup, past weeks, the PDF report, the trash, the archive, settings with the real reminders).
+struct PracticeUnavailableView: View {
+    static let text = "In der Übung nicht verfügbar – nach der Tour mit deinen eigenen Daten."
+
+    /// Nil: the sheet's own dismiss.
+    var onClose: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
+
+    init(onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "graduationcap")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(PracticeUnavailableView.text)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Schließen") { close() }
+                .buttonStyle(.bordered)
+        }
+        .padding(32)
+        .frame(maxWidth: 420)
+        .thaliaSheetFrame(width: 420, height: 360)
+    }
+
+    private func close() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
+    }
+}
+
 // MARK: Toasts (R13)
 
 private struct ToastHostModifier: ViewModifier {

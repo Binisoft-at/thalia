@@ -285,7 +285,7 @@ struct ScoreRing: View {
     }
 }
 
-/// The ten annual goals as equal-width bars: each is 10 % of the week.
+/// The annual goals as equal-width bars: they count equally in the week.
 struct GoalBars: View {
     let scores: [Double?]
     var height: CGFloat = 38
@@ -323,7 +323,7 @@ struct GoalBars: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Zehn Jahresziele, je 10 Prozent der Woche")
+        .accessibilityLabel("Jahresziele, gleich gewichtet")
     }
 }
 
@@ -700,8 +700,37 @@ struct WrapLayout: Layout {
     }
 }
 
+/// v11 P1.7, P1.16: how a weekly target reads on screen and in the PDF – one place for Week, the Mac panel,
+/// "Heute im Blick", the weekly-goals sheet and the week's PDF.
+extension WeeklyTarget {
+    /// Where the target stands: a limit "im Rahmen" / "überschritten", else the pace – "erreicht", "im Plan",
+    /// "hinter dem Plan", "noch offen" (last planned day), "nicht erreicht" (the week is over or closed).
+    var shownStatus: PaceStatus {
+        target.isLimit ? PaceStatus.limit(isMet: isMet) : pace.status
+    }
+
+    /// The unit the amounts are rounded and written with: "PH" for work, else the measure's own (times, €).
+    var amountUnit: String { unit == "PH" ? "PH" : measure.unit }
+
+    /// " PH", " Stk.", " €" after the amounts; nothing for times.
+    var amountSuffix: String {
+        if Units.isTime(amountUnit) { return "" }
+        if Units.normalized(amountUnit) == "€" { return " €" }
+        return unit.isEmpty ? "" : " " + unit
+    }
+
+    /// "6 von 8 PH", "150 von 86 Stk.", "32,50 von ≤ 50 €" – rounded for the screen, the target in the direction of
+    /// its comparison (`Format.amount`); "erreicht" still comes from the exact values.
+    func amountsText(joiner: String = " von ") -> String {
+        let value: String = Format.amount(self.value, unit: amountUnit)
+        let goal: String = Format.amount(target: target, unit: amountUnit)
+        return value + joiner + goal + amountSuffix
+    }
+}
+
 /// R16/R47: one weekly target – a bar in the goal's colour with the even-pace marker ("Soll bis
-/// heute") and "6 von 8 PH – im Plan". Limits stay green while below.
+/// heute") and "6 von 8 PH – im Plan". v11 P1.16: the status word and its colour from `PaceStatus` and
+/// `StatusTint` alone (a limit kept in the accent, exceeded in red).
 struct WeeklyTargetRow: View {
     let target: WeeklyTarget
     var onOpen: (() -> Void)?
@@ -717,33 +746,14 @@ struct WeeklyTargetRow: View {
 
     private var isLimit: Bool { target.target.isLimit }
 
-    /// "6 von 8 PH", "32,50 € von 50 €".
-    private var amounts: String {
-        if target.unit != "PH" && Units.normalized(target.measure.unit) == "€" {
-            return "\(Format.euro(target.value)) von \(Format.euro(target.target.scaleMax))"
-        }
-        let unit: String = target.unit.isEmpty ? "" : " " + target.unit
-        return "\(Format.number(target.value, decimals: 2)) von \(Format.number(target.target.scaleMax, decimals: 2))\(unit)"
-    }
+    /// "6 von 8 PH – im Plan", "12 von 12,8 PH – noch offen" – the short word next to "x von y" (KR2-12).
+    private var status: String { "\(target.amountsText()) – \(target.shownStatus.label)" }
 
-    /// "im Plan" · "hinter dem Plan" · "erreicht"; limits "im Rahmen" · "überschritten".
-    private var state: String {
-        if isLimit { return target.isMet ? "im Rahmen" : "überschritten" }
-        if target.pace.isReached { return "erreicht" }
-        return target.pace.isBehind ? "hinter dem Plan" : "im Plan"
-    }
-
-    private var status: String { "\(amounts) – \(state)" }
-
-    private var statusColor: Color {
-        if isLimit { return target.isMet ? .green : .red }
-        if target.pace.isReached { return .green }
-        return target.pace.isBehind ? .orange : .secondary
-    }
+    private var statusColor: Color { StatusTint(target.shownStatus).color }
 
     private var barColor: Color {
-        if isLimit { return target.isMet ? .green : .red }
-        return target.pace.isReached ? .green : tint
+        if isLimit || target.pace.isReached { return statusColor }
+        return tint
     }
 
     /// Where an even pace stands today, 0…1 of the bar; nil once reached.

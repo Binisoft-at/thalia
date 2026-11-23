@@ -33,10 +33,36 @@ struct CloseWeekForm: View {
     @State private var copiedPrompt = false
     /// True only in the moment of closing: the celebration runs then, not on every later look (R72).
     @State private var justClosed = false
+    /// v11 P6.8: "Woche wieder öffnen" of a frozen week asks first.
+    @State private var confirmsReopen = false
 
     private var week: WeekKey { context.week }
     private var next: WeekKey { week.adding(weeks: 1) }
     private var closed: Bool { context.isClosed }
+
+    /// v11 P6.7: planning the week after this one only while that week isn't over yet (Monday after a week still
+    /// plans this week) – an old week closed from the Rückblick offers none.
+    private var plansNextWeek: Bool { next >= context.today.week }
+
+    /// v11 P4.16: closing the running week before Sunday is possible, but said.
+    private var runsUntilSunday: Bool {
+        !closed && week == context.today.week && context.today.weekday != .sunday
+    }
+
+    /// v11 P7.1 (3): Mac, Watch and iPad scored a week that reads Apple Health without those values; closing there
+    /// asked the iPhone to score it again.
+    private var healthNote: String? {
+        guard closed, !HealthDevice.scoresHealth, context.readsHealthProgress else { return nil }
+        // HEALTHSHARE: scored with the values the iPhone shares – nothing missing (P9.3, P7.1 (3)).
+        guard !app.store.healthShareCovers(week) else { return nil }
+        return "Hier ohne Werte aus Apple Health gewertet – das iPhone rechnet nach dem Abgleich nach."
+    }
+
+    /// v11 P6.8: "Ihre Wertung 7,84 wird …" – the stored score of the frozen week.
+    private var reopenMessage: String {
+        let score: String = Format.score(context.recalculatedScore, outOf: false)
+        return "Die Woche gehört zu einem früheren Abschnitt. Ihre Wertung \(score) wird beim erneuten Abschließen nach heutigen Regeln neu berechnet."
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -68,7 +94,7 @@ struct CloseWeekForm: View {
 
     private func form(_ proxy: ScrollViewProxy) -> some View {
         Form {
-            WeekSummarySections(context: context, celebrate: celebrates, showsReflection: false)
+            WeekSummarySections(context: context, celebrate: celebrates, showsReflection: false, heroNote: healthNote)
 
             Section {
                 HStack {
@@ -89,6 +115,18 @@ struct CloseWeekForm: View {
                         Text(question.question).font(.subheadline.weight(.semibold))
                         TextField(question.hint, text: binding(question.id), axis: .vertical)
                             .lineLimit(1...8)
+                        if let other = changedElsewhere(question.id) {
+                            // v11 P5.16: typed here, changed on another device meanwhile – the own text wins unless taken.
+                            HStack(spacing: 8) {
+                                Label("Am anderen Gerät geändert", systemImage: "arrow.triangle.2.circlepath")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                Spacer(minLength: 6)
+                                Button("Übernehmen") { takeOver(question.id, text: other) }
+                                    .font(.caption.weight(.semibold))
+                                    .buttonStyle(.borderless)
+                            }
+                        }
                     }
                     .padding(.vertical, 2)
                 }
@@ -105,10 +143,19 @@ struct CloseWeekForm: View {
                             .frame(maxWidth: .infinity)
                     }
                     .thaliaPrimaryAction()
+                    // v11 P6.8: quieter than "Fertig"; Widerrufen in the toast, a frozen week asks first.
                     Button(action: reopen) {
                         Label("Woche wieder öffnen", systemImage: "lock.open")
                     }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
                 } else {
+                    if runsUntilSunday {
+                        // v11 P4.16: a Saturday closing stays possible.
+                        Label("Diese Woche läuft noch bis Sonntag.", systemImage: "calendar")
+                            .font(.subheadline)
+                            .foregroundStyle(.orange)
+                    }
                     Button {
                         close(proxy)
                     } label: {
@@ -120,11 +167,23 @@ struct CloseWeekForm: View {
                 Button(action: copyReport) {
                     Label(copiedReport ? "Wochenbericht kopiert" : "Wochenbericht kopieren", systemImage: copiedReport ? "checkmark" : "doc.on.doc")
                 }
+                if !app.isSandbox {
+                    // v11 P3.13: only when no device has made a backup by hand for 30 days.
+                    BackupReminderRow()
+                }
             } header: {
                 Text("Abschluss")
             }
 
-            planningSection
+            if plansNextWeek {
+                planningSection
+            }
+        }
+        .confirmationDialog("\(week.label) wieder öffnen?", isPresented: $confirmsReopen, titleVisibility: .visible) {
+            Button("Woche wieder öffnen", action: reopenNow)
+            Button("Abbrechen", role: .cancel) { }
+        } message: {
+            Text(reopenMessage)
         }
         .sheet(item: $sharing) { request in
             ShareSheet(content: request.content)
@@ -136,14 +195,51 @@ struct CloseWeekForm: View {
         .inlineNavigationTitle()
         .onAppear {
             guard !loaded else { return }
-            for question in ReflectionQuestion.week {
-                answers[question.id] = context.reflection(scope: week.string, field: question.id)
-            }
+            answers = storedAnswers
             loadedAnswers = answers
             loaded = true
         }
+        // v11 P5.16: what another device saves meanwhile – untouched fields follow, typed ones ask.
+        .onChange(of: storedAnswers) { _, stored in follow(stored) }
         .onDisappear(perform: saveAnswers)
         .unsavedInput(answers != loadedAnswers, in: app)
+    }
+
+    // MARK: Reflection from another device (v11 P5.16)
+
+    /// The week's saved answers as the week reads them now – also what another device saved after this one opened.
+    private var storedAnswers: [String: String] {
+        var stored: [String: String] = [:]
+        for question in ReflectionQuestion.week {
+            stored[question.id] = context.reflection(scope: week.string, field: question.id)
+        }
+        return stored
+    }
+
+    /// A field nobody typed in here follows the saved text silently; a typed one keeps its text (it wins on saving, as
+    /// before) and shows "Am anderen Gerät geändert" (`changedElsewhere`).
+    private func follow(_ stored: [String: String]) {
+        guard loaded else { return }
+        for (field, text) in stored where answers[field] == loadedAnswers[field] && answers[field] != text {
+            answers[field] = text
+            loadedAnswers[field] = text
+        }
+    }
+
+    /// The other device's text when the saved one changed after this field was loaded and differs from what it shows.
+    private func changedElsewhere(_ field: String) -> String? {
+        guard loaded else { return nil }
+        let typed: String = answers[field] ?? ""
+        let loadedText: String = loadedAnswers[field] ?? ""
+        let saved: String = context.reflection(scope: week.string, field: field)
+        guard saved != loadedText, saved != typed else { return nil }
+        return saved
+    }
+
+    /// "Übernehmen": the other device's text, as if loaded now.
+    private func takeOver(_ field: String, text: String) {
+        answers[field] = text
+        loadedAnswers[field] = text
     }
 
     // MARK: Next week (R56)
@@ -215,10 +311,22 @@ struct CloseWeekForm: View {
         dismiss()
     }
 
+    /// v11 P6.8: a week of an earlier segment asks first – its stored score is computed again under today's rules
+    /// when it is closed again.
     private func reopen() {
         saveAnswers()
+        if context.isFrozen {
+            confirmsReopen = true
+        } else {
+            reopenNow()
+        }
+    }
+
+    /// v11 P6.8: `AppModel.reopenWeek` keeps a snapshot – the toast "KW45 wieder geöffnet" with "Widerrufen" writes back
+    /// the score, the goal and category scores; the reminders are planned again.
+    private func reopenNow() {
         justClosed = false
-        app.store.reopenWeek(week)
+        app.reopenWeek(week)
     }
 
     private func binding(_ field: String) -> Binding<String> {
@@ -240,18 +348,34 @@ struct WeekSummarySections: View {
     let context: WeekContext
     var celebrate = false
     var showsReflection = true
+    /// v11 P7.1: a line under the hero ("Hier ohne Werte aus Apple Health gewertet – …"); nil shows none.
+    var heroNote: String? = nil
 
     private var week: WeekKey { context.week }
+
+    /// v11 P6.1: a frozen closed week shows the score it stored; every other week the live one.
+    private var heroScore: Double? { context.shownScore }
+
+    private var heroProgress: Double {
+        let value: Double = heroScore ?? 0
+        return value / 10
+    }
 
     var body: some View {
         Section {
             HeroCard(title: "Woche \(week.label)", subtitle: context.score.coverageText,
-                     value: Format.score(context.score.overall, outOf: false), caption: "Woche",
-                     progress: (context.score.overall ?? 0) / 10, facts: facts, celebrate: celebrate)
+                     value: Format.score(heroScore, outOf: false), caption: "Woche",
+                     progress: heroProgress, facts: facts, celebrate: celebrate)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
                 .id("hero")
-            GoalBars(scores: context.goals.map { context.score.goalWeek[$0.key]?.score }, height: 48,
+            if let heroNote {
+                Label(heroNote, systemImage: "heart.text.square")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            GoalBars(scores: context.goals.map { context.scoredGoalScore($0.key) }, height: 48,
                      keys: context.goals.map(\.key))
             ForEach(context.goals) { goal in
                 goalRow(goal)
@@ -259,7 +383,8 @@ struct WeekSummarySections: View {
         } header: {
             Text("Wertung")
         } footer: {
-            Text("Jedes Jahresziel 10 %. Die Wertung misst Verhalten, nicht Ergebnisse. Seit KW42 2026 gleich gewichtet – ältere Wochen sind nicht direkt vergleichbar.")
+            // v11 P6.3: no fixed share – a goal can be excused or added.
+            Text("Jedes Jahresziel zählt gleich viel. Die Wertung misst Verhalten, nicht Ergebnisse. Seit KW42 2026 gleich gewichtet – ältere Wochen sind nicht direkt vergleichbar.")
         }
 
         Section {
@@ -324,9 +449,9 @@ struct WeekSummarySections: View {
         return list
     }
 
-    /// A goal in its colour with its week score.
+    /// A goal in its colour with its week score (v11 P6.1: a frozen closed week's stored one).
     private func goalRow(_ goal: AnnualGoal) -> some View {
-        let score: Double? = context.score.goalWeek[goal.key]?.score
+        let score: Double? = context.scoredGoalScore(goal.key)
         return HStack(spacing: 10) {
             Text(goal.key)
                 .font(.system(.caption, design: .rounded).weight(.heavy))
@@ -360,15 +485,25 @@ struct WeekSummarySections: View {
         }
         let per: String = record.period == .week ? "/Woche" : "/Tag"
         let excused: String = context.excusedDaysText(context.excusedDays(of: measure))
+        let fullText: String = targetText(full, record: record, unit: measure.unit)
         if record.period == .week, context.targetShare(record) <= 1e-9 {
             // v8: every day of the target was a sick or holiday day – not scored (Decision 4).
             let reason: String = excused.isEmpty ? "zählt nicht" : "zählt nicht – \(excused)"
-            return "\(shown) · Ziel \(full.label)\(per) (\(reason))"
+            return "\(shown) · Ziel \(fullText)\(per) (\(reason))"
         }
-        let base: String = "\(shown) · Ziel \(target.label)\(per)"
+        let base: String = "\(shown) · Ziel \(targetText(target, record: record, unit: measure.unit))\(per)"
         guard target != full else { return base }
-        let note: String = excused.isEmpty ? "statt \(full.label)" : "statt \(full.label) – \(excused)"
+        let note: String = excused.isEmpty ? "statt \(fullText)" : "statt \(fullText) – \(excused)"
         return base + " (\(note))"
+    }
+
+    /// v11 P1.7: a weekly target as every screen rounds it – "≥ 86" (not "≥ 85,71"), "> 85", "129–154"; a daily
+    /// target as written ("≥ 7").
+    private func targetText(_ target: Target, record: MeasureRecord, unit: String) -> String {
+        guard record.period == .week else { return target.label }
+        let shown: String = Format.amount(target: target, unit: unit)
+        let isTime: Bool = target.isTime || Units.isTime(unit)
+        return target.comparison == .atLeast && !isTime ? "≥ " + shown : shown
     }
 
     /// v8: "Krank/Urlaub: Fr, Sa, So – zählen nicht in die Wertung".
@@ -398,6 +533,30 @@ struct WeekSummarySections: View {
 
     private var answeredQuestions: [ReflectionQuestion] {
         ReflectionQuestion.week.filter { !context.reflection(scope: week.string, field: $0.id).isEmpty }
+    }
+}
+
+/// v11 P3.13: the calm line after the report buttons – "Letzte Sicherung vor 34 Tagen – jetzt sichern?" when no
+/// device has made a backup by hand for 30 days ("Noch keine Sicherung – jetzt sichern?" without any); a tap makes
+/// one ("Sicherung erstellen…"). The synced stamp is observed, so the line goes once a backup is saved.
+private struct BackupReminderRow: View {
+    @Query private var stamps: [AppSetting]
+
+    init() {
+        let key: String = SettingKeys.backupLast
+        _stamps = Query(filter: #Predicate<AppSetting> { $0.key == key })
+    }
+
+    private var line: String? {
+        BackupWriter.closingReminder(stamp: BackupStamp.latest(stamps.map(\.value)), now: Date())
+    }
+
+    var body: some View {
+        if let line {
+            BackupExportButton(title: line)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

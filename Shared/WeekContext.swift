@@ -2,6 +2,9 @@ import Foundation
 import SwiftData
 import BinisoftKit
 import ThaliaCore
+#if os(iOS)
+import UIKit
+#endif
 
 /// Whether Thalia reads Apple Health on this device (H1): iPhone and iPad yes, Mac and Watch no.
 enum HealthDevice {
@@ -11,6 +14,32 @@ enum HealthDevice {
         #else
         return false
         #endif
+    }
+
+    /// v11 P2.1 (a), KR1-16: whether this device scores closed weeks that read Apple Health by itself – the
+    /// iPhone only. An iPad reads Health too but scores like the Mac (two devices with different adopted
+    /// Health values overwrote each other's score after every import). `readsHealth` stays for suggestions
+    /// and display; every decision about scoring takes this.
+    @MainActor static var scoresHealth: Bool {
+        #if os(iOS)
+        return UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        return false
+        #endif
+    }
+
+    /// UserDefaults: when this install created its id (`TrackerStore.installID`).
+    static let installedAtKey = "health.installedAt"
+
+    /// v11 P2.2: when Thalia was installed on this device – set when `TrackerStore.installID` creates the id.
+    /// Without a stored date the id is asked for once (a fresh install creates both); still without one, the
+    /// id came from an earlier version: `.distantPast`. The same answer whoever reads the id first.
+    @MainActor static var installedAt: Date {
+        let defaults = UserDefaults.standard
+        if let date = defaults.object(forKey: installedAtKey) as? Date { return date }
+        _ = TrackerStore.installID
+        if let date = defaults.object(forKey: installedAtKey) as? Date { return date }
+        return .distantPast
     }
 }
 
@@ -41,12 +70,15 @@ struct WeeklyTarget: Identifiable {
     /// this week (Decision 4) and stays out of `WeekContext.weeklyTargets`.
     var isCounted: Bool { share > 1e-9 }
     /// v8: "4,8 statt 8 PH – 2 Tage krank"; "zählt nicht – 5 Tage krank" when no day counts; nil
-    /// when nothing was scaled.
+    /// when nothing was scaled. v11 P1.7: both targets as screens show them (`Format.amount(target:unit:)`,
+    /// rounded in the direction of the comparison – "86 statt 100 Stk.").
     var scaledHint: String? {
         if !isCounted { return excusedText.isEmpty ? "zählt nicht" : "zählt nicht – " + excusedText }
         guard isScaled else { return nil }
         let shown: String = unit.isEmpty ? "" : " " + unit
-        let base: String = Format.number(target.scaleMax) + " statt " + Format.number(fullTarget.scaleMax) + shown
+        let scaled: String = Format.amount(target: target, unit: unit)
+        let full: String = Format.amount(target: fullTarget, unit: unit)
+        let base: String = scaled + " statt " + full + shown
         return excusedText.isEmpty ? base : base + " – " + excusedText
     }
 }
@@ -118,6 +150,9 @@ struct WeekContext {
     /// What the connected apps and the reading list add – computed, never stored (Grundregel 1): own
     /// records always win. `entryRecords`, `workRecords` and the marks the scoring sees come from here.
     let extras: WeekExtras
+    // HEALTHSHARE: the Health values the iPhone shares, as this device reads them – Mac, watch, iPad (§1.4.7); empty on the
+    // iPhone that writes them, without the gate or while the sharing is off.
+    let healthShare: HealthShareWeek
     /// The goal year's records, decoded on first use (`segments`, `results`, `goalEntries`, `listItems`,
     /// `listProgress`, `storedCategoryWeeks`) – a screen that shows none of them never decodes them.
     private let records: WeekRecords
@@ -173,7 +208,23 @@ struct WeekContext {
         var overrideValues: [String: Double] = [:]
         for (key, override) in self.overrides { overrideValues[key] = override.score }
         let isComplete = Scorer.isComplete(week: week, today: today, closed: self.plan?.isClosed ?? false)
-        let itemRecords = self.items.compactMap(\.record)
+        // v11 P2.12: each record built once and kept for the helpers.
+        var itemsByID: [ObjectIdentifier: ItemRecord] = [:]
+        var itemRecords: [ItemRecord] = []
+        for item in self.items {
+            guard let record = item.record else { continue }
+            itemsByID[ObjectIdentifier(item)] = record
+            itemRecords.append(record)
+        }
+        var measuresByID: [ObjectIdentifier: MeasureRecord] = [:]
+        var ownMeasures: [MeasureRecord] = []
+        var definitionsByCode: [String: MeasureDefinition] = [:]
+        for measure in self.measures {
+            if definitionsByCode[measure.code] == nil { definitionsByCode[measure.code] = measure }
+            guard let record = measure.record else { continue }
+            measuresByID[ObjectIdentifier(measure)] = record
+            ownMeasures.append(record)
+        }
         let dayInfo = self.days
         let free = Set(week.days.filter { DayTypes.isWorkFree(dayInfo[$0.string]?.dayType ?? "") })
         // v8: sick and holiday days don't count (nothing due, weekly targets scaled).
@@ -184,14 +235,22 @@ struct WeekContext {
         // Own entries count first, confirmed Health values only where no own value exists that day, then
         // (v10) the reading list and the connected apps; own marks and work blocks win over derived ones.
         let ownWork: [WorkRecord] = self.work.compactMap(\.record)
-        let ownMeasures: [MeasureRecord] = self.measures.compactMap(\.record)
         // The reading list only matters when a measure or item of the week reads from it.
         let readsList: Bool = ownMeasures.contains { $0.source.listKind != nil }
             || itemRecords.contains { MeasureSource(raw: $0.measure).listKind != nil }
+        // HEALTHSHARE: Mac, watch and iPad count the values the iPhone shares like adopted Health values – an own Health
+        // value per code and day first, own entries win as always (`Measures.merged`, §1.4.7).
+        let shared: HealthShareWeek = HealthShareWeek(settings: storedSettings, week: week)
+        healthShare = shared
+        let ownHealth: [EntryRecord] = self.health.compactMap(\.record)
+        let healthCodes: Set<String> = Set(ownMeasures.filter(\.isHealth).map(\.code))
+        // HEALTHSHARE
+        let healthInput: [EntryRecord] = ownHealth + shared.entries(codes: healthCodes, except: Set(ownHealth.map(\.key)))
         let extras = WeekExtras.compute(WeekExtras.Input(
             week: week, items: itemRecords, measures: ownMeasures, categories: categoryRecords,
             ownMarks: self.marks.values.compactMap(\.record), ownEntries: self.entries.compactMap(\.record),
-            health: self.health.compactMap(\.record), ownWork: ownWork,
+            // HEALTHSHARE: own and shared Health values.
+            health: healthInput, ownWork: ownWork,
             ownWorkImportIDs: Set(self.work.map(\.importID).filter { !$0.isEmpty }), excusedDays: excused, workFreeDays: free,
             inbox: inbox, rules: linkRules, listItems: readsList ? yearRecords.listItems : [],
             listProgress: readsList ? yearRecords.listProgress : [], sourceNames: sourceList.names))
@@ -200,6 +259,15 @@ struct WeekContext {
         entryRecords = records
         workRecords = extras.work
         let measureRecords: [MeasureRecord] = extras.measures
+        var recordsByCode: [String: MeasureRecord] = [:]
+        for record in measureRecords where recordsByCode[record.code] == nil { recordsByCode[record.code] = record }
+        for (code, definition) in definitionsByCode {
+            if let record = measuresByID[ObjectIdentifier(definition)] { recordsByCode[code] = record }
+        }
+        yearRecords.itemRecords = itemsByID
+        yearRecords.measureRecords = measuresByID
+        yearRecords.measureRecordsByCode = recordsByCode
+        yearRecords.measuresByCode = definitionsByCode
 
         // Work categories as in `WeekData`, so progress, pace and weekly targets scale the same way.
         let workCategories: Set<String> = WeekData.workCategories(items: itemRecords, categories: categoryRecords)
@@ -232,9 +300,19 @@ struct WeekContext {
     var hasPlan: Bool { !items.isEmpty }
     var isClosed: Bool { plan?.isClosed ?? false }
 
+    /// v11 P2.12: the item's record as this context built it (another instance – a sheet's copy – is read anew).
+    func record(_ item: PlanItem) -> ItemRecord? {
+        records.itemRecords[ObjectIdentifier(item)] ?? item.record
+    }
+
+    /// v11 P2.12: the measure's record as this context built it (another instance is read anew).
+    func record(_ measure: MeasureDefinition) -> MeasureRecord? {
+        records.measureRecords[ObjectIdentifier(measure)] ?? measure.record
+    }
+
     /// The mark that counts: derived for progress items, N/A for work-only items on free days.
     func mark(_ item: PlanItem, on day: DayKey) -> Mark? {
-        guard let record = item.record else { return marks[WeekData.markKey(item.code, day)]?.mark }
+        guard let record = self.record(item) else { return marks[WeekData.markKey(item.code, day)]?.mark }
         return data.mark(record, on: day)
     }
 
@@ -252,14 +330,14 @@ struct WeekContext {
 
     /// Due that day (scheduled and not left out because the day is free).
     func applies(_ item: PlanItem, on day: DayKey) -> Bool {
-        guard let record = item.record else { return item.days.contains(day.weekday) }
+        guard let record = self.record(item) else { return item.days.contains(day.weekday) }
         return data.applies(record, on: day)
     }
 
     /// A measurement shown that day: scheduled, and on free days not a work-only one.
     func applies(_ measure: MeasureDefinition, on day: DayKey) -> Bool {
         guard measure.days.contains(day.weekday) else { return false }
-        guard data.workFreeDays.contains(day), let record = measure.record else { return true }
+        guard data.workFreeDays.contains(day), let record = self.record(measure) else { return true }
         switch record.dayRule {
         case .workOnly: return false
         case .always: return true
@@ -267,14 +345,14 @@ struct WeekContext {
         }
     }
 
-    func isDerived(_ item: PlanItem) -> Bool { item.record.map { data.isDerived($0) } ?? false }
+    func isDerived(_ item: PlanItem) -> Bool { record(item).map { data.isDerived($0) } ?? false }
     func isFreeDay(_ day: DayKey) -> Bool { data.workFreeDays.contains(day) }
     /// v8: a sick or holiday day – nothing due, never open, it doesn't count in the week's score.
     func isExcused(_ day: DayKey) -> Bool { data.isExcused(day) }
 
     /// n×/week item already done often enough on other days (folded away in the daily list).
     func isQuotaMetElsewhere(_ item: PlanItem, on day: DayKey) -> Bool {
-        item.record.map { Scorer.isQuotaMetElsewhere($0, on: day, data: data) } ?? false
+        record(item).map { Scorer.isQuotaMetElsewhere($0, on: day, data: data) } ?? false
     }
 
     func markNote(_ item: PlanItem, on day: DayKey) -> String {
@@ -282,23 +360,23 @@ struct WeekContext {
     }
 
     func measure(code: String) -> MeasureDefinition? {
-        measures.first { $0.code == code }
+        records.measuresByCode[code]
     }
 
     func dayValue(_ measure: MeasureDefinition, on day: DayKey) -> Double? {
-        guard let record = measure.record else { return nil }
+        guard let record = self.record(measure) else { return nil }
         return Measures.dayValue(record, on: day, entries: entryRecords, work: workRecords)
     }
 
     func weekValue(_ measure: MeasureDefinition) -> Double? {
-        guard let record = measure.record else { return nil }
+        guard let record = self.record(measure) else { return nil }
         return Measures.weekValue(record, days: week.days, entries: entryRecords, work: workRecords)
     }
 
     /// The mark a linked measurement suggests, when it differs from what's recorded.
     /// v10: also for an item linked to an `app:` / `list:` text directly (its hidden measure).
     func suggestion(_ item: PlanItem, on day: DayKey) -> Mark? {
-        guard !item.measureCode.isEmpty, let record = item.record, let measure = measureRecord(code: item.measureCode) else { return nil }
+        guard !item.measureCode.isEmpty, let record = self.record(item), let measure = measureRecord(code: item.measureCode) else { return nil }
         let suggested = Measures.suggestion(for: record, dayValue: dayValue(measure, on: day))
         return suggested == mark(item, on: day) ? nil : suggested
     }
@@ -306,7 +384,7 @@ struct WeekContext {
     /// v10: the measure of a code as the scoring sees it – the week's definition, else the hidden measure
     /// of an item linked to an `app:` or `list:` text directly (`ExchangeDerivation.virtualMeasures`).
     func measureRecord(code: String) -> MeasureRecord? {
-        measure(code: code)?.record ?? extras.measures.first { $0.code == code }
+        records.measureRecordsByCode[code]
     }
 
     /// A measure's day value (own > Health > reading list and connected apps, v10).
@@ -377,12 +455,12 @@ struct WeekContext {
 
     /// v8 (rule B3): the part of a quota that falls on sick or holiday days (n·|E|/|P|, 0 without them).
     func quotaShare(_ item: PlanItem) -> Double {
-        item.record.map { Scorer.quotaShare($0, data: data) } ?? 0
+        record(item).map { Scorer.quotaShare($0, data: data) } ?? 0
     }
 
     /// v8: the quota units that count half because of sick or holiday days (once the week is over).
     func quotaExcusedUnits(_ item: PlanItem) -> Double {
-        item.record.map { Scorer.excusedUnits($0, data: data) } ?? 0
+        record(item).map { Scorer.excusedUnits($0, data: data) } ?? 0
     }
 
     /// v8: "2/3× · ½ krank" – what's still missing of the quota counts half because of sick or
@@ -475,7 +553,7 @@ struct WeekContext {
 
     /// The options a mark offers on a day (weekly items lose N/A when the quota needs the day, U18.3).
     func options(_ item: PlanItem, on day: DayKey) -> [Mark] {
-        guard let record = item.record else { return Mark.allCases }
+        guard let record = self.record(item) else { return Mark.allCases }
         return Scorer.options(for: record, on: day, data: data)
     }
 
@@ -483,9 +561,17 @@ struct WeekContext {
     func todaySummary() -> TodaySummary {
         let overall = score.days[today]
         let totals = workTotals(on: today)
-        let lines: [TodaySummary.MeasureLine] = measures.filter { $0.record?.period == .day && $0.record?.target != nil }.prefix(4).map { measure in
+        // v11 P8.12: the day's counters without Apple Health first (the large widget shows them as chips),
+        // then the other daily measures with a target.
+        let daily: [MeasureDefinition] = measures.filter { measure in
+            guard let record = self.record(measure) else { return false }
+            return record.period == .day && record.target != nil
+        }
+        let counters: [MeasureDefinition] = daily.filter { isDayCounter($0) }
+        let others: [MeasureDefinition] = daily.filter { !isDayCounter($0) }
+        let lines: [TodaySummary.MeasureLine] = (counters + others).prefix(4).map { measure in
             let value = dayValue(measure, on: today)
-            let record = measure.record
+            let record = self.record(measure)
             return TodaySummary.MeasureLine(
                 title: measure.title,
                 value: value.map { Format.measure($0, unit: measure.unit) } ?? "–",
@@ -508,9 +594,10 @@ struct WeekContext {
             summary.openKeys = shown.map(\.key)
             summary.openCount = open.count
             summary.dueCount = overall?.due ?? 0
+            // v11 P2.15: the progress item's title, as the app and the PDF name a weekly target.
             summary.weekly = weeklyTargets.prefix(4).map { target in
-                TodaySummary.GoalLine(title: target.measure.title, value: target.value, target: target.target.scaleMax,
-                                      unit: target.unit, categoryKey: target.measure.categoryKey)
+                TodaySummary.GoalLine(title: target.item?.title ?? target.measure.title, value: target.value,
+                                      target: target.target.scaleMax, unit: target.unit, categoryKey: target.measure.categoryKey)
             }
             summary.powerHoursWeek = workTotals().powerHours
             summary.powerHoursTarget = workTarget
@@ -525,6 +612,12 @@ struct WeekContext {
         }
     }
 
+    /// v11 P8.12: a daily counter – adds up during the day and doesn't come from Apple Health.
+    func isDayCounter(_ measure: MeasureDefinition) -> Bool {
+        guard let record = self.record(measure) else { return false }
+        return record.period == .day && record.aggregation == .sum && !record.isHealth
+    }
+
     // MARK: At a glance (v5)
 
     /// R5: exactly the blank required items of a day (`WeekData.isOpenRequired`), in plan order –
@@ -532,7 +625,7 @@ struct WeekContext {
     func openToDo(on day: DayKey) -> [PlanItem] {
         let scored = Set(categories.map(\.key))
         return items.filter { item in
-            guard scored.contains(item.categoryKey), let record = item.record else { return false }
+            guard scored.contains(item.categoryKey), let record = self.record(item) else { return false }
             return data.isOpenRequired(record, on: day)
         }
     }
@@ -584,7 +677,7 @@ struct WeekContext {
 
     /// A spending measurement: every entry is one spending with what it was for (K2).
     func isExpense(_ measure: MeasureDefinition) -> Bool {
-        measure.record?.isExpense ?? false
+        record(measure)?.isExpense ?? false
     }
 
     /// The day's spendings, newest first.
@@ -603,7 +696,7 @@ struct WeekContext {
     /// days (v8); a measurement whose days are all excused doesn't count (nil when none counts).
     var workTarget: Double? {
         let targets: [Double] = measures.compactMap { measure in
-            guard let record = measure.record, record.isWork, record.period == .week, targetShare(record) > 1e-9 else { return nil }
+            guard let record = self.record(measure), record.isWork, record.period == .week, targetShare(record) > 1e-9 else { return nil }
             return effectiveTarget(record)?.scaleMax
         }
         return targets.isEmpty ? nil : targets.reduce(0, +)
@@ -612,7 +705,7 @@ struct WeekContext {
     /// v8: the weekly power-hour targets as planned (before scaling for sick or holiday days).
     var workTargetFull: Double? {
         let targets: [Double] = measures.compactMap { measure in
-            guard let record = measure.record, record.isWork, record.period == .week, let target = record.target else { return nil }
+            guard let record = self.record(measure), record.isWork, record.period == .week, let target = record.target else { return nil }
             return target.scaleMax
         }
         return targets.isEmpty ? nil : targets.reduce(0, +)
@@ -622,7 +715,10 @@ struct WeekContext {
     /// "zählt nicht – 5 Tage krank" when none of its days counts, else nil.
     var workTargetHint: String? {
         guard let full = workTargetFull else { return nil }
-        let work: [MeasureDefinition] = measures.filter { $0.record?.isWork == true && $0.record?.period == .week }
+        let work: [MeasureDefinition] = measures.filter { measure in
+            guard let record = self.record(measure) else { return false }
+            return record.isWork && record.period == .week
+        }
         let excused: [DayKey] = excusedDayList.filter { day in work.contains { $0.days.contains(day.weekday) } }
         let text: String = excusedDaysText(excused)
         let base: String
@@ -639,7 +735,7 @@ struct WeekContext {
     /// without those whose days are all excused (not scored).
     var weeklyLines: [TodaySummary.GoalLine] {
         measures.compactMap { measure in
-            guard let record = measure.record, record.period == .week, targetShare(record) > 1e-9,
+            guard let record = self.record(measure), record.period == .week, targetShare(record) > 1e-9,
                   let target = effectiveTarget(record), target.scaleMax > 0 else { return nil }
             return TodaySummary.GoalLine(title: measure.title, value: weekValue(measure) ?? 0, target: target.scaleMax,
                                          unit: record.isWork ? "PH" : measure.unit, categoryKey: measure.categoryKey)
@@ -686,12 +782,14 @@ extension WeekContext {
 
     /// Every weekly measurement with a target, also those whose days are all excused (share 0).
     private var allWeeklyTargets: [WeeklyTarget] {
-        measures.compactMap { measure -> WeeklyTarget? in
-            guard let record = measure.record, record.period == .week, let full = record.target else { return nil }
+        let over: Bool = weekOver
+        return measures.compactMap { measure -> WeeklyTarget? in
+            guard let record = self.record(measure), record.period == .week, let full = record.target else { return nil }
             let target: Target = effectiveTarget(record) ?? full
             let value = weekValue(measure) ?? 0
             let tempo: Pace = pace(for: measure)
-                ?? Pace(done: value, target: target.scaleMax, days: measure.days, week: week, today: today, excused: data.excusedDays)
+                ?? Pace(done: value, target: target.scaleMax, days: measure.days, week: week, today: today, excused: data.excusedDays,
+                        weekOver: over)
             let linked = items.first { $0.measureCode == measure.code && $0.schedule == .progress }
             var line = WeeklyTarget(measure: measure, item: linked, value: value, target: target, pace: tempo,
                                     unit: record.isWork ? "PH" : Units.display(measure.unit), fullTarget: full)
@@ -706,11 +804,15 @@ extension WeekContext {
 
     /// R47: the weekly measurement's pace; work measurements don't plan on work-free days.
     /// v8: sick and holiday days are left out and the target is scaled (`Measures.weeklyPace`).
+    /// v11 P1.16: a closed or past week says "nicht erreicht" for what isn't reached (`weekOver`).
     func pace(for measure: MeasureDefinition) -> Pace? {
-        guard let record = measure.record else { return nil }
+        guard let record = self.record(measure) else { return nil }
         return Measures.weeklyPace(record, done: weekValue(measure) ?? 0, week: week, today: today, excused: data.excusedDays,
-                                   workFree: data.workFreeDays, workCategories: data.workCategories)
+                                   workFree: data.workFreeDays, workCategories: data.workCategories, weekOver: weekOver)
     }
+
+    /// v11 P1.16: the week is closed or past – a weekly target not reached is missed.
+    var weekOver: Bool { isClosed || today > week.sunday }
 
     /// R64: short label for how an item counts; nil for a plain fixed item.
     func kindLabel(_ item: PlanItem) -> String? {
@@ -731,20 +833,48 @@ extension WeekContext {
 
     /// H1: a Health measurement on a device that doesn't read Health (Mac, Watch).
     func isHealthElsewhere(_ measure: MeasureDefinition) -> Bool {
-        (measure.record?.isHealth ?? false) && !HealthDevice.readsHealth
+        (record(measure)?.isHealth ?? false) && !HealthDevice.readsHealth
+    }
+
+    /// v11 P6.14: the same for one day – the one place the hints on Mac and Watch ask (P9 makes it false for
+    /// days whose Health values the iPhone shares).
+    func isHealthElsewhere(_ measure: MeasureDefinition, on day: DayKey) -> Bool {
+        // HEALTHSHARE: a day the iPhone shares has its values here (or has none there either) – no hint, missing as there.
+        isHealthElsewhere(measure) && !healthShare.covers(day)
+    }
+
+    // HEALTHSHARE: the day's value is the one the iPhone shares – no own entry, no own Health value (Mac, watch and iPad
+    // show it read-only with "aus Health am iPhone", §1.4.8); nil otherwise.
+    func sharedHealthValue(_ measure: MeasureDefinition, on day: DayKey) -> Double? {
+        // HEALTHSHARE
+        guard healthShare.covers(day), let value = healthShare.counted(code: measure.code, day: day) else { return nil }
+        let key: String = day.string
+        if entries.contains(where: { $0.code == measure.code && $0.dayKey == key }) { return nil }
+        if health.contains(where: { $0.code == measure.code && $0.dayKey == key }) { return nil }
+        return value
+    }
+
+    // HEALTHSHARE: what Health read on the iPhone for a shared day where nothing was taken over there and this device has no
+    // value ("Health am iPhone: 72,6 kg – dort übernehmen", only read, §1.4.8); nil otherwise.
+    func sharedHealthSuggestion(_ measure: MeasureDefinition, on day: DayKey) -> Double? {
+        // HEALTHSHARE
+        guard healthShare.covers(day), healthShare.counted(code: measure.code, day: day) == nil,
+              dayValue(measure, on: day) == nil else { return nil }
+        // HEALTHSHARE
+        return healthShare.read(code: measure.code, day: day)
     }
 
     /// H1: due that day, no value – and not a value that only Health on the iPhone can give.
     /// v8: never missing on a sick or holiday day (a value can still be entered and counts).
     /// v10: never for a value from the reading list or a connected app (nothing to type in).
     func countsAsMissing(_ measure: MeasureDefinition, on day: DayKey) -> Bool {
-        if let source = measure.record?.source, source.appSource != nil || source.listKind != nil { return false }
-        return !isExcused(day) && applies(measure, on: day) && dayValue(measure, on: day) == nil && !isHealthElsewhere(measure)
+        if let source = record(measure)?.source, source.appSource != nil || source.listKind != nil { return false }
+        return !isExcused(day) && applies(measure, on: day) && dayValue(measure, on: day) == nil && !isHealthElsewhere(measure, on: day)
     }
 
     /// The mark a linked measurement suggests, whatever is recorded.
     private func measuredSuggestion(_ item: PlanItem, on day: DayKey) -> Mark? {
-        guard !item.measureCode.isEmpty, applies(item, on: day), let record = item.record,
+        guard !item.measureCode.isEmpty, applies(item, on: day), let record = self.record(item),
               let linked = measureRecord(code: item.measureCode) else { return nil }
         return Measures.suggestion(for: record, dayValue: dayValue(linked, on: day))
     }
@@ -917,6 +1047,15 @@ final class WeekRecords: @unchecked Sendable {
     private var progressValue: [ListProgress]?
     private var scoresValue: [GoalTrack.Week]?
 
+    /// v11 P2.12: the records `WeekContext.init` built, kept for its helpers – per `PlanItem` /
+    /// `MeasureDefinition` instance (a duplicate copy must not get another copy's record), measures also by
+    /// code (own ones and the hidden ones of `app:` / `list:` links). Set once while the context is built,
+    /// read only afterwards.
+    fileprivate(set) var itemRecords: [ObjectIdentifier: ItemRecord] = [:]
+    fileprivate(set) var measureRecords: [ObjectIdentifier: MeasureRecord] = [:]
+    fileprivate(set) var measureRecordsByCode: [String: MeasureRecord] = [:]
+    fileprivate(set) var measuresByCode: [String: MeasureDefinition] = [:]
+
     init(settings: [StoredSetting], period: GoalPeriod) {
         self.settings = settings
         self.period = period
@@ -1060,8 +1199,10 @@ extension WeekContext {
 
     /// A result's progress on `today`: own entries and the reading list from here; for a `measure:` or
     /// `app:` source pass `series` (`TrackerStore.resultSeries`, read once per screen).
+    /// v11 P1.11: a book counting for a result that is gone (in the trash) counts by its kind.
     func progress(_ result: GoalResult, series: [DayKey: Double] = [:]) -> ResultProgress {
-        ResultProgress.compute(result, segments: segments, today: today, entries: goalEntries, items: listItems, series: series)
+        ResultProgress.compute(result, segments: segments, today: today, entries: goalEntries, items: listItems, series: series,
+                               resultIDs: Set(results.map(\.id)))
     }
 
     /// The results that a measure feeds (`measure:<code>`) – "zählt für Ziel 5 · Bücher 3/10".
@@ -1120,8 +1261,11 @@ extension WeekContext {
     func progressText(_ item: ListItem) -> String { ListMath.progressText(item, progress: listProgress) }
 
     /// The highest page reached (through `day`), nil without readings.
+    /// v11 P1.12: at least "Schon gelesen bis Seite" (`ListMath.current`); nil without readings and start.
     func reached(_ item: ListItem, through day: DayKey? = nil) -> Double? {
-        ListMath.reached(itemID: item.id, progress: listProgress, through: day)
+        let reading: Double? = ListMath.reached(itemID: item.id, progress: listProgress, through: day)
+        guard reading != nil || (item.startAt ?? 0) > 0 else { return nil }
+        return ListMath.current(item, progress: listProgress, through: day)
     }
 
     /// A book's readings, by day.
@@ -1168,4 +1312,14 @@ extension WeekContext {
     /// Facts of the week this build can't use ("nicht verwendet") and those from Apple Health (never used).
     var unusedFactCount: Int { extras.effect.unused.count }
     var ignoredFactCount: Int { extras.effect.ignored }
+}
+
+// MARK: v11 P2.11 – a view input compared cheaply
+
+/// Equal are only copies of the same build: a new build is never equal, as today – so no change gets lost,
+/// while SwiftUI no longer compares every field (`WeekExtras ==`) to find that out.
+extension WeekContext: Equatable {
+    static func == (lhs: WeekContext, rhs: WeekContext) -> Bool {
+        lhs.records === rhs.records
+    }
 }

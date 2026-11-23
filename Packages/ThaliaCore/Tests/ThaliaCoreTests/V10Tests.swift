@@ -199,7 +199,9 @@ struct V10ResultTests {
         ]
         let assigned = GoalResult(id: "books", goalKey: "5", title: "Bücher", kind: .count, target: ">=10", source: "list")
         let counted = ResultProgress.compute(assigned, segments: segments, today: today, items: items)
-        #expect(counted.current == 1, "only A: C finished before the goal year, E abandoned, G still running")
+        // v11 P1.11: assigned ∪ finished unassigned of the kind – A and B; C finished before the goal year,
+        // D counts for another result, E abandoned, F a film, G still running.
+        #expect(counted.current == 2, "A (assigned) and B (a finished book without a result)")
         let byKind = GoalResult(id: "books-2", goalKey: "5", title: "Bücher", kind: .count, target: ">=10", source: "list")
         #expect(ResultProgress.compute(byKind, segments: segments, today: today, items: items).current == 1,
                 "nothing counts for it: the finished books without a result – B")
@@ -243,7 +245,7 @@ struct V10ResultTests {
         #expect(up.status == .behind && up.text == "45.000 € · Ziel ≥ 60.000 €")
         #expect(ResultProgress.compute(worth, segments: segments, today: today).text == "noch kein Wert · Ziel ≥ 60.000 €")
         let line = GoalResultLine(result: worth, goal: GoalRecord(key: "8", title: "Finanzen"), progress: up)
-        #expect(line.markdown == "- 8 Finanzen · Vermögen: 45.000 € · Ziel ≥ 60.000 € · hinten")
+        #expect(line.markdown == "- 8 Finanzen · Vermögen: 45.000 € · Ziel ≥ 60.000 € · im Rückstand", "v11 KR2-13: the app's word")
         #expect(GoalResultLine(result: weight, goal: nil, progress: down, hidesValue: true).text == "Wert nur auf dem Gerät")
         #expect(line.countsForText == "zählt für Ziel 8 · Vermögen 45.000 €")
     }
@@ -457,7 +459,8 @@ struct V10ExchangeFormatTests {
             return
         }
         #expect(catalog.segment?.title == "Abschnitt 2" && catalog.measures.map(\.link).contains("app:george:workout=tpl-1"))
-        #expect(catalog.results.map(\.kind) == ["count", "check"])
+        // v11 §1.5: the results in the encoder's order, with `source` where they have one (Finn's display).
+        #expect(catalog.results.map(\.kind) == ["check", "count", "value", "value"])
         // Written and read back unchanged.
         let data = try theo.encoded()
         guard case .success(let read) = ExchangeReader.dayFile(data) else {
@@ -523,7 +526,8 @@ struct V10ExchangeFormatTests {
         #expect(BinisoftExchange.matches(folder: "Theo", source: "theo") && !BinisoftExchange.matches(folder: "Theo", source: "nina"))
         #expect(BinisoftExchange.day("2026-03-01", adding: -1) == "2026-02-28")
         #expect(ExchangeMetric.named("kcal")?.agg == .sum && ExchangeMetric.named("body_weight_kg")?.agg == .last)
-        #expect(ExchangeMetric.table.map(\.id) == ["kcal", "protein_g", "carbs_g", "fat_g", "water_ml", "net_worth", "savings_rate", "body_weight_kg"])
+        #expect(ExchangeMetric.table.map(\.id) == ["kcal", "protein_g", "carbs_g", "fat_g", "water_ml", "net_worth", "savings_rate", "body_weight_kg",
+                                                  "account_balance"], "v11 §1.5: account_balance")
     }
 }
 
@@ -868,9 +872,9 @@ struct V10CSVTests {
         #expect(parsed.skipped.isEmpty, "\(parsed.skipped)")
         #expect(parsed.records == doc.records.sorted { $0.key < $1.key })
         #expect(try #require(GoalResult(settingValue: parsed.records.first { $0.key == result.settingKey }!.value)) == result)
-        // Only v10 keys, JSON where a key holds JSON.
-        let odd = PlanCSV.parse("type,id,note\nrecord,goal.start,2026-06-01\nrecord,goal.result.x,kein json\nrecord,score.2026-W47,1.1=8\ndatensatz,list.item.b,\"{\"\"id\"\":\"\"b\"\"}\"\n")
-        #expect(odd.records.map(\.key) == ["score.2026-W47", "list.item.b"])
+        // Only v10 keys, JSON where a key holds JSON – v11 P3.7: and the goal year as plain text; never a request.
+        let odd = PlanCSV.parse("type,id,note\nrecord,goal.start,2026-06-01\nrecord,goal.result.x,kein json\nrecord,score.2026-W47,1.1=8\ndatensatz,list.item.b,\"{\"\"id\"\":\"\"b\"\"}\"\nrecord,rescore.2026-W47,\"{\"\"v\"\":1}\"\n")
+        #expect(odd.records.map(\.key) == ["goal.start", "score.2026-W47", "list.item.b"])
         #expect(odd.skipped.count == 2)
         // A plan of one week carries no records (the week's export for the planning conversation).
         #expect(doc.planOnly(week: week).records.isEmpty)
@@ -999,7 +1003,7 @@ struct V10ContentTests {
 
         // The books result counts the finished book; the weight result has its own target in segment 2.
         let books = ResultProgress.compute(records.results[0], segments: segments, today: today, items: records.items)
-        #expect(books.current == 1 && books.text == "1 von 10 Bücher · davon 0 in Abschnitt 2")
+        #expect(books.current == 1 && books.text == "1 von 10 Büchern · davon 0 in Abschnitt 2", "v11 P1.14: dative after „von“")
         #expect(records.results[2].targets[segments.spans[1].id] == "<=86")
         #expect(ResultProgress.compute(records.results[1], segments: segments, today: today, entries: records.entries).status == .reached)
 

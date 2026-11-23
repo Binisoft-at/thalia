@@ -34,6 +34,7 @@ struct MenuBarLabel: View {
 struct MenuBarContent: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     @State private var combos: [WorkCombo] = []
     @State private var categories: [MenuBarCategory] = []
@@ -42,35 +43,64 @@ struct MenuBarContent: View {
     @State private var task = ""
     @State private var amountText = ""
     @State private var purpose = ""
-    @State private var confirmation = ""
+    /// v11 P4.7: the toast of the last power-hours or spending saved here – its line with "Widerrufen" shows
+    /// while that toast is the current one (the toast center clears it after 4.5 s).
+    @State private var lastToastID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            WeekReader(week: app.today.week, today: app.today) { context in
+            // v11 P4.18: a lasting sync problem.
+            SyncProblemBar(compact: true)
+            // v11 P2.14: the day's line needs no goal year.
+            WeekReader(week: app.today.week, today: app.today, goalYear: false) { context in
                 MenuBarStatus(context: context, day: app.today)
             }
             Divider()
             workSection
             Divider()
             expenseSection
-            if !confirmation.isEmpty {
-                Label(confirmation, systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+            confirmationRow
             Divider()
             HStack {
                 Button("Thalia öffnen", systemImage: "macwindow") { openMain() }
                 Spacer()
                 Button("Tag abschließen…", systemImage: "moon.stars") { closeDay() }
             }
+            Button("Einstellungen…", systemImage: "gearshape") { openThaliaSettings() }
+                .buttonStyle(.borderless)
+                .font(.caption)
         }
         .padding(14)
         .frame(width: 330)
-        .onAppear(perform: reload)
+        .onAppear {
+            reload()
+            // v11 P4.15: a Mac used only through the menu bar notes itself in "Geräte im Abgleich".
+            app.recordDeviceSeen()
+        }
         // Areas and "recent" combos from other devices (R96).
         .onChange(of: app.syncTick) { _, _ in reload() }
+    }
+
+    /// v11 P4.7: "1 PH · Wofür" with "Widerrufen" while its toast is current – then it goes by itself.
+    @ViewBuilder
+    private var confirmationRow: some View {
+        if let toast = app.toasts.current, toast.id == lastToastID {
+            HStack(spacing: 8) {
+                Label(toast.message, systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer(minLength: 4)
+                if toast.undo != nil {
+                    Button("Widerrufen") {
+                        app.toasts.performUndo()
+                        reload()
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
     }
 
     // MARK: Power-hours
@@ -97,7 +127,8 @@ struct MenuBarContent: View {
                 }
             }
             .pickerStyle(.menu)
-            Stepper(value: $powerHours, in: 0.25...8, step: 0.25) {
+            // v11 P4.7: the range of the power-hours sheet (a recent 10 PH stays 10).
+            Stepper(value: $powerHours, in: MenuBarContent.powerHoursRange, step: 0.25) {
                 Text("Menge: \(Format.powerHours(powerHours))")
                     .monospacedDigit()
             }
@@ -119,10 +150,13 @@ struct MenuBarContent: View {
         "\(combo.categoryKey) · \(combo.task) · \(Format.powerHours(combo.powerHours))"
     }
 
+    /// v11 P4.7: power-hours in the menu bar – the same range as the power-hours sheet.
+    static let powerHoursRange: ClosedRange<Double> = 0.25...16
+
     /// A tap fills the form; "Erfassen" saves it (the area stays a deliberate choice, K1).
     private func fill(_ combo: WorkCombo) {
         categoryKey = combo.categoryKey
-        powerHours = min(max(combo.powerHours, 0.25), 8)
+        powerHours = min(max(combo.powerHours, MenuBarContent.powerHoursRange.lowerBound), MenuBarContent.powerHoursRange.upperBound)
         task = combo.task
     }
 
@@ -130,7 +164,7 @@ struct MenuBarContent: View {
         guard canSaveWork else { return }
         let what: String = task.trimmingCharacters(in: .whitespacesAndNewlines)
         app.addPowerHours(powerHours, categoryKey: categoryKey, task: what, day: app.today)
-        confirmation = "\(Format.powerHours(powerHours)) · \(what) erfasst"
+        lastToastID = app.toasts.current?.id
         task = ""
         reload()
     }
@@ -172,7 +206,7 @@ struct MenuBarContent: View {
         guard let measure = app.store.expenseMeasure(week: day.week, create: true) else { return }
         let what: String = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
         app.addExpense(amount, what: what, measure: measure, day: day)
-        confirmation = "\(Format.euro(amount)) · \(what) erfasst"
+        lastToastID = app.toasts.current?.id
         amountText = ""
         purpose = ""
     }
@@ -181,6 +215,12 @@ struct MenuBarContent: View {
 
     private func openMain() {
         MainWindow.show(openWindow)
+    }
+
+    /// v11 P4.7: Thalia's settings window, in front.
+    private func openThaliaSettings() {
+        openSettings()
+        NSApp.activate()
     }
 
     private func closeDay() {

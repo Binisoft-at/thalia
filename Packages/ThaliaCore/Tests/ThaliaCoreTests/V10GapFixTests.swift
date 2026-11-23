@@ -102,7 +102,7 @@ struct V10InboxSyncTests {
             ExchangeFact(id: "kcal-a", kind: "value", value: 2100, metric: "kcal"),
             ExchangeFact(id: "kcal-h", kind: "value", value: 300, metric: "kcal", origin: .health),
         ])
-        var raw = ExchangeInbox.value(file)
+        var raw: String = ExchangeInbox.value(file)
         // Facts without an origin or with another label (written by hand into the JSON).
         raw = raw.replacingOccurrences(of: #""facts":["#, with: #""facts":[{"id":"steps-x","kind":"value","metric":"steps","value":9000},{"id":"w-hk","kind":"workout.done","origin":"healthkit"},"#)
         let parsed = try #require(ExchangeInbox.file(raw))
@@ -113,7 +113,7 @@ struct V10InboxSyncTests {
         #expect(ExchangeInbox.syncableValue(raw, key: "x.theo.2026-11-22") == nil, "another source's key")
         #expect(ExchangeInbox.syncableValue("{}", key: "x.nina.2026-11-22") == nil)
         #expect(ExchangeInbox.syncableValue("{\"sources\":[]}", key: ExchangeInbox.sourcesKey) == "{\"sources\":[]}")
-        let clean = ExchangeInbox.value(ExchangeInbox.syncable(parsed))
+        let clean: String = ExchangeInbox.value(ExchangeInbox.syncable(parsed))
         #expect(ExchangeInbox.syncableValue(clean, key: "x.nina.2026-11-22") == clean, "a clean value stays byte for byte")
         // A backup row with Health facts comes in without them.
         let csv = PlanCSV.export({ var doc = PlanCSV.Document(); doc.records = [SettingRow(key: "x.nina.2026-11-22", value: raw)]; return doc }())

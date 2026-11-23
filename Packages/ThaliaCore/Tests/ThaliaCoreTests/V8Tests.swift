@@ -755,6 +755,10 @@ struct V8RangeTests {
         #expect(line.excusedDays == 2)
         #expect(!line.isExcused)
         #expect(line.closedDays == 2)
+        // v11 P6.2: a closed sick Thursday isn't a closed day that counts ("Tage abgeschlossen" in the PDF).
+        var sickClosed = input
+        sickClosed.closedDays.insert(week.day(.thursday))
+        #expect(WeekLine(sickClosed).closedDays == 2)
         #expect(line.powerHours == 5)
         #expect(abs((line.powerHoursTarget ?? 0) - 4.8) < 1e-9, "8 PH × 3/5")
         #expect(line.weeklyTargetsCount == 1 && line.weeklyTargetsMet == 1, "5 of 4,8 PH")

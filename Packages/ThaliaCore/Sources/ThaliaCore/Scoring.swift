@@ -5,7 +5,7 @@ import Foundation
 //   category:  day score = 10 × earned ÷ applicable – only once the category is complete for the
 //              day (no blank due items). Until then the screen shows how much is filled in.
 //   goal:      average of its categories – only when every category with items has a score
-//   week:      category = average of its valid days → goal → overall = average of the goals (10 % each)
+//   week:      category = average of its valid days → goal → overall = average of the goals (equally weighted)
 // Weekly quotas: each ✓ ½ ✗ uses a slot; what's missing counts as missed once the week is over.
 // Progress items (stammloop 8 PH/week): a day with a value in the linked measurement counts as
 // "daran gearbeitet" (✓), a day without as N/A – derived, not ticked (v3). Worked days are resolved
@@ -268,7 +268,10 @@ public enum Scorer {
                 if entry.applicable > 0 {
                     let calculated = entry.knockedOut ? 0 : 10 * entry.earned / entry.applicable
                     entry.calculated = calculated
-                    entry.score = entry.isComplete ? calculated : nil
+                    // v11 P1.9: the day a missed weekly quota is booked on gets its score once the week is
+                    // over, even with blank items – they don't count (as everywhere), the shortfall does.
+                    let booked = data.isComplete && (entry.shortfall > 0 || entry.excused > 0)
+                    entry.score = entry.isComplete || booked ? calculated : nil
                 }
                 // Own scores don't count on excused days (v8).
                 if !data.isExcused(day), let override = data.overrides[WeekData.overrideKey(category.key, day)] {
@@ -465,35 +468,100 @@ public enum Scorer {
     }
 }
 
+/// Where a weekly target stands (v11 P1.16, §1.2.4) – one word set for screens, PDF and report. Limits
+/// ("höchstens") keep "im Rahmen" / "überschritten" (`limit(isMet:)`). The colour comes from the status
+/// alone (`StatusTint` in the app).
+public enum PaceStatus: String, CaseIterable, Sendable {
+    case reached
+    /// On an even pace.
+    case onPlan
+    /// Behind an even pace by more than a little.
+    case behind
+    /// Not reached, today is the last planned day of the running week.
+    case open
+    /// Not reached and the week is over (or closed).
+    case missed
+    /// A limit kept so far.
+    case withinLimit
+    /// A limit exceeded.
+    case overLimit
+
+    /// The status of a limit ("TEREA ≤ 6"): "im Rahmen" or "überschritten".
+    public static func limit(isMet: Bool) -> PaceStatus { isMet ? .withinLimit : .overLimit }
+
+    /// The short word for rows that already show "x von y" (KR2-12): "erreicht", "im Plan",
+    /// "hinter dem Plan", "noch offen", "nicht erreicht", "im Rahmen", "überschritten".
+    public var label: String {
+        switch self {
+        case .reached: "erreicht"
+        case .onPlan: "im Plan"
+        case .behind: "hinter dem Plan"
+        case .open: "noch offen"
+        case .missed: "nicht erreicht"
+        case .withinLimit: "im Rahmen"
+        case .overLimit: "überschritten"
+        }
+    }
+
+    /// With the amount, where no "von" is shown (Fokus, Watch): "noch 0,8 PH offen", "noch 12,50 € offen";
+    /// every other status as `label`.
+    public func label(remaining: Double, unit: String) -> String {
+        guard self == .open, remaining > 1e-9 else { return label }
+        let shown = Units.isTime(unit) ? "" : Units.display(unit)
+        let normalized = Units.normalized(unit)
+        let amount = Format.amount(remaining, unit: unit)
+        let suffix = normalized == "€" ? " €" : (shown.isEmpty ? "" : " " + shown)
+        return "noch \(amount)\(suffix) offen"
+    }
+}
+
 /// How far along a weekly item or measurement is, against an even pace through its days.
 public struct Pace: Equatable, Sendable {
     public var done: Double
     public var target: Double
     /// What an even pace would have reached by the end of `today`.
     public var expected: Double
+    /// Planned days after `today` (v11 P1.16) – 0 on the last planned day.
+    public var plannedLeft: Int
+    /// The week is over or closed (v11 P1.16): what isn't reached is missed.
+    public var weekOver: Bool
 
     /// `excluding`: days that don't count as planned (work-free days for work measurements, R47).
     /// `excused`: sick and holiday days (v8), left out of the even pace too. `target` is the target
     /// that counts this week – with excused days `Measures.effectiveTarget(_:share:)`'s `scaleMax`.
+    /// `weekOver` (v11): the caller's `isClosed || today > week.sunday`; nil means `today > week.sunday`.
     public init(done: Double, target: Double, days: DayMask, week: WeekKey, today: DayKey, excluding: Set<DayKey> = [],
-                excused: Set<DayKey> = []) {
+                excused: Set<DayKey> = [], weekOver: Bool? = nil) {
         self.done = done
         self.target = target
         let planned = week.days.filter { days.contains($0.weekday) && !excluding.contains($0) && !excused.contains($0) }
         let passed = planned.filter { $0 <= today }.count
         expected = planned.isEmpty ? target : target * Double(passed) / Double(planned.count)
+        plannedLeft = planned.filter { $0 > today }.count
+        self.weekOver = weekOver ?? (today > week.sunday)
     }
 
     public var fraction: Double { target <= 0 ? 1 : min(1, done / target) }
     public var isReached: Bool { done >= target - 1e-9 }
     /// Behind an even pace by more than a little.
     public var isBehind: Bool { !isReached && done + 1e-9 < expected * 0.85 }
+    /// What is still missing (0 once reached).
+    public var remaining: Double { max(0, target - done) }
 
-    /// "6 von 8 – im Plan" / "2 von 8 – hinter dem Plan" / "8 von 8 – erreicht".
+    /// v11 P1.16: reached → "erreicht"; not reached and the week over → "nicht erreicht"; not reached on the
+    /// last planned day of the running week → "noch offen"; otherwise "hinter dem Plan" or "im Plan".
+    public var status: PaceStatus {
+        if isReached { return .reached }
+        if weekOver { return .missed }
+        if plannedLeft == 0 { return .open }
+        return isBehind ? .behind : .onPlan
+    }
+
+    /// "6 von 8 – im Plan" / "2 von 8 – hinter dem Plan" / "8 von 8 – erreicht" / "7,2 von 8 – noch offen" /
+    /// "7,2 von 8 – nicht erreicht".
     public func label(unit: String = "") -> String {
         let u = unit.isEmpty ? "" : " " + unit
         let base = "\(Format.number(done, decimals: 2)) von \(Format.number(target, decimals: 2))\(u)"
-        if isReached { return base + " – erreicht" }
-        return base + (isBehind ? " – hinter dem Plan" : " – im Plan")
+        return base + " – " + status.label
     }
 }

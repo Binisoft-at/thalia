@@ -116,12 +116,15 @@ enum PDFExport {
     }
 
     /// v8: a week's pages with `sections`, numbered from `firstPage` of `total` (a report over
-    /// several weeks numbers through). The pages themselves are the single-week PDF's.
-    static func weekPages(_ context: WeekContext, sections: WeekPDFSections = .all, firstPage: Int = 1, total: Int) -> [AnyView] {
+    /// several weeks numbers through). The pages themselves are the single-week PDF's. v11 P6.1, P6.13:
+    /// `frozen` – whether the week lies before the current segment, for a context read without the goal year
+    /// (nil: the context knows).
+    static func weekPages(_ context: WeekContext, sections: WeekPDFSections = .all, firstPage: Int = 1, total: Int,
+                          frozen: Bool? = nil) -> [AnyView] {
         var pages: [AnyView] = []
         var page: Int = firstPage
         if sections.contains(.cover) {
-            pages.append(AnyView(WeekCoverPage(context: context, page: page, total: total)))
+            pages.append(AnyView(WeekCoverPage(context: context, page: page, total: total, frozen: frozen)))
             page += 1
         }
         if sections.contains(.details) {
@@ -156,12 +159,23 @@ enum PDFExport {
         }
     }
 
-    static func make(_ kind: PDFKind, context: WeekContext) -> URL? {
+    /// v11 P6.12: the week's or day's PDF page by page – after each page `progress(drawn, total)` and a short pause, so
+    /// the preview stays responsive and shows "Seite x von y". nil when cancelled (closing the preview) or the file
+    /// can't be written. Drawing stays on the main thread (ImageRenderer).
+    static func make(_ kind: PDFKind, context: WeekContext, progress: (Int, Int) -> Void = { _, _ in }) async -> URL? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(kind.fileName)
         var box = CGRect(origin: .zero, size: pageSize)
         guard let pdf = CGContext(url as CFURL, mediaBox: &box, nil) else { return nil }
-        for page in pages(kind, context: context) {
+        let all: [AnyView] = pages(kind, context: context)
+        var drawn = 0
+        for page in all {
             render(page, into: pdf)
+            drawn += 1
+            progress(drawn, all.count)
+            guard await pause() else {
+                pdf.closePDF()
+                return nil
+            }
         }
         pdf.closePDF()
         return url
@@ -616,6 +630,30 @@ private struct WeekCoverPage: View {
     let context: WeekContext
     let page: Int
     let total: Int
+    /// v11 P6.1, P6.13: whether the week lies before the current segment. nil asks the week itself; the report over
+    /// several weeks reads its weeks without the goal year (no segments) and passes what it knows.
+    var frozen: Bool? = nil
+
+    /// v11 P6.1: a frozen closed week shows the score and goal scores it stored, like everywhere in the app.
+    private var keepsStoredScore: Bool {
+        guard let frozen else { return context.keepsStoredScore }
+        return frozen && context.isClosed && context.hasPlan
+    }
+
+    private var score: Double? {
+        keepsStoredScore ? context.recalculatedScore : context.score.overall
+    }
+
+    /// The stored goal scores of a frozen closed week; nil for every other week (and when none were stored).
+    private var storedGoalScores: [String: Double]? {
+        guard keepsStoredScore, let stored = context.plan?.finalGoalScoreMap, !stored.isEmpty else { return nil }
+        return stored
+    }
+
+    private func goalScore(_ goal: AnnualGoal, stored: [String: Double]?) -> Double? {
+        if let stored { return stored[goal.key] }
+        return context.score.goalWeek[goal.key]?.score
+    }
 
     /// v8: a week where every day with something planned was sick or on holiday has no score.
     private var ringCaption: String {
@@ -623,7 +661,8 @@ private struct WeekCoverPage: View {
     }
 
     var body: some View {
-        let score: Double? = context.score.overall
+        let score: Double? = self.score
+        let stored: [String: Double]? = storedGoalScores
         let excusedDays: [DayKey] = context.excusedDayList
         VStack(spacing: 0) {
             CoverBand(height: 270, ringValue: Format.score(score, outOf: false), ringCaption: ringCaption, progress: (score ?? 0) / 10) {
@@ -634,7 +673,8 @@ private struct WeekCoverPage: View {
                 Text(context.week.label)
                     .font(.system(size: 58, weight: .heavy, design: .rounded))
                     .lineLimit(1)
-                Text("\(context.week.rangeLabel) \(String(context.week.year))")
+                // v11 P1.8: "28. Dez. 2026 – 3. Jan. 2027" across a new year.
+                Text(context.week.rangeLabelWithYear)
                     .font(.system(size: 15, weight: .semibold))
                     .opacity(0.92)
                 if let motto = context.plan?.title, !motto.isEmpty {
@@ -648,14 +688,14 @@ private struct WeekCoverPage: View {
             }
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    ForEach(Array(stats.enumerated()), id: \.offset) { _, stat in
+                    ForEach(Array(stats(stored).enumerated()), id: \.offset) { _, stat in
                         StatTile(label: stat.0, value: stat.1, tint: stat.2)
                     }
                 }
-                PDFSectionTitle(text: "Jahresziele · je 10 % der Woche")
+                PDFSectionTitle(text: "Jahresziele · gleich gewichtet")
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 8) {
                     ForEach(context.goals) { goal in
-                        GoalTile(goal: goal, score: context.score.goalWeek[goal.key]?.score, excused: context.isGoalExcused(goal))
+                        GoalTile(goal: goal, score: goalScore(goal, stored: stored), excused: context.isGoalExcused(goal))
                     }
                 }
                 PDFSectionTitle(text: "Die Tage")
@@ -686,27 +726,23 @@ private struct WeekCoverPage: View {
         return names + " " + context.excusedWord(days) + ": " + subject + " nicht in die Wochenwertung."
     }
 
-    private var stats: [(String, String, Color)] {
+    private func stats(_ stored: [String: Double]?) -> [(String, String, Color)] {
         let totals = context.workTotals()
         // R16: the same list and count as the app. v8: sick and holiday days don't count ("3/5 · 2 krank").
         let weekly: [WeeklyTarget] = context.weeklyTargets
         let reached: Int = context.weeklyTargetsMet
-        let best: AnnualGoal? = context.goals.max { ($0.weekScore(context) ?? -1) < ($1.weekScore(context) ?? -1) }
+        let best: AnnualGoal? = context.goals.max { (goalScore($0, stored: stored) ?? -1) < (goalScore($1, stored: stored) ?? -1) }
         var list: [(String, String, Color)] = [
             ("Fokus", totals.isEmpty ? "–" : totals.shortText, GoalPalette.color(goal: "3")),
             ("Tage abgeschlossen", context.closedDaysText, Brand.accent),
         ]
         if !weekly.isEmpty { list.append(("Wochenziele erreicht", "\(reached)/\(weekly.count)", GoalPalette.color(goal: "8"))) }
-        if let best, let score = best.weekScore(context) {
+        if let best, let score = goalScore(best, stored: stored) {
             let short: String = best.title.split(separator: " ").first.map(String.init) ?? best.title
             list.append(("Bestes Ziel · \(short)", Format.score(score), best.color))
         }
         return list
     }
-}
-
-private extension AnnualGoal {
-    func weekScore(_ context: WeekContext) -> Double? { context.score.goalWeek[key]?.score }
 }
 
 /// v8: a grey line with the sick/holiday symbol under the days ("Fr, Sa krank: …").
@@ -872,28 +908,17 @@ private struct WeekDetailsPage: View {
 private struct WeeklyTargetLine: View {
     let target: WeeklyTarget
 
-    private var unit: String {
-        target.unit == "PH" ? "PH" : target.measure.unit
-    }
-
     private var title: String { target.item?.title ?? target.measure.title }
 
-    private var amounts: String {
-        "\(Format.measure(target.value, unit: unit)) / \(Format.measure(target.target.scaleMax, unit: unit))"
-    }
+    /// v11 P1.7: "12,75 / 14 PH", "150 / 86 Stk." – rounded like the app (`WeeklyTarget.amountsText`).
+    private var amounts: String { target.amountsText(joiner: " / ") }
 
-    /// "im Plan" · "hinter dem Plan" · "erreicht"; limits "im Rahmen" · "überschritten".
-    private var state: String {
-        if target.target.isLimit { return target.isMet ? "im Rahmen" : "überschritten" }
-        if target.pace.isReached { return "erreicht" }
-        return target.pace.isBehind ? "hinter dem Plan" : "im Plan"
-    }
+    /// v11 P1.16: the app's word – "erreicht", "im Plan", "hinter dem Plan", "noch offen", "nicht erreicht";
+    /// limits "im Rahmen" · "überschritten".
+    private var state: String { target.shownStatus.label }
 
-    private var stateColor: Color {
-        if target.target.isLimit { return target.isMet ? Color(red: 0.20, green: 0.68, blue: 0.38) : Color(red: 0.88, green: 0.30, blue: 0.28) }
-        if target.pace.isReached { return Color(red: 0.20, green: 0.68, blue: 0.38) }
-        return target.pace.isBehind ? Color(red: 0.95, green: 0.62, blue: 0.15) : muted
-    }
+    /// v11 P1.16: the app's status colour (`StatusTint`).
+    private var stateColor: Color { StatusTint(target.shownStatus).color }
 
     private var fraction: Double {
         let goal: Double = target.target.scaleMax
@@ -1264,7 +1289,7 @@ private struct DayCoverPage: View {
         // H1: Health values without a value on this device are listed with the hint, not left out.
         let measured: [MeasureDefinition] = Array(context.measures.filter { measure in
             guard context.applies(measure, on: day) else { return false }
-            return context.dayValue(measure, on: day) != nil || context.isHealthElsewhere(measure)
+            return context.dayValue(measure, on: day) != nil || context.isHealthElsewhere(measure, on: day)
         }.prefix(12))
         let blocks: [WorkBlock] = Array(context.work(on: day).prefix(6))
         let notes: [DayNote] = Array(context.notes(on: day).prefix(4))
@@ -1395,7 +1420,7 @@ private struct ValueTile: View {
     /// The value, or H1's hint for a Health value that only the iPhone reads.
     private func shown(_ value: Double?, unit: String) -> String {
         if let value { return Format.measure(value, unit: unit) }
-        return context.isHealthElsewhere(measure) ? WeekContext.healthElsewhereHint : "–"
+        return context.isHealthElsewhere(measure, on: day) ? WeekContext.healthElsewhereHint : "–"
     }
 
     /// The hint small and light, a value big and heavy.
@@ -1408,7 +1433,7 @@ private struct ValueTile: View {
         let value: Double? = context.dayValue(measure, on: day)
         let unit: String = measure.record?.isWork == true ? "PH" : measure.unit
         let met: Bool? = measure.record.flatMap { Measures.isMet($0, value: value) }
-        let isHint: Bool = value == nil && context.isHealthElsewhere(measure)
+        let isHint: Bool = value == nil && context.isHealthElsewhere(measure, on: day)
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2).fill(GoalPalette.color(category: measure.categoryKey)).frame(width: 3, height: 22)
             VStack(alignment: .leading, spacing: 1) {
@@ -1444,9 +1469,18 @@ struct PDFPreviewSheet: View {
     let context: WeekContext
     @Environment(\.dismiss) private var dismiss
     @State private var url: URL?
+    /// v11 P6.12: pages drawn into the file so far, of `pageTotal`.
+    @State private var pagesDrawn = 0
+    @State private var pageTotal = 0
     /// Mac: the PDF for the save panel (R71).
     @State private var exportFile: ExportFile?
     @State private var exporting = false
+
+    /// "PDF wird erstellt … Seite 2 von 5".
+    private var progressText: String {
+        guard pageTotal > 0 else { return "PDF wird erstellt …" }
+        return "PDF wird erstellt … Seite \(pagesDrawn) von \(pageTotal)"
+    }
 
     var body: some View {
         NavigationStack {
@@ -1470,6 +1504,22 @@ struct PDFPreviewSheet: View {
                 }
             }
             .background(Color.secondary.opacity(0.12))
+            .safeAreaInset(edge: .bottom) {
+                if url == nil {
+                    // v11 P6.12: the file is made page by page; closing the sheet stops it.
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(progressText)
+                            .font(.subheadline)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: .capsule)
+                    .padding(.bottom, 10)
+                }
+            }
             .navigationTitle(kind.title)
             .inlineNavigationTitle()
             .toolbar {
@@ -1506,7 +1556,13 @@ struct PDFPreviewSheet: View {
                           defaultFilename: kind.fileName) { _ in
                 exportFile = nil
             }
-            .task { url = PDFExport.make(kind, context: context) }
+            // v11 P6.12: page by page with progress; the task ends with the sheet (nil: cancelled).
+            .task {
+                url = await PDFExport.make(kind, context: context) { drawn, total in
+                    pagesDrawn = drawn
+                    pageTotal = total
+                }
+            }
         }
         .thaliaSheetFrame(width: 640, height: 760)
     }

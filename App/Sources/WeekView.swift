@@ -106,6 +106,14 @@ struct WeekSheet: View {
             HeroCard(title: context.week.rangeLabel, subtitle: heroSubtitle,
                      value: Format.score(context.heroScore, outOf: false), caption: "Woche",
                      progress: heroProgress, facts: heroFacts, compact: true)
+            if lacksHealthValues {
+                // v11 P6.14 (3): an iPad in a narrow window – the running week reads Apple Health, which only the
+                // iPhone has (never on the iPhone itself).
+                Label(WeekContext.lacksHealthHint, systemImage: "heart.text.square")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             goalBars
             dayStrip
             contextLine
@@ -124,6 +132,11 @@ struct WeekSheet: View {
         return value / 10
     }
 
+    /// v11 P6.14 (3): only where this device doesn't score Health weeks (iPad) and the running week misses such a value.
+    private var lacksHealthValues: Bool {
+        !HealthDevice.scoresHealth && context.lacksHealthValues
+    }
+
     private var heroFacts: [(String, String)] {
         // v9: an archive week has no focus or closed days to show – the other score and the grades.
         if context.isArchiveWeek { return context.archiveHeroFacts }
@@ -133,10 +146,11 @@ struct WeekSheet: View {
         return [("Fokus", focus), ("Tage abgeschlossen", context.closedDaysText)]
     }
 
-    /// The ten goals in their colours (R68), with the scoring explainer.
+    /// The goals in their colours (R68), with the scoring explainer. v11 P6.1: a frozen closed week shows the
+    /// goal scores it stored.
     private var goalBars: some View {
         HStack(alignment: .center, spacing: 10) {
-            GoalBars(scores: context.goals.map { context.shownGoalScore($0.key) }, height: 28,
+            GoalBars(scores: context.shownGoalScores(context.goals), height: 28,
                      keys: context.goals.map(\.key))
             Button {
                 app.sheet = .explainer(.scoring)
@@ -146,7 +160,7 @@ struct WeekSheet: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Brand.accent)
-            .accessibilityLabel("Je Ziel 10 % – wie wird gerechnet?")
+            .accessibilityLabel("Ziele gleich gewichtet – wie wird gerechnet?")
         }
         .card(padding: 10)
     }
@@ -314,7 +328,10 @@ struct WeekSheet: View {
             } label: {
                 HStack(spacing: 8) {
                     KeyBadge(key: category.key)
-                    Text(context.title(of: category)).lineLimit(1)
+                    // v11 P6.6: two lines before "✓ über 8" cuts the name off.
+                    Text(context.title(of: category))
+                        .lineLimit(2)
+                        .layoutPriority(1)
                     if context.isGood(category) {
                         // v10 (§1.2.3): the category's week score is above 8.
                         GoodWeekBadge()
@@ -702,8 +719,16 @@ struct WeekValueCell: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help("\(measure.title) · \(day.shortLabel)")
+        .help(helpText)
         .accessibilityLabel("\(day.weekday.name), \(measure.title): \(WeekValues.spoken(value, measure: measure))")
+    }
+
+    /// "Gewicht · Mo, 16. Nov."; v11 P6.14: on the Mac with "Wert aus Health auf dem iPhone" where only the iPhone
+    /// has the value.
+    private var helpText: String {
+        let base: String = "\(measure.title) · \(day.shortLabel)"
+        guard context.isHealthElsewhere(measure, on: day) else { return base }
+        return base + "\n" + WeekContext.healthElsewhereHint
     }
 }
 
@@ -794,6 +819,9 @@ struct WeekItemRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .onTapGesture { app.sheet = .item(item, detailDay) }
+            // v11 P5.6: VoiceOver reads the title as a button that opens the details.
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Öffnet die Details")
             ForEach(context.week.days, id: \.self) { day in
                 WeekMarkCell(context: context, item: item, day: day)
                     .frame(width: 30, height: 30)

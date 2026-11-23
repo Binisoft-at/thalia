@@ -11,11 +11,26 @@ import AppKit
 
 // MARK: Animated gradient
 
-/// A slowly moving mesh gradient in Thalia's colours. Still when "Bewegung reduzieren" is on.
+/// A slowly moving mesh gradient in Thalia's colours. Still when "Bewegung reduzieren" is on. v11 P6.11: it pauses
+/// while the scene isn't active (iOS: in the background; Mac: also while the window isn't key or the app isn't in
+/// front) – no 20 frames a second for nobody.
 struct AuroraBackground: View {
     var palette: [Color] = AuroraBackground.thalia
     var animated = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS)
+    @Environment(\.controlActiveState) private var controlActiveState
+    #endif
+
+    /// The gradient moves only while someone can see it.
+    private var isLive: Bool {
+        #if os(macOS)
+        return scenePhase == .active && (controlActiveState == .key || controlActiveState == .active)
+        #else
+        return scenePhase == .active
+        #endif
+    }
 
     static let thalia: [Color] = [
         Color(red: 0.05, green: 0.36, blue: 0.42), Color(red: 0.10, green: 0.55, blue: 0.58), Color(red: 0.36, green: 0.30, blue: 0.70),
@@ -25,7 +40,7 @@ struct AuroraBackground: View {
 
     var body: some View {
         if animated && !reduceMotion {
-            TimelineView(.animation(minimumInterval: 1 / 20)) { timeline in
+            TimelineView(.animation(minimumInterval: 1 / 20, paused: !isLive)) { timeline in
                 mesh(time: timeline.date.timeIntervalSinceReferenceDate)
             }
         } else {
@@ -135,20 +150,26 @@ struct HeroCard: View {
     }
 }
 
-/// A short burst of dots for a good day or week. Nothing moves with "Bewegung reduzieren".
+/// A short burst of dots for a good day or week. Nothing moves with "Bewegung reduzieren". v11 P6.11: the timeline
+/// stops once the burst is over (2,3 s) – it looks the same, without drawing on forever.
 struct CelebrationView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var start = Date()
+    @State private var finished = false
 
     var body: some View {
         if !reduceMotion {
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation(minimumInterval: nil, paused: finished)) { timeline in
                 Canvas { context, size in
                     CelebrationView.draw(&context, size: size, elapsed: timeline.date.timeIntervalSince(start))
                 }
             }
             .allowsHitTesting(false)
             .onAppear { start = Date() }
+            .task {
+                try? await Task.sleep(nanoseconds: 2_300_000_000)
+                finished = true
+            }
         }
     }
 
@@ -190,6 +211,10 @@ struct ShareContent {
     var goalTitles: [String]
     var facts: [(String, String)]
     var motto: String
+    /// v11 P6.5: the text in the ring instead of the score or the share ("–" on a sick or holiday day); nil: as before.
+    var ringText: String? = nil
+    /// v11 P6.5, P6.9: the line under it instead of "von 10" / "erfasst" ("Krank", "bisher"); nil: as before.
+    var ringCaption: String? = nil
 
     @MainActor
     static func day(_ day: DayKey, context: WeekContext) -> ShareContent {
@@ -202,26 +227,61 @@ struct ShareContent {
         let complete: Int = context.categories.filter { context.score.category($0.key, on: day).isComplete && context.score.category($0.key, on: day).due > 0 }.count
         let totals = context.workTotals(on: day)
         var facts: [(String, String)] = [("Erfasst", "\(percent(overall?.coverage ?? 0)) %"), ("Kategorien komplett", "\(complete)")]
+        let excused: Bool = context.isExcused(day)
         // v8: a sick or holiday day doesn't count.
-        if context.isExcused(day) { facts = [(context.excusedName(day), "zählt nicht")] }
+        if excused { facts = [(context.excusedName(day), "zählt nicht")] }
         if !totals.isEmpty { facts.append(("Fokus", totals.shortText)) }
-        return ShareContent(title: day.longLabel, subtitle: context.week.label, score: context.isClosed(day) ? overall?.score : nil,
-                            fill: overall?.coverage ?? 0, goalScores: goalScores, goalTitles: context.goals.map(\.title),
-                            facts: facts, motto: context.plan?.title ?? "")
+        var content = ShareContent(title: day.longLabel, subtitle: context.week.label, score: context.isClosed(day) ? overall?.score : nil,
+                                   fill: overall?.coverage ?? 0, goalScores: goalScores, goalTitles: context.goals.map(\.title),
+                                   facts: facts, motto: context.plan?.title ?? "")
+        if excused {
+            // v11 P6.5: an empty ring with "–" and "Krank" – not a full one.
+            content.score = nil
+            content.fill = 0
+            content.ringText = "–"
+            content.ringCaption = context.excusedName(day)
+        }
+        return content
     }
 
+    /// v11 P6.1: a frozen closed week shows the score and goal scores it stored; P6.9: a week that isn't closed is a
+    /// "Zwischenstand" – its ring says "bisher".
     @MainActor
     static func week(_ context: WeekContext) -> ShareContent {
         let totals = context.workTotals()
+        let scored: Int = context.shownGoalsScored
+        let total: Int = context.score.goalsTotal
         // v8: "3/5 · 2 krank" – sick and holiday days don't count.
-        var facts: [(String, String)] = [("Ziele bewertet", "\(context.score.goalsScored)/\(context.score.goalsTotal)"),
+        var facts: [(String, String)] = [("Ziele bewertet", "\(scored)/\(total)"),
                                          ("Tage abgeschlossen", context.closedDaysText)]
         if context.score.isExcused { facts[0] = ("Woche", "zählt nicht") }
         if !totals.isEmpty { facts.append(("Fokus", totals.shortText)) }
-        return ShareContent(title: "\(context.week.label) · \(context.week.rangeLabel)", subtitle: "Meine Woche",
-                            score: context.score.overall, fill: Double(context.score.goalsScored) / Double(max(1, context.score.goalsTotal)),
-                            goalScores: context.goals.map { context.score.goalWeek[$0.key]?.score },
-                            goalTitles: context.goals.map(\.title), facts: facts, motto: context.plan?.title ?? "")
+        let subtitle: String = context.isClosed ? "Meine Woche" : "Zwischenstand"
+        var content = ShareContent(title: "\(context.week.label) · \(context.week.rangeLabel)", subtitle: subtitle,
+                                   score: context.shownScore, fill: Double(scored) / Double(max(1, total)),
+                                   goalScores: context.goals.map { context.scoredGoalScore($0.key) },
+                                   goalTitles: context.goals.map(\.title), facts: facts, motto: context.plan?.title ?? "")
+        if context.score.isExcused && content.score == nil {
+            // A week of only sick or holiday days has no score – an empty ring, not a share of goals.
+            content.fill = 0
+            content.ringText = "–"
+            content.ringCaption = "zählt nicht"
+        } else if !context.isClosed && content.score != nil {
+            content.ringCaption = "bisher"
+        }
+        return content
+    }
+
+    /// The number in the ring: the score, else the share recorded ("62 %"), unless `ringText` says otherwise.
+    var shownRingText: String {
+        if let ringText { return ringText }
+        return score.map { Format.score($0) } ?? "\(percent(fill)) %"
+    }
+
+    /// The line under the number: "von 10" with a score, "erfasst" without, unless `ringCaption` says otherwise.
+    var shownRingCaption: String {
+        if let ringCaption { return ringCaption }
+        return score == nil ? "erfasst" : "von 10"
     }
 }
 
@@ -268,13 +328,15 @@ struct ShareCard: View {
                         .stroke(accent, style: StrokeStyle(lineWidth: 14, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                     VStack(spacing: 0) {
-                        Text(content.score.map { Format.score($0) } ?? "\(percent(content.fill)) %")
+                        Text(content.shownRingText)
                             .font(.system(size: 38, weight: .heavy, design: .rounded))
                             .monospacedDigit()
                             .minimumScaleFactor(0.6)
                             .lineLimit(1)
-                        Text(content.score == nil ? "erfasst" : "von 10")
+                        Text(content.shownRingCaption)
                             .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                             .opacity(0.75)
                     }
                     .padding(16)
@@ -329,7 +391,8 @@ struct ShareCard: View {
 
     private var goals: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("10 Jahresziele")
+            // v11 P6.3: as many as there are.
+            Text(Format.count(content.goalScores.count, "Jahresziel", "Jahresziele"))
                 .font(.system(size: 12, weight: .semibold))
                 .opacity(0.75)
             HStack(alignment: .bottom, spacing: 5) {

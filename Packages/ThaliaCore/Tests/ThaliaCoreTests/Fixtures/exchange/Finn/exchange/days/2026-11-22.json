@@ -8,7 +8,11 @@
       "value": 23.4, "currency": "EUR", "at": "2026-11-22T17:45:00+01:00", "origin": "app" },
     { "id": "sp-grp-freizeit-2026-11-22", "kind": "spending", "ref": "grp-freizeit", "refTitle": "Freizeit", "title": "Freizeit",
       "value": 12, "currency": "EUR", "origin": "app" },
-    { "id": "nw-2026-11", "kind": "value", "ref": "net_worth", "refTitle": "Vermögen", "metric": "net_worth", "value": 52000,
-      "currency": "EUR", "origin": "app" }
+    { "id": "nw-2026-11-22", "kind": "value", "ref": "net_worth", "refTitle": "Vermögen", "metric": "net_worth", "value": 52000,
+      "currency": "EUR", "origin": "app" },
+    { "id": "kb-acc-giro-2026-11-22", "kind": "value", "ref": "acc-giro", "refTitle": "Girokonto", "metric": "account_balance",
+      "value": 1234.5, "currency": "EUR", "origin": "app" },
+    { "id": "kb-accgrp-sparen-2026-11-22", "kind": "value", "ref": "accgrp-sparen", "refTitle": "Sparen", "metric": "account_balance",
+      "value": 8000, "currency": "EUR", "origin": "app" }
   ]
 }

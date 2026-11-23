@@ -5,9 +5,13 @@ import ThaliaCore
 
 /// Reads one week live (SwiftData queries, so changes from other devices show up by themselves)
 /// and hands the scored `WeekContext` to its content.
+/// v11 P2.14: `goalYear` false reads the goal year's period only – no results, segments, entries or
+/// category week scores, like the widget snapshot (the week's score is the same); the reading list, the
+/// mappings, the sources, the archive grades and the inbox stay (the reading list feeds values).
 struct WeekReader<Content: View>: View {
     let week: WeekKey
     let today: DayKey
+    let goalYear: Bool
     let content: (WeekContext) -> Content
 
     @Query private var plans: [WeekPlan]
@@ -25,6 +29,7 @@ struct WeekReader<Content: View>: View {
     @Query private var reflections: [Reflection]
     @Query private var changes: [PlanChange]
     /// v9: the week's archive grades (setting `archive.<week>`); v10: the known sources (`x.sources`).
+    // HEALTHSHARE: v11 also `hshare.state` and the week's `hshare.<day>` records.
     @Query private var settings: [AppSetting]
     /// v10: the goal year with its segments, results and entries (`goal.`), the reading list (`list.`),
     /// the mappings (`link.rule.`) and the stored category week scores (`score.`) – prefix queries.
@@ -33,9 +38,10 @@ struct WeekReader<Content: View>: View {
     @Query private var linkRecords: [AppSetting]
     @Query private var scoreRecords: [AppSetting]
 
-    init(week: WeekKey, today: DayKey, @ViewBuilder content: @escaping (WeekContext) -> Content) {
+    init(week: WeekKey, today: DayKey, goalYear: Bool = true, @ViewBuilder content: @escaping (WeekContext) -> Content) {
         self.week = week
         self.today = today
+        self.goalYear = goalYear
         self.content = content
         let key = week.string
         let dayKeys = week.days.map(\.string)
@@ -53,16 +59,24 @@ struct WeekReader<Content: View>: View {
         _overrides = Query(filter: #Predicate<ScoreOverride> { dayKeys.contains($0.dayKey) && $0.deletedAt == nil })
         _reflections = Query(filter: #Predicate<Reflection> { $0.scope == key || dayKeys.contains($0.scope) })
         _changes = Query(filter: #Predicate<PlanChange> { $0.weekKey == key })
-        let keys = [ArchiveWeek.settingKey(week), ExchangeInbox.sourcesKey]
+        // HEALTHSHARE: the sharing's state and the week's shared days (counted only where the gate allows, `HealthShareWeek`).
+        let keys = [ArchiveWeek.settingKey(week), ExchangeInbox.sourcesKey, HealthShare.stateKey] + HealthShare.keys(week: week)
         _settings = Query(filter: #Predicate<AppSetting> { keys.contains($0.key) })
         let goalPrefix = "goal."
         let listPrefix = "list."
         let linkPrefix = LinkRule.prefix
         let scorePrefix = GoalTrack.settingPrefix
-        _goalRecords = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: goalPrefix) })
+        if goalYear {
+            _goalRecords = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: goalPrefix) })
+            _scoreRecords = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: scorePrefix) })
+        } else {
+            // The goal year's period only (an IN query); `allSettings` leaves the second copy out.
+            let periodKeys: [String] = TrackerStore.goalPeriodKeys
+            _goalRecords = Query(filter: #Predicate<AppSetting> { periodKeys.contains($0.key) })
+            _scoreRecords = Query(filter: #Predicate<AppSetting> { periodKeys.contains($0.key) })
+        }
         _listRecords = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: listPrefix) })
         _linkRecords = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: linkPrefix) })
-        _scoreRecords = Query(filter: #Predicate<AppSetting> { $0.key.starts(with: scorePrefix) })
     }
 
     /// The sources seen – their day files of the week are read by the inner reader.
@@ -87,7 +101,7 @@ struct WeekReader<Content: View>: View {
         result.append(contentsOf: goalRecords)
         result.append(contentsOf: listRecords)
         result.append(contentsOf: linkRecords)
-        result.append(contentsOf: scoreRecords)
+        if goalYear { result.append(contentsOf: scoreRecords) }
         result.append(contentsOf: inbox)
         return result
     }

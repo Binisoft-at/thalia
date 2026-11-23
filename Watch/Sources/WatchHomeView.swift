@@ -15,19 +15,23 @@ struct WatchHomeView: View {
     @State private var path = NavigationPath()
     @State private var banner: String?
     @State private var bannerID = 0
+    /// v11 P8.7: the power-hours just saved – the banner takes them back ("Widerrufen") while it shows.
+    @State private var lastBlock: WorkBlock?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
-        WeekReader(week: today.week, today: today) { context in
+        // v11 P2.14: no goal year (results, segments, entries, category week scores) – like the widget snapshot.
+        WeekReader(week: today.week, today: today, goalYear: false) { context in
             let pages = WatchPages.categories(context)
             TabView(selection: $page) {
                 NavigationStack(path: $path) {
-                    WatchTodayPage(context: context, pages: pages, banner: banner) { key in
+                    WatchTodayPage(context: context, pages: pages, banner: banner, onUndo: undoAction) { key in
                         page = key
                     }
                     .navigationDestination(for: WatchRoute.self) { route in
-                        WatchRouteView(route: route, context: context) { powerHours, area in
-                            powerHoursSaved(powerHours, area: area)
+                        WatchRouteView(route: route, context: context) { block, powerHours, area in
+                            powerHoursSaved(block, powerHours: powerHours, area: area)
                         }
                     }
                 }
@@ -48,11 +52,13 @@ struct WatchHomeView: View {
         .task(id: bannerID) {
             guard banner != nil else { return }
             do {
-                try await Task.sleep(nanoseconds: 2_000_000_000)
+                // v11 P8.7: four seconds – long enough to tap "Widerrufen".
+                try await Task.sleep(nanoseconds: 4_000_000_000)
             } catch {
                 return
             }
             banner = nil
+            lastBlock = nil
         }
     }
 
@@ -62,13 +68,30 @@ struct WatchHomeView: View {
         if now != today { today = now }
     }
 
-    /// R48: back to page 1 with "+1 PH · stammloop" for two seconds and a success tap.
-    private func powerHoursSaved(_ powerHours: Double, area: String) {
+    /// R48: back to page 1 with "+1 PH · stammloop – Widerrufen" for four seconds and a success tap (v11 P8.7).
+    private func powerHoursSaved(_ block: WorkBlock, powerHours: Double, area: String) {
         path = NavigationPath()
         page = WatchHomeView.firstPage
-        banner = "+\(Format.powerHours(powerHours)) · \(area)"
+        lastBlock = block
+        banner = "+\(Format.powerHours(powerHours)) · \(area) – Widerrufen"
         bannerID += 1
         WatchHaptic.success.play()
+    }
+
+    /// v11 P8.7: the banner's tap while it offers "Widerrufen"; nil once that is done or over.
+    private var undoAction: (() -> Void)? {
+        guard lastBlock != nil else { return nil }
+        return { undoPowerHours() }
+    }
+
+    /// v11 P8.7: "Widerrufen" on the banner – the block goes to "Zuletzt gelöscht" (restorable there).
+    private func undoPowerHours() {
+        guard let block = lastBlock else { return }
+        TrackerStore(context: modelContext).trash([block])
+        lastBlock = nil
+        banner = "Power-Hours gelöscht"
+        bannerID += 1
+        WatchHaptic.click.play()
     }
 }
 
@@ -156,7 +179,23 @@ private struct WatchTodayPage: View {
     let context: WeekContext
     let pages: [TrackCategory]
     let banner: String?
+    /// v11 P8.7: set while the banner offers "Widerrufen" for the power-hours just saved.
+    let onUndo: (() -> Void)?
     let onOpen: (String) -> Void
+
+    /// v11 P8.11: the next step without a plan (the status above stays the short "Kein Plan").
+    static let noPlanText = "Wochenplan am iPhone oder Mac importieren – danach kommt er über iCloud."
+    /// v11 P4.13/P4.18: the watch's store couldn't use iCloud at launch.
+    static let localOnlyText = "Nur auf der Watch gespeichert – iCloud nicht verfügbar"
+
+    /// v11 P4.13/P4.18: data stays on the watch (a local or temporary store, not the demo).
+    @MainActor
+    static var isLocalOnly: Bool {
+        switch Persistence.shared.mode {
+        case .local, .memory: return true
+        case .iCloud, .demo: return false
+        }
+    }
 
     var body: some View {
         let groups = WatchPages.openGroups(context, pages: pages)
@@ -164,6 +203,16 @@ private struct WatchTodayPage: View {
         List {
             Section {
                 WatchDayStatus(context: context)
+                if WatchTodayPage.isLocalOnly {
+                    Text(WatchTodayPage.localOnlyText)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                if !context.hasPlan {
+                    Text(WatchTodayPage.noPlanText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 NavigationLink(value: WatchRoute.powerHours) {
                     Label("Power-Hours", systemImage: "bolt.fill")
                 }
@@ -198,7 +247,7 @@ private struct WatchTodayPage: View {
         }
         .overlay(alignment: .top) {
             if let banner {
-                WatchBanner(text: banner)
+                WatchBanner(text: banner, onTap: onUndo)
             }
         }
         .navigationTitle(context.today.weekday.name)
@@ -217,7 +266,7 @@ private struct WatchDayStatus: View {
         let label: String = WatchDayStatus.ringLabel(overall, closed: closed, hasPlan: context.hasPlan)
         let tint: Color = WatchDayStatus.isComplete(overall, closed: closed, hasPlan: context.hasPlan) ? .green : Brand.accent
         let status: String = WatchDayStatus.status(context, closed: closed)
-        let work = context.workTotals(on: day)
+        let workText: String = WatchDayStatus.workText(context)
         HStack(spacing: 10) {
             Gauge(value: gaugeValue, in: 0...1) {
                 Text(closed ? "Tag" : "%")
@@ -229,12 +278,23 @@ private struct WatchDayStatus: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(status)
                     .font(.footnote.weight(.semibold))
-                Text(work.isEmpty ? "Noch keine PH" : work.shortText)
+                Text(workText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Today's power-hours; without any (v11 P8.18): "Krank"/"Urlaub" on an excused day, "Arbeitsfrei" on a
+    /// work-free day, else "Noch keine PH".
+    static func workText(_ context: WeekContext) -> String {
+        let day = context.today
+        let work = context.workTotals(on: day)
+        guard work.isEmpty else { return work.shortText }
+        if context.isExcused(day) { return context.excusedName(day) }
+        if DayTypes.isWorkFree(context.dayType(day)) { return "Arbeitsfrei" }
+        return "Noch keine PH"
     }
 
     /// v8: an empty ring on a sick or holiday day.
@@ -267,15 +327,29 @@ private struct WatchDayStatus: View {
     }
 }
 
-/// "+1 PH · stammloop" after saving power-hours (R48).
+/// "+1 PH · stammloop – Widerrufen" after saving power-hours (R48); v11 P8.7: a button while `onTap` is set.
 private struct WatchBanner: View {
     let text: String
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
+        if let onTap {
+            Button(action: onTap) {
+                label
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Nimmt die Power-Hours zurück")
+        } else {
+            label
+        }
+    }
+
+    private var label: some View {
         Text(text)
             .font(.footnote.weight(.semibold))
-            .lineLimit(1)
+            .lineLimit(2)
             .minimumScaleFactor(0.7)
+            .multilineTextAlignment(.center)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(Color.green.opacity(0.85), in: Capsule())
@@ -356,6 +430,14 @@ private struct WatchItemRow: View {
         let day = context.today
         let mark = context.mark(item, on: day)
         let isProgress = item.schedule == .progress
+        // v11 P8.5: "⇄ George · Push" – the ✓ comes from a connected app (no own mark).
+        let derived: String? = context.derivedMarkLabel(item, on: day)
+        // v11 P8.6: answered rows dimmed, in plan order (like the iPhone, R36).
+        let titleStyle: HierarchicalShapeStyle = mark == nil ? .primary : .secondary
+        // v11 P8.9: "2/3×" for an n×-per-week item, green from the target on.
+        let progressOfQuota: (done: Int, target: Int)? = context.quotaProgress(item)
+        let quota: String? = WatchItemRow.quotaText(progressOfQuota)
+        let quotaColor: Color = WatchItemRow.quotaColor(progressOfQuota)
         HStack(spacing: 8) {
             Button {
                 toggleDone(current: mark, day: day)
@@ -365,16 +447,43 @@ private struct WatchItemRow: View {
                     .foregroundStyle(mark.watchColor)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(WatchItemRow.quickLabel(mark, progress: isProgress))
+            .accessibilityLabel(WatchItemRow.quickLabel(mark, progress: isProgress, derived: derived != nil))
             NavigationLink {
                 WatchMarkPicker(item: item, context: context)
             } label: {
-                Text(item.title)
-                    .font(.footnote)
-                    .lineLimit(3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.title)
+                        .font(.footnote)
+                        .lineLimit(3)
+                        .foregroundStyle(titleStyle)
+                    if let derived {
+                        Text(derived)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    if let quota {
+                        Text(quota)
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundStyle(quotaColor)
+                    }
+                }
             }
             .accessibilityValue(WatchItemRow.markText(mark, progress: isProgress))
         }
+    }
+
+    /// v11 P8.9: "2/3×" – done (✓ or ½) of the weekly quota; nil without a quota.
+    static func quotaText(_ quota: (done: Int, target: Int)?) -> String? {
+        guard let quota else { return nil }
+        return "\(quota.done)/\(quota.target)×"
+    }
+
+    /// v11 P8.9: green once the quota is reached, else secondary.
+    static func quotaColor(_ quota: (done: Int, target: Int)?) -> Color {
+        guard let quota, quota.done >= quota.target else { return Color.secondary }
+        return Color.green
     }
 
     /// ✓ on, or off again – each with its own tap on the wrist (R82).
@@ -389,9 +498,11 @@ private struct WatchItemRow: View {
         }
     }
 
-    /// VoiceOver in words (R43): "Erledigt – tippen zum Leeren" · "Als erledigt markieren".
-    static func quickLabel(_ mark: Mark?, progress: Bool) -> String {
+    /// VoiceOver in words (R43): "Erledigt – tippen zum Leeren" · "Als erledigt markieren"; v11 P8.5: a ✓ from a
+    /// connected app "Erledigt aus verbundener App – tippen zum Ausblenden" (the tap leaves an own empty mark).
+    static func quickLabel(_ mark: Mark?, progress: Bool, derived: Bool = false) -> String {
         let word = Mark.done.label(progress: progress)
+        if mark == .done && derived { return "\(word) aus verbundener App – tippen zum Ausblenden" }
         if mark == .done { return "\(word) – tippen zum Leeren" }
         return "Als \(word.lowercased()) markieren"
     }
@@ -415,11 +526,20 @@ private struct WatchMarkPicker: View {
         let current = context.mark(item, on: day)
         let options = context.options(item, on: day)
         let isProgress = item.schedule == .progress
+        // v11 P8.5: the ✓ of a connected app – the same line as the row, and "ausblenden" instead of "Leeren".
+        let derived: String? = context.derivedMarkLabel(item, on: day)
+        let clearTitle: String = context.isDerivedMark(item, on: day) ? "Haken der App ausblenden" : "Leeren"
         ScrollView {
             VStack(spacing: 8) {
                 Text(item.title)
                     .font(.footnote)
                     .multilineTextAlignment(.center)
+                if let derived {
+                    Text(derived)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(options, id: \.self) { option in
                         WatchMarkButton(option: option, isProgress: isProgress, isSelected: option == current) {
@@ -428,7 +548,7 @@ private struct WatchMarkPicker: View {
                     }
                 }
                 if current != nil {
-                    Button("Leeren", role: .destructive) {
+                    Button(clearTitle, role: .destructive) {
                         set(nil, day: day)
                     }
                 }

@@ -832,7 +832,7 @@ private struct CountsForText: View {
 
     var body: some View {
         ForEach(lines, id: \.self) { line in
-            Label(line, systemImage: "flag.checkered")
+            Label(line, systemImage: "trophy")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -975,6 +975,23 @@ struct MeasureSourceDraft: Equatable {
 
     var isIncomplete: Bool { source == nil }
 
+    /// v11 §1.5.4 (KR2-25): the hint under a measure that already reads a result-only kind (net worth, savings rate,
+    /// an account balance) – new measures aren't offered these kinds.
+    static let resultOnlyHint = "Für ein Jahresziel-Ergebnis gedacht – ein Messwert in € zählt als Ausgabe."
+
+    /// The measure reads a kind meant for a result (`AppSource.resultOnlyKinds`).
+    var isResultOnlyKind: Bool {
+        choice == .app && AppSource.resultOnlyKinds.contains(appKind.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// The kinds of "Verbundene App → Art": v1's kinds without the result-only ones, plus `current` when it is one of
+    /// those (an existing measure keeps its kind) or one this build doesn't know.
+    static func kindChoices(current: String) -> [String] {
+        var kinds: [String] = AppSource.kindChoices.filter { !AppSource.resultOnlyKinds.contains($0) }
+        if !current.isEmpty && !kinds.contains(current) { kinds.append(current) }
+        return kinds
+    }
+
     /// What saving writes: the source unchanged when the fields still describe it (so an unknown text or
     /// an alias like "work:" stays exactly as it was), else the new one.
     func resolved(original: MeasureSource) -> MeasureSource {
@@ -1028,6 +1045,8 @@ struct MeasureSourceSection: View {
     @Binding var draft: MeasureSourceDraft
     let categories: [TrackCategory]
     let sources: ExchangeSourceList
+    // HEALTHSHARE: the Apple Health footer while Health values are shared (TestFlight only, P9.4).
+    @Environment(AppModel.self) private var app
 
     private var sourceInfo: ExchangeSourceInfo? { sources.info(draft.appSourceID) }
 
@@ -1112,7 +1131,10 @@ struct MeasureSourceSection: View {
             }
             if !refChoices.isEmpty || !draft.appRef.isEmpty {
                 Picker("Eintrag", selection: $draft.appRef) {
-                    Text("alle").tag("")
+                    // v11 §1.5.4: a balance needs its account – no "alle".
+                    if !requiresRef || draft.appRef.isEmpty {
+                        Text(requiresRef ? "bitte wählen" : "alle").tag("")
+                    }
                     ForEach(refChoices, id: \.id) { ref in
                         Text(ref.title.isEmpty ? ref.id : ref.title).tag(ref.id)
                     }
@@ -1122,7 +1144,15 @@ struct MeasureSourceSection: View {
                 }
             }
         }
+        if draft.isResultOnlyKind {
+            Text(MeasureSourceDraft.resultOnlyHint)
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
     }
+
+    /// v11 §1.5.4: the chosen kind needs a ref (`AppSource.requiresRef`).
+    private var requiresRef: Bool { draft.appSource?.requiresRef ?? false }
 
     /// The known sources, plus the measure's own when it is not (yet) among them.
     private var sourceIDs: [String] {
@@ -1136,18 +1166,22 @@ struct MeasureSourceSection: View {
         sources.info(id)?.displayName ?? ExchangeSourceInfo.displayName(id)
     }
 
-    /// v1's kinds, plus the measure's own when this build doesn't know it.
+    /// v1's kinds without the result-only ones (net worth, savings rate, account balances – v11 §1.5.4: a measure in €
+    /// counts as spending), plus the measure's own when it has one of those or one this build doesn't know.
     private var kindChoices: [String] {
-        var kinds: [String] = AppSource.kindChoices
-        if !draft.appKind.isEmpty && !kinds.contains(draft.appKind) { kinds.append(draft.appKind) }
-        return kinds
+        MeasureSourceDraft.kindChoices(current: draft.appKind)
     }
 
     private var footer: String {
         switch draft.choice {
         case .manual: return "Eingetragen in Heute, auf der Watch oder per Kurzbefehl."
         case .work: return "Zählt die Power-Hours des Bereichs von selbst."
-        case .health: return "Apple Health schlägt den Wert auf dem iPhone vor; bestätigt wird er hier. Health-Werte bleiben auf dem Gerät."
+        case .health:
+            // HEALTHSHARE: the TestFlight wording while the iPhone shares (§1.4.10).
+            if app.healthShare.sharesHealth(store: app.store) {
+                return "Apple Health schlägt den Wert auf dem iPhone vor; bestätigt wird er hier. Übernommene Werte teilt das iPhone mit Mac und Watch (nur TestFlight)."
+            }
+            return "Apple Health schlägt den Wert auf dem iPhone vor; bestätigt wird er hier. Health-Werte bleiben auf dem Gerät."
         case .list: return "Tageswert = gelesene Menge aller Einträge dieser Art in der Leseliste. Das „+“ in Heute öffnet „Lesen“."
         case .app: return "Werte kommen aus der App auf demselben Gerät – ein eigener Eintrag für den Tag geht vor. Ein verknüpfter Punkt bekommt den Haken von selbst."
         case .other: return "Eine Quelle, die diese Thalia-Version nicht kennt – sie bleibt unverändert."

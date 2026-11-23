@@ -41,6 +41,9 @@ struct CloseDayForm: View {
 
     private var closed: Bool { context.isClosed(day) }
 
+    /// v11 P5.17: a day that hasn't come yet (e.g. a link `close-day:<tomorrow>`) can't be closed.
+    private var isFuture: Bool { day > app.today }
+
     var body: some View {
         ScrollViewReader { proxy in
             form(proxy)
@@ -48,6 +51,10 @@ struct CloseDayForm: View {
                     if closed {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Fertig", action: finish)
+                        }
+                    } else if isFuture {
+                        ToolbarItem(placement: .cancellationAction) {
+                            SheetCloseButton(action: finish)
                         }
                     } else {
                         ToolbarItem(placement: .cancellationAction) {
@@ -58,11 +65,11 @@ struct CloseDayForm: View {
                         }
                     }
                 }
-                // A second ⌘↩ on the Mac closes the day; once closed it finishes (R39).
+                // A second ⌘↩ on the Mac closes the day; once closed it finishes (R39). v11 P5.17: nothing for a future day.
                 .onChange(of: app.closeRequest) { _, _ in
                     if closed || justClosed {
                         finish()
-                    } else {
+                    } else if !isFuture {
                         close(proxy)
                     }
                 }
@@ -222,6 +229,18 @@ struct CloseDayForm: View {
                         Text(question.question).font(.subheadline.weight(.semibold))
                         TextField(question.hint, text: binding(question.id), axis: .vertical)
                             .lineLimit(1...6)
+                        if let other = changedElsewhere(question.id) {
+                            // v11 P5.16: typed here, changed on another device meanwhile – the own text wins unless taken.
+                            HStack(spacing: 8) {
+                                Label("Am anderen Gerät geändert", systemImage: "arrow.triangle.2.circlepath")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                Spacer(minLength: 6)
+                                Button("Übernehmen") { takeOver(question.id, text: other) }
+                                    .font(.caption.weight(.semibold))
+                                    .buttonStyle(.borderless)
+                            }
+                        }
                     }
                     .padding(.vertical, 2)
                 }
@@ -239,11 +258,15 @@ struct CloseDayForm: View {
                     Button(action: reopen) {
                         Label("Tag wieder öffnen", systemImage: "lock.open")
                     }
+                } else if isFuture {
+                    // v11 P5.17 (KR2-16): instead of the buttons.
+                    Label("Abschließen geht erst am \(day.shortLabel).", systemImage: "calendar.badge.clock")
+                        .foregroundStyle(.secondary)
                 } else {
                     Button {
                         close(proxy)
                     } label: {
-                        Label("Tag abschließen", systemImage: "moon.stars.fill")
+                        Label(closeButtonTitle, systemImage: "moon.stars.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .thaliaPrimaryAction()
@@ -255,13 +278,12 @@ struct CloseDayForm: View {
         .inlineNavigationTitle()
         .onAppear {
             guard !loaded else { return }
-            for question in ReflectionQuestion.day {
-                answers[question.id] = context.reflection(scope: day.string, field: question.id)
-            }
-            answers[ReflectionQuestion.journalField] = context.reflection(scope: day.string, field: ReflectionQuestion.journalField)
+            answers = storedAnswers
             loadedAnswers = answers
             loaded = true
         }
+        // v11 P5.16: what another device saves meanwhile – untouched fields follow, typed ones ask.
+        .onChange(of: storedAnswers) { _, stored in follow(stored) }
         .onDisappear(perform: saveAnswers)
         .unsavedInput(answers != loadedAnswers, in: app)
         .sheet(item: $sharing) { request in
@@ -295,6 +317,45 @@ struct CloseDayForm: View {
         Binding(get: { answers[field] ?? "" }, set: { answers[field] = $0 })
     }
 
+    // MARK: Reflection from another device (v11 P5.16)
+
+    /// The day's saved answers as the week reads them now – also what another device saved after this one opened.
+    private var storedAnswers: [String: String] {
+        var stored: [String: String] = [:]
+        for question in ReflectionQuestion.day {
+            stored[question.id] = context.reflection(scope: day.string, field: question.id)
+        }
+        stored[ReflectionQuestion.journalField] = context.reflection(scope: day.string, field: ReflectionQuestion.journalField)
+        return stored
+    }
+
+    /// A field nobody typed in here follows the saved text silently; a typed one keeps its text (it wins on saving, as
+    /// before) and shows "Am anderen Gerät geändert" (`changedElsewhere`).
+    private func follow(_ stored: [String: String]) {
+        guard loaded else { return }
+        for (field, text) in stored where answers[field] == loadedAnswers[field] && answers[field] != text {
+            answers[field] = text
+            loadedAnswers[field] = text
+        }
+    }
+
+    /// The other device's text when the saved one changed after this field was loaded and differs from what it shows
+    /// (typed in here meanwhile, or typed and taken back).
+    private func changedElsewhere(_ field: String) -> String? {
+        guard loaded else { return nil }
+        let typed: String = answers[field] ?? ""
+        let loadedText: String = loadedAnswers[field] ?? ""
+        let saved: String = context.reflection(scope: day.string, field: field)
+        guard saved != loadedText, saved != typed else { return nil }
+        return saved
+    }
+
+    /// "Übernehmen": the other device's text, as if loaded now.
+    private func takeOver(_ field: String, text: String) {
+        answers[field] = text
+        loadedAnswers[field] = text
+    }
+
     private func overrideReason(_ category: TrackCategory) -> String {
         context.overrides["\(category.key)|\(day.string)"]?.reason ?? ""
     }
@@ -303,7 +364,7 @@ struct CloseDayForm: View {
 
     private func heroSection(_ overall: DayOverall?) -> some View {
         Section {
-            HeroCard(title: day.longLabel, subtitle: heroSubtitle, value: heroValue(overall), caption: closed ? "Tag" : "erfasst",
+            HeroCard(title: heroTitle, subtitle: heroSubtitle, value: heroValue(overall), caption: closed ? "Tag" : "erfasst",
                      progress: heroProgress(overall), facts: dayFacts(overall),
                      celebrate: justClosed && closed && (overall?.score ?? 0) >= 8)
                 .listRowInsets(EdgeInsets())
@@ -338,9 +399,37 @@ struct CloseDayForm: View {
         }
     }
 
+    /// v11 P5.11: "Sonntag, 22. November" – no break inside the date, the year only in another year. PDF, prompt and
+    /// tests keep `longLabel`.
+    private var heroTitle: String {
+        CloseDayForm.heroTitle(day, today: app.today)
+    }
+
+    static func heroTitle(_ day: DayKey, today: DayKey) -> String {
+        // longLabel: "Sonntag, 22. November 2026".
+        var text: String = day.longLabel
+        let year: String = " \(day.year)"
+        if day.year == today.year, text.hasSuffix(year) {
+            text = String(text.dropLast(year.count))
+        }
+        return text.replacingOccurrences(of: "\(day.day). ", with: "\(day.day).\u{00A0}")
+    }
+
+    /// v11 P5.5: an open day says that what's still blank doesn't count – the same number as the button below.
     private var heroSubtitle: String {
         if context.isExcused(day) { return "\(context.excusedName(day)) – zählt nicht in die Wochenwertung" }
-        return closed ? "Tag abgeschlossen" : "Noch offen – die Wertung kommt mit dem Abschluss"
+        if closed { return "Tag abgeschlossen" }
+        let open: Int = isFuture ? 0 : requiredBlanks.count
+        if open == 1 { return "Noch 1 offen – zählt nicht mit" }
+        if open > 1 { return "Noch \(open) offen – zählen nicht mit" }
+        return "Noch offen – die Wertung kommt mit dem Abschluss"
+    }
+
+    /// v11 P5.5 (KR2-19): "Tag abschließen · 3 bleiben offen" – the word of the bar below ("7 offen"), no dialog.
+    private var closeButtonTitle: String {
+        let open: Int = context.isExcused(day) ? 0 : requiredBlanks.count
+        if open == 0 { return "Tag abschließen" }
+        return open == 1 ? "Tag abschließen · 1 bleibt offen" : "Tag abschließen · \(open) bleiben offen"
     }
 
     private func heroValue(_ overall: DayOverall?) -> String {
@@ -362,7 +451,7 @@ struct CloseDayForm: View {
 
     /// Closes the day and stays open: it scrolls up to the score and the celebration (R39).
     private func close(_ proxy: ScrollViewProxy) {
-        guard !closed, !justClosed else { return }
+        guard !closed, !justClosed, !isFuture else { return }
         saveAnswers()
         withAnimation(.snappy) { app.closeDay(day) }
         justClosed = true
@@ -411,11 +500,11 @@ struct CloseDayForm: View {
         return type.isEmpty ? "Tag" : type
     }
 
-    /// "28 PH × 50 min = 23 h 20 min netto" · "Frei – null PH ist richtig" · "keine".
+    /// "28 PH × 50 min = 23 h 20 min netto" · "Arbeitsfrei – keine PH nötig" (v11 P5.9) · "keine".
     private var workText: String {
         let totals = context.workTotals(on: day)
         if !totals.isEmpty { return totals.explanation }
-        return DayTypes.isWorkFree(context.dayType(day)) ? "Frei – null PH ist richtig" : "keine"
+        return DayTypes.isWorkFree(context.dayType(day)) ? "Arbeitsfrei – keine PH nötig" : "keine"
     }
 
     private var dayMeasures: [MeasureDefinition] {
@@ -427,7 +516,8 @@ struct CloseDayForm: View {
     /// H1: only what this device can fill in counts as missing.
     private var missingMeasures: [MeasureDefinition] { dayMeasures.filter { context.countsAsMissing($0, on: day) } }
     private var healthElsewhereMeasures: [MeasureDefinition] {
-        dayMeasures.filter { context.dayValue($0, on: day) == nil && context.isHealthElsewhere($0) }
+        // HEALTHSHARE: not on a day the iPhone shares – then it counts as missing, as there (§1.4.7).
+        dayMeasures.filter { context.dayValue($0, on: day) == nil && context.isHealthElsewhere($0, on: day) }
     }
 
     private var requiredBlanks: [PlanItem] { context.blanks(on: day).filter { !$0.isSecondary } }
@@ -584,6 +674,8 @@ struct OverrideSheet: View {
     let entry: CategoryDay
     @State var reason: String
     @State private var score: Double = 0
+    /// The reason as stored when the sheet opened – "Widerrufen" brings it back (v11 P5.8).
+    private let storedReason: String
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
 
@@ -591,8 +683,25 @@ struct OverrideSheet: View {
         self.category = category
         self.day = day
         self.entry = entry
+        storedReason = reason
         _reason = State(initialValue: reason)
         _score = State(initialValue: entry.score ?? 5)
+    }
+
+    /// v11 P5.8: removing the own score offers "Widerrufen" – a new record with the old score and reason.
+    private func removeOverride() {
+        let store: TrackerStore = app.store
+        let key: String = category.key
+        let target: DayKey = day
+        let oldScore: Double? = entry.overridden ? entry.score : nil
+        let oldReason: String = storedReason
+        store.setOverride(categoryKey: key, day: target, score: nil, reason: "")
+        if let oldScore {
+            app.toasts.show("\(key): eigene Wertung entfernt", symbol: "trash") {
+                store.setOverride(categoryKey: key, day: target, score: oldScore, reason: oldReason)
+            }
+        }
+        dismiss()
     }
 
     var body: some View {
@@ -609,10 +718,7 @@ struct OverrideSheet: View {
                 }
                 if entry.overridden {
                     Section {
-                        Button("Eigene Wertung entfernen", role: .destructive) {
-                            app.store.setOverride(categoryKey: category.key, day: day, score: nil, reason: "")
-                            dismiss()
-                        }
+                        Button("Eigene Wertung entfernen", role: .destructive, action: removeOverride)
                     }
                 }
             }

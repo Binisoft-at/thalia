@@ -15,8 +15,20 @@ struct SummaryTile: View {
     let value: String
     var tint: Color = Brand.accent
     var valueColor: Color = .primary
+    /// What VoiceOver says instead of value and label (v11 P5.15: "genau 50 €, Ziel unter 50 €"); nil reads both.
+    var spoken: String? = nil
 
     var body: some View {
+        if let spoken {
+            tile
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(spoken)
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(.system(.title3, design: .rounded).weight(.bold))
@@ -77,23 +89,22 @@ struct GlanceSheet: View {
 
     var body: some View {
         NavigationStack(path: $navigator.path) {
+            // v11 P5.2: one reader – the PDF button takes the list's week instead of reading it a second time.
             WeekReader(week: day.week, today: app.today) { context in
                 GlanceList(context: context, day: day, onOpen: { page in open(page) })
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            SheetCloseButton { dismiss() }
+                        }
+                        ToolbarItem(placement: .primaryAction) {
+                            PDFButton(kind: .day(day), context: context, title: "PDF")
+                        }
+                    }
             }
             .navigationTitle("Heute im Blick")
             .inlineNavigationTitle()
             .navigationDestination(for: GlanceRoute.self) { route in
                 destination(route)
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton { dismiss() }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    WeekReader(week: day.week, today: app.today) { context in
-                        PDFButton(kind: .day(day), context: context, title: "PDF")
-                    }
-                }
             }
         }
         .environment(navigator)
@@ -148,7 +159,8 @@ struct GlanceList: View {
             }
             if day == app.today {
                 Section {
-                    YesterdayBanner(today: app.today)
+                    // v11 P5.1: Tue–Sun yesterday is in this week – no reader of its own.
+                    YesterdayBanner(today: app.today, context: context)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
@@ -280,7 +292,8 @@ struct GlanceList: View {
                 return GlanceValueLine(id: measure.code, title: measure.title,
                                        value: Format.measure(value, unit: measure.unit), kind: .value)
             }
-            if context.isHealthElsewhere(measure) {
+            // HEALTHSHARE: not on a day the iPhone shares – missing there is missing here (§1.4.7).
+            if context.isHealthElsewhere(measure, on: day) {
                 return GlanceValueLine(id: measure.code, title: measure.title, value: WeekContext.healthElsewhereHint, kind: .health)
             }
             guard record.period == .day, day <= app.today, context.countsAsMissing(measure, on: day) else { return nil }
@@ -492,14 +505,17 @@ enum GlanceText {
         return parts.joined(separator: " · ")
     }
 
-    /// "Lesen 120/150 Seiten", "Ausgaben 32,50 €/50 €" (R17).
+    /// "Lesen 120/150 Seiten", "Ausgaben 32,50 €/50 €" (R17). v11 P1.7: rounded for the screen
+    /// (`Format.amount`), the target in the direction of its comparison ("150/86 Stk.", "3/≤ 6 Stk.").
     static func targetLine(_ target: WeeklyTarget) -> String {
         let title: String = target.item?.title ?? target.measure.title
+        let unit: String = target.unit == "PH" ? "PH" : target.measure.unit
+        let goal: String = Format.amount(target: target.target, unit: unit)
         if target.unit != "PH" && Units.normalized(target.measure.unit) == "€" {
-            return "\(title) \(Format.euro(target.value))/\(Format.euro(target.target.scaleMax))"
+            return "\(title) \(Format.euro(target.value))/\(goal) €"
         }
-        let unit: String = target.unit.isEmpty ? "" : " \(target.unit)"
-        return "\(title) \(Format.number(target.value))/\(Format.number(target.target.scaleMax))\(unit)"
+        let suffix: String = target.unit.isEmpty ? "" : " \(target.unit)"
+        return "\(title) \(Format.amount(target.value, unit: unit))/\(goal)\(suffix)"
     }
 }
 
@@ -683,17 +699,20 @@ struct WeeklyOpenSection: View {
                     Button {
                         onOpen(.category(item.categoryKey))
                     } label: {
-                        HStack(spacing: 10) {
+                        // v11 P5.3: title and quota one under the other – the title isn't cut, the quota doesn't break.
+                        HStack(alignment: .top, spacing: 10) {
                             KeyBadge(key: item.categoryKey)
-                            Text(item.title)
-                                .font(.subheadline)
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            Spacer(minLength: 6)
-                            Text(quotaText(item))
-                                .font(.caption)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                                Text(quotaText(item))
+                                    .font(.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
                         }
                         .contentShape(.rect)
                     }
@@ -705,12 +724,13 @@ struct WeeklyOpenSection: View {
         }
     }
 
-    /// "2 von 3 diese Woche"; v8: "… · ½ krank" when sick or holiday days make the rest count half.
+    /// "2 von 3" – the header already says "diese Woche"; v8/v11 P5.3: "0 von 1 · Rest zählt halb (krank)" when sick
+    /// or holiday days make the rest count half.
     private func quotaText(_ item: PlanItem) -> String {
         guard let quota = context.quotaProgress(item) else { return "" }
-        let base: String = "\(quota.done) von \(quota.target) diese Woche"
+        let base: String = "\(quota.done) von \(quota.target)"
         guard quota.done < quota.target, context.quotaShare(item) > 1e-9 else { return base }
-        return base + " · ½ " + context.excusedWord(context.excusedDayList)
+        return base + " · Rest zählt halb (" + context.excusedWord(context.excusedDayList) + ")"
     }
 }
 
@@ -725,25 +745,44 @@ struct YesterdayBanner: View {
 
     let today: DayKey
     let style: Style
+    /// v11 P5.1: the week the caller already reads; used when it is yesterday's week (Tuesday to Sunday).
+    let context: WeekContext?
     @Environment(AppModel.self) private var app
     @AppStorage("yesterday.dismissed") private var dismissed = ""
 
-    init(today: DayKey, style: Style = .card) {
+    init(today: DayKey, style: Style = .card, context: WeekContext? = nil) {
         self.today = today
         self.style = style
+        self.context = context
     }
 
     private var yesterday: DayKey { today.adding(days: -1) }
 
+    /// The caller's week when it holds yesterday as of the same today – then no reader of its own.
+    private var sharedContext: WeekContext? {
+        guard let context, context.week == yesterday.week, context.today == today else { return nil }
+        return context
+    }
+
     var body: some View {
-        WeekReader(week: yesterday.week, today: today) { context in
-            if isVisible(context) {
-                switch style {
-                case .card:
-                    card(summary(context))
-                case .sidebar:
-                    sidebar(summary(context))
-                }
+        if let shared = sharedContext {
+            content(shared)
+        } else {
+            // Mondays (or without the caller's week): yesterday's week once, without the goal year (v11 P2.14).
+            WeekReader(week: yesterday.week, today: today, goalYear: false) { context in
+                content(context)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ context: WeekContext) -> some View {
+        if isVisible(context) {
+            switch style {
+            case .card:
+                card(summary(context))
+            case .sidebar:
+                sidebar(summary(context))
             }
         }
     }
@@ -895,7 +934,8 @@ struct SidebarGlance: View {
 
     var body: some View {
         let _ = diagBody("SidebarGlance")
-        WeekReader(week: app.today.week, today: app.today) { context in
+        // v11 P2.14: a few lines of today and the week – no results, segments or entries of the goal year.
+        WeekReader(week: app.today.week, today: app.today, goalYear: false) { context in
             SidebarGlanceText(context: context, day: app.today)
         }
     }
@@ -926,20 +966,20 @@ private struct SidebarGlanceText: View {
         GlanceText.expensesLine(today: context.dayValue(measure, on: day), week: context.weekValue(measure))
     }
 
-    /// The right column is showing next to Today.
+    /// The right column is showing next to Today (chosen and fitting, v11 P4.1).
     private var isGlanceShown: Bool {
-        (app.sidebar ?? .today) == .today && app.showsGlanceInspector
+        (app.sidebar ?? .today) == .today && app.showsGlanceColumn
     }
 
     private var glanceHelp: String {
-        isGlanceShown ? "Heute im Blick ausblenden" : "Heute im Blick einblenden"
+        if !app.fitsGlanceInspector { return "Fenster breiter ziehen, um die Spalte zu zeigen" }
+        return isGlanceShown ? "Heute im Blick ausblenden" : "Heute im Blick einblenden"
     }
 
-    /// Like ⌘0 and the ring (R59): shows the column next to Today, or hides it when it shows.
+    /// Like ⌘0 and the ring (R59): shows the column next to Today, or hides it when it shows; v11 P4.1: a sheet
+    /// while the window is too narrow for the column.
     private func toggleGlance() {
-        let shown: Bool = isGlanceShown
-        app.sidebar = .today
-        app.showsGlanceInspector = !shown
+        app.showDayOverview(app.today)
     }
 
     var body: some View {
@@ -957,7 +997,8 @@ private struct SidebarGlanceText: View {
                     }
                 }
             }
-            YesterdayBanner(today: day, style: .sidebar)
+            // v11 P5.1: Tue–Sun yesterday is in this week – no reader of its own.
+            YesterdayBanner(today: day, style: .sidebar, context: context)
             SidebarLink(help: "Fokus öffnen") {
                 app.sheet = .focus(day)
             } content: {

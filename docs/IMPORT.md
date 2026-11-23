@@ -43,7 +43,10 @@ Results (export, backup, history) use `date`, `value`, `note`:
 | `score` | category id | `date`, `value` own score 0–10, `note` reason |
 | `category_score` | today's category or empty | `title` label as in the records, `date` (day grade) or empty (week grade), `value` 0–10, `note` source, `count` (since 1.8.0, see „Archiv-Wochen“) |
 | `goal_score` | annual goal `1` … `10` or empty | `title` label as in the records, `value` 0–10, `note` source, `count` (since 1.8.0) |
-| `record` | a stored record's key (`goal.result.<id>`, `list.progress.2026-11-17.<id>`, `x.theo.2026-11-22` …) | `note` = its value (JSON; `score.<week>` plain text) – backups only, since 1.9.0, see „Datensätze“ |
+| `record` | a stored record's key (`goal.result.<id>`, `list.progress.2026-11-17.<id>`, `x.theo.2026-11-22` …; since 1.10.0 also `goal.start`, `goal.end`, `goal.review`, `goal.motto`, `exchange.catalog`) | `note` = its value (JSON; `score.<week>` and the goal year plain text) – backups only, since 1.9.0, see „Datensätze“ |
+| `sicherung` | the moment of the backup, ISO 8601 UTC (`2026-11-22T17:03:00.000Z`) | `title` app and build (`Thalia 1.10.0 (58)`), `description` kind of device (`iPhone`, `Mac` – never its name) – the first data row of a full backup, since 1.10.0, see „Sicherung“ |
+| `wertung` | a closed week (`2026-W47`) | `value` its stored score exactly as stored (`7.123456`), `note` the goal scores (`1=8.2;2=7.5`), `count` how many goals were scored – full backups only, at the end of the week's block, since 1.10.0 |
+| `change` | the code of an item or measurement | `parent` `Punkt` / `Messwert`, `title`, `description`, `value` `neu` / `geändert` / `gelöscht`, `flags` `dauerhaft` / `einmalig` – a plan change of an archive snapshot, inside its week's block, since 1.10.0 |
 
 ## Columns
 
@@ -55,6 +58,18 @@ Results (export, backup, history) use `date`, `value`, `note`:
 - **unit**: g, kcal, l, kg, min, h, PH, Stück, €, Seiten, Uhrzeit, %, Text.
 - **target**: `>=150`, `<=6`, `<50`, `<=23:00`, `150-180`, `22:30-23:00` (≥ ≤ min. max. also read).
   Times after midnight count as late against an evening target (00:30 is later than 23:00).
+  Since 1.10.0 the words in front are read as whole words – `spätestens`, `bis`, `bis zu`, `höchstens`, `maximal`, `max`,
+  `nicht mehr als` = ≤; `weniger als`, `unter` = <; `frühestens`, `ab`, `mindestens`, `min` = ≥; `mehr als`, `über` = >;
+  `22:30 bis 23:00` is a range – and the file is read strictly: a target that starts with another word (`ca 150`) is not
+  read (warning "Zeile 7: Ziel “ca 150” nicht lesbar – ignoriert"), a unit behind it stays allowed (`≥150 g`). A result's target in a
+  `record` row is stored as the plain form (`spätestens 23:00` → `<=23:00`), so every version reads it the same way.
+- **numbers** (values, own scores, `count`, the numbers of targets – since 1.10.0 one reader for all of them): a single dot
+  is a decimal point (`1.125` = 1,125), a single comma a decimal comma (`2,5`), both together German grouping
+  (`8.000,5`); spaces are left out; anything else (`nan`, `1e5`, more than one comma) is not read. A single dot with
+  exactly three digits behind it reads as a decimal point too, with a warning: "Zeile 4: „8.000“ als 8 gelesen –
+  Tausenderpunkt? Bitte 8000 schreiben" (versions before 1.10.0 read such a value as 8000). Write numbers without a
+  thousands dot. The export writes a value with exactly three decimals with a fourth zero (`1.1250`), so no reader –
+  older versions included – takes it for a thousands dot.
 - **period**: `tag` / `woche` – daily target or weekly total.
 - **link**: on an item the id of a measurement whose value suggests the mark (with `target`: ✓ when
   met, ✗ when recorded and missed; without: ✓ as soon as something is recorded). On a measurement the
@@ -255,7 +270,7 @@ this one row.
   Importing the same file twice changes nothing; a changed value updates its grade.
 - **Storage:** no new iCloud field – the grades of a week live as CSV in the setting
   `archive.2026-W43` (`ArchiveWeek.csv`), the value in `WeekPlan.recordedScore`. Backups
-  (*Alles als CSV*) carry the grade rows and the source.
+  (*Sicherung erstellen…*) carry the grade rows and the source.
 
 ### Two scores, clearly named
 
@@ -380,30 +395,47 @@ record,score.2026-W47,,,,,,,,,,,,,1.1=8.2;1.2=6.5
 | `x.<source>.<JJJJ-MM-TT>` | a connected app's day file as Thalia received it |
 | `x.sources` | the connected apps seen (their `source.json`) |
 | `score.<week>` | the category week scores, plain text `1.1=8.2;1.2=6.5` (not JSON) |
+| `goal.start`, `goal.end` | since 1.10.0: the goal year, plain text `2026-06-01` |
+| `goal.review`, `goal.motto` | since 1.10.0: the review week (`2027-W22`) and the motto, plain text |
+| `exchange.catalog` | since 1.10.0: „Thalia-Katalog bereitstellen“, `an` / `aus` |
 
-- **Reading:** only keys with these prefixes; anything else is skipped ("Zeile 12: Datensatz “goal.start” wird nicht
-  gelesen (unbekannter Schlüssel)"), and so are an empty `note` ("… ohne Inhalt (note)") and a value that isn't a JSON
-  object, except for `score.` ("… ist kein lesbares JSON"). Two rows with the same key: the last one counts, with a
-  warning. Archive grades stay in their `category_score` / `goal_score` rows (`archive.<week>` is no `record`).
+- **Reading:** only keys with these prefixes (and the five plain settings); anything else is skipped ("Zeile 12:
+  Datensatz “rescore.2026-W47” wird nicht gelesen (unbekannter Schlüssel)") – never a request to score a week again
+  (`rescore.`), a device's build (`sync.build.`), the last backup (`backup.last`) or shared Health values (`hshare.`).
+  So are an empty `note` ("… ohne Inhalt (note)"), a value that isn't a JSON object, except for `score.` and the plain
+  settings ("… ist kein lesbares JSON"), and a goal year that isn't a date ("… nicht lesbar"). Two rows with the same
+  key: the last one counts, with a warning. Archive grades stay in their `category_score` / `goal_score` rows
+  (`archive.<week>` is no `record`).
 - **Importing:** by key. A stored record with a newer `modifiedAt` (day files: `generatedAt`) stays as it is; without
   a time stamp (`score.`) the file wins when it differs. `x.sources` is merged, never replaced: a connected app the app
   knows and the file doesn't stays (an older backup never drops one). A day file `x.<source>.<day>` keeps only facts
   with `origin` `app` – values from Apple Health never come in; a row that isn't a day file of that source and day is
   skipped ("… ist kein lesbarer Tag einer verbundenen App"). The preview has the line „Datensätze“ (new, changed,
   same); importing the same file twice changes nothing. Fields this version doesn't know are kept.
-- **Writing:** *Alles als CSV (Sicherung)* writes every record, the inbox `x.` included – Thalia never deletes it,
+  Since 1.10.0: **the goal year and the catalog switch are only filled in** where the app has no value – they carry no
+  time stamp, and an old backup must not replace a new goal year; when they differ the preview says so in orange
+  ("Zieljahr in der Datei: 1.6.2026–31.5.2027 – in der App bleibt 1.6.2027–31.5.2028."). They are written before the
+  results and segments. **An entry or reading moved to another day** (its key has the day) counts once: when the app
+  holds the same id under another day's key, the newer copy wins – the file's newer copy is written and the app's old
+  key goes; the app's newer copy stays (the row counts as unchanged). A result's target is stored in its plain form.
+- **Writing:** *Sicherung erstellen…* writes every record, the inbox `x.` included – Thalia never deletes it,
   and it is the only long-term copy (the other apps remove their files after 62 days). A day file goes out only with
   facts with `origin` `app`, and a day stored twice (two devices before they synced) goes out as the copy the weeks
-  read. The rows come last, sorted by
+  read; since 1.10.0 an entry or reading stored under two days goes out once (its newest copy), and the goal year and
+  the catalog switch go out first. The rows come last, sorted by
   key, and only when there are any, so every other file stays exactly as before. *Diese Woche als CSV*, the week
   export for ChatGPT and the planning prompt have no `record` rows.
-- Versions before 1.9.0 skip the rows ("unbekannter Typ").
+- Versions before 1.9.0 skip the rows ("unbekannter Typ"); 1.9.0 skips the five plain settings ("unbekannter
+  Schlüssel").
 
 ## Export
 
-*Diese Woche als CSV* and *Alles als CSV (Sicherung)* write this format with results; editing the
+*Diese Woche als CSV* and *Sicherung erstellen (alles als CSV)* write this format with results; editing the
 file and importing it again updates. Since 1.9.0 the backup also ends with the `record` rows (results, reading
-list, segments, mappings, the connected apps' inbox, category week scores – see „Datensätze“).
+list, segments, mappings, the connected apps' inbox, category week scores – see „Datensätze“). Since 1.10.0 the
+backup has one name everywhere – *Sicherung erstellen…* in Einstellungen → Deine Daten and in the Mac's Ablage menu,
+*Sicherung erstellen (alles als CSV)* in this window – and is built off the main thread ("Sicherung wird erstellt …");
+see „Sicherung (seit 1.10.0)“.
 *Wochenbericht kopieren* gives the Markdown report for the planning conversation (`WeekReport` in Core); since
 1.9.0 it and the planning prompt carry the block "Jahresziel-Ergebnisse (nur zur Info – nichts unaufgefordert
 steigern)" with each result's state, target and status – never Apple Health values.
@@ -415,7 +447,8 @@ A backup keeps everything needed to restore a day exactly:
 - **Closings:** `day` and `week` rows carry the flag `abgeschlossen` when the day or week was
   closed. A closed day without type or note still gets its own `day` row (title and description
   empty). Importing such a file closes those days again; closed weeks get their score as when
-  closing them by hand. The preview lists them: "Abschlüsse: 3 Tage, 1 Woche".
+  closing them by hand (since 1.10.0 a backup's `wertung` row keeps the stored score instead, see „Sicherung“). The
+  preview lists them: "Abschlüsse: 3 Tage, 1 Woche".
 - **Single entries:** when a measurement has several entries on one day – and always for spendings
   (€) – each entry is its own `entry` row with the flag `einzeln` (plus `schaetzung` if estimated),
   the time of day in `title` (`12:30`), its own `value` and `note` ("Wofür"):
@@ -433,3 +466,98 @@ A backup keeps everything needed to restore a day exactly:
 `einzeln` row of a measurement and day. Older backups and ChatGPT files without `einzeln` rows are
 compared by the day's total only: a file with the same total counts as unchanged and never merges
 single spendings into one row.
+
+## Sicherung (seit 1.10.0)
+
+Plan: [TASKS-v11.md](TASKS-v11.md) (P3). A full backup (*Sicherung erstellen…*) restores the app as it was – with
+when and where it was made, the stored week scores, the goal year and the plan changes of archived weeks:
+
+```csv
+type,id,parent,title,description,days,schedule,unit,target,period,link,flags,date,value,note,count
+sicherung,2026-11-22T17:03:00.000Z,,Thalia 1.10.0 (58),iPhone,,,,,,,,,,,
+week,2026-W47,,Wiederholen statt steigern,,,,,,,,abgeschlossen,2026-11-16,,,
+entry,gewicht,,07:10,,,,,,,,,2026-11-17,1.1250,,
+wertung,2026-W47,,,,,,,,,,,,7.123456,1=8.2;2=7.5,2
+record,goal.start,,,,,,,,,,,,,2026-06-01,
+```
+
+- **`sicherung`** – the first data row of a full backup: `id` the moment in UTC (the same text on every device),
+  `title` app and build, `description` the kind of device (never its name). The preview's head says "Sicherung vom
+  22.11.2026, 18:03 · Thalia 1.10.0 (58) · iPhone" instead of the list of weeks. Only "Sicherung erstellen" writes it.
+- **`wertung`** – at the end of every closed week's block that has a stored score: `value` exactly as stored (it reads
+  back to the same bits), `note` the goal scores as stored, `count` the number of scored goals (missing or unreadable:
+  counted from the goal scores; outside 0–10: skipped). Importing keeps it: the week is closed (if it is open), gets
+  the three fields and the file's `score.<week>`, and is **not scored again** – also not on an iPhone, and on a Mac,
+  Apple Watch or iPad it sends no request to the iPhone. A backup without these rows (older versions) is imported as
+  before: the closed weeks get their score as when closing them by hand. The preview line is „Wochenwertungen“.
+- **Who scores after an import:** an import is one save and counts as maintenance. A closed week it changes (marks,
+  values, archive grades …) gets its score again on the iPhone; a Mac, Apple Watch or iPad never scores it there and asks
+  the iPhone instead (`rescore.<week>`). Weeks before the current segment keep their score, as before.
+- **`change`** – only in archive snapshots (Einstellungen → Archiv): the week's plan changes ("Auch in den nächsten
+  Wochen"), so restoring the snapshot or *Widerrufen* after replacing a week brings them back; a change the week has
+  again since is not doubled. A full backup has none, and the archive itself (`WeekArchive`) is not in the backup.
+- **Single values keep their time:** a value that is the only one of its measurement and day carries its time of day in
+  `title` (`07:10`) and comes back at that time; a re-import stays "unverändert". Work blocks and notes go out in the
+  order they were made and come back in that order.
+- **Marks of deleted items** stay out of a full backup (never out of an archive snapshot or a week's CSV).
+- **Values with three decimals** get a fourth zero (`1.1250`), see „Columns“ → numbers.
+- **The goal year** (`goal.start`, `goal.end`, `goal.review`, `goal.motto`) and „Thalia-Katalog bereitstellen“
+  (`exchange.catalog`) are `record` rows; the import only fills them in (see „Datensätze“).
+- **Never in a backup:** shared Health values, the requests to score a week again (`rescore.`), the devices' builds
+  (`sync.build.`), the last backup (`backup.last`) – and, as before, values from Apple Health and the settings of this
+  device.
+
+### Reading a backup in
+
+- **Old backup, changes in the app:** a backup older than a day that would change what the app has gets an orange line:
+  "Die Sicherung ist 9 Tage alt – 37 Markierungen und 12 Werte in der App weichen ab und werden auf den Stand der
+  Sicherung gesetzt." A re-planned week says so in its own line. There is no "newer wins" mode.
+- **Backups of older versions** (no `sicherung` and no `record` rows, but goals, categories and marks, values, work,
+  notes or closings in more than one week): "Diese Sicherung stammt von einer älteren Thalia-Version – Ergebnisse,
+  Leseliste und verbundene Apps fehlen darin."
+- **iCloud still loading:** with iCloud on and before this device's first sync is done (`sync.firstImportDone`), a file
+  with `record` rows or closings gets "iCloud lädt noch deine Daten. Lies die Sicherung erst ein, wenn der Abgleich
+  fertig ist – sonst zählen Power-Hours, Werte und Notizen doppelt." and reading it in asks first ("Trotzdem einlesen").
+- **What the app keeps:** the file wins as before, also a cleared mark – but an empty note in the file keeps the app's
+  note (marks and days), and a day the app has as "Krank" or "Urlaub" stays so when the file calls it otherwise, with
+  an orange line ("Fr 27.11.: bleibt „Urlaub“ – die Datei sagt „Arbeitstag“.").
+- **Large files** (above about 200 KB, a year's backup) stay out of the text field – one line "Thalia Sicherung
+  2026-11-22.csv · 3,7 MB" with "Datei entfernen". Reading and comparing run off the main thread ("Sicherung wird
+  gelesen …"); applying is one save, with the hint "Sicherung wird eingespielt – bitte warten". Only what the file is
+  about is read from the app (its weeks; records only with `record` rows; work and notes only with such rows).
+- **Read again before applying:** right before the import the file is compared with the app again. Has a week got a
+  plan meanwhile (another device), the preview shows the replacement and asks "KW48 ersetzen?" instead of mixing the
+  plans.
+- **Another week than chosen** (the plan import with the prompt): a file that plans exactly one other week gets "Die CSV
+  ist für KW49 – gewählt ist KW48." and importing asks ("Trotzdem KW49 importieren"; or ask ChatGPT to correct the week).
+  Files with several weeks have no such line.
+- **The same backup on two devices** (or read in while iCloud was still loading): work blocks and notes keep the id of
+  their original (`importID`); every device merges a restored copy with its original and with the other copies – the
+  original stays, else the oldest copy; another copy's fields count only when it was edited later, so a restored copy
+  never rolls back what changed after the backup. Values have no id: for 7 days after reading a backup in
+  (UserDefaults `restore.window`, per device) the values it wrote are compared after every sync with older copies of the
+  same measurement and day – the same values (value, text, note, estimate; not the time) → the restored copies go to
+  „Zuletzt gelöscht“.
+- **Widerrufen** in the toast takes back what an import added – work blocks, notes and reflections – and gives the
+  days it changed their type and note back, besides the weeks it replaced (archive). It appears whenever there is
+  such a thing. Marks and values of a week that wasn't replaced stay. A closed week whose days or work blocks went
+  back is scored again, as after any change by hand (on a Mac, Apple Watch or iPad by the rules of „Who scores“).
+
+### Automatic backups and „Letzte Sicherung“
+
+- **„Letzte Sicherung“ for all devices:** after every backup by hand, the synced record `backup.last`
+  (`{"at":"…","device":"iPhone","v":1}`, the kind of device) says when and where; Einstellungen → Deine Daten shows
+  "Letzte Sicherung: 22.11.2026 am iPhone (vor 3 Tagen) · automatisch: 23.11.2026 auf diesem Gerät" or "Noch keine
+  Sicherung". The week's closing reminds only when **no** device has made a backup by hand for 30 days ("Letzte
+  Sicherung vor 34 Tagen – jetzt sichern?").
+- **Weekly file:** iPhone and Mac write a backup themselves at most every 7 days when Thalia goes to the background –
+  "Thalia Sicherung 2026-11-23.csv" in Application Support/Sicherungen of the device (device backup or Time Machine
+  include it), written atomically and never over an existing file. Only with iCloud (after the device's first sync) or
+  local storage – never in `-Demo`, the tour's practice page or a store that only lives in memory. Kept: the 4 newest
+  and one per month for 6 months; after an unusually small file (less than half the largest kept one) nothing is
+  removed and Einstellungen says "Letzte automatische Sicherung auffällig klein – ältere bleiben". Einstellungen → Deine
+  Daten → Sicherungen lists them (date, size, "Teilen…"). Per device: UserDefaults `backup.lastAuto`.
+
+**Older versions** (1.9.0 and earlier) list the `sicherung`, `wertung` and `change` rows and the five plain `record`
+rows under „Nicht gelesen“ and import the rest as before; they ignore the time of a single value and read `1.1250`
+correctly.

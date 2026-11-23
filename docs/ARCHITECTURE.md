@@ -30,8 +30,8 @@ Packages/ThaliaCore   all rules, Foundation only, Swift Testing on Linux:
   DemoV10              v10 demo: two segments, results, three books, category week scores, inbox of the source "Demo"
 Shared/                compiled into the app, the Mac app and the watch app:
   Models               SwiftData models (CloudKit rules: defaults, no relationships – keys; HealthValue device-only)
-  TrackerStore(+Import, +Range)  every change: marks, entries, work + timer, notes, reflections, overrides, items, import/export,
-                       trash; past weeks (copy plan, paper score); the range report over several weeks
+  TrackerStore(+Import, +Range)  every change: marks, entries, work (power-hours), notes, reflections, overrides, items,
+                       import/export, trash; past weeks (copy plan, paper score); the range report over several weeks
   TrackerStore+Records v10 records: reads by prefix / IN predicate (in-memory fallback, verifyPrefixQuery), one copy per key,
                        RecordChange (undo), trash cascade, results + entries, reading list + readings, segments (beginSegment =
                        one undo group), freeze rule (Grundregel 2) + recompute, score.<week> + backfill, mappings, inbox
@@ -42,11 +42,11 @@ Shared/                compiled into the app, the Mac app and the watch app:
   WeekContext / WeekReader   one week read live (@Query) and scored once – used by every screen, the widget snapshot and the watch;
                        v10: segment, results, GoalTrack, derived values / work / ticks through WeekExtras (own records win)
   Persistence          ModelStore.open (own container, device-only Health store), demo + practice stores
-  WidgetBridge, WorkActivity   widget snapshot in the App Group; Live Activity attributes
+  WidgetBridge, WidgetPublisher, WidgetActions   widget snapshot in the App Group, ✓ from the widget
 App/Sources            iOS + macOS app (German UI):
   AppModel             tab/sidebar, the one sheet, selected day/week, actions with Undo, deep links, launch arguments
   RootView             iPhone/iPad tabs (Heute, Woche, Ziele, Rückblick) + bottom accessory; Mac split view; sheets; tour
-  TodayView            the day: work (+PH, timer), measurements (+, Health), items by category, notes
+  TodayView            the day: work (+PH, „aus Theo“), measurements (+, Health), items by category, notes
   WeekView             the weekly sheet: items × Mo–So, week score, ten goal bars, weekly targets with pace
   ArchiveCard          v9: the week's „Archiv“ card – „Wertung laut Unterlagen“ / „Nach heutigen Regeln“, grades Mo–So, no mapping
   GoalsView / ReviewView   the ten goals (year progress, KW49 review), history across the KW42 change
@@ -69,10 +69,11 @@ App/Sources            iOS + macOS app (German UI):
                        eintragen“ / „Lesen“; Einstellungen → „Verbundene Apps“; Heute: blocks „aus Theo“, ticks „⇄ George · …“;
                        Ausgaben: rows „aus Finn“; measure editor „Quelle“
   PDFExport / RangePDF   week and day PDF; the PDF report over several weeks (page by page, PDFKit preview)
-  Services             reminders (UNUserNotificationCenter), HealthService (HealthKit, read-only), Live Activity
+  Services             reminders (UNUserNotificationCenter), HealthService (HealthKit, read-only)
   Intents              App Shortcuts: Power-Hour erfassen, Messwert eintragen, Stand des Tages, Tag abschließen
-Watch/Sources          today's score, +1 PH / timer, measurements +, open items
-Widgets/Sources        Heute and Woche widgets (Home + Lock Screen), Power-Hour Live Activity
+Watch/Sources          ring, open items, counters, power-hours with Bereich and Wofür, measurements
+Widgets/Sources        Heute and Woche widgets (Home + Lock Screen), Control Center (Erfassen, Power-Hours, Ausgabe)
+WatchWidgets/Sources   the watch complication
 Vendor/BinisoftKit     shared kit (synced from the handbook, v1)
 ```
 

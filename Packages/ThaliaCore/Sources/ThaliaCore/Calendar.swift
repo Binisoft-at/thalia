@@ -83,7 +83,7 @@ public struct DayKey: Hashable, Comparable, Codable, Sendable, CustomStringConve
     /// "2026-11-02"
     public var string: String {
         let c = components
-        return String(format: "%04d-%02d-%02d", c.year, c.month, c.day)
+        return Format.pad(c.year, 4) + "-" + Format.pad(c.month, 2) + "-" + Format.pad(c.day, 2)
     }
 
     public var description: String { string }
@@ -251,7 +251,7 @@ public struct WeekKey: Hashable, Comparable, Codable, Sendable, CustomStringConv
     }
 
     /// "2026-W45"
-    public var string: String { String(format: "%04d-W%02d", year, week) }
+    public var string: String { Format.pad(year, 4) + "-W" + Format.pad(week, 2) }
     public var description: String { string }
 
     /// "KW45"
@@ -284,6 +284,24 @@ public struct WeekKey: Hashable, Comparable, Codable, Sendable, CustomStringConv
             return "\(start.day).–\(end.day). \(DayKey.monthShort[end.month - 1])"
         }
         return "\(start.day). \(DayKey.monthShort[start.month - 1]) – \(end.day). \(DayKey.monthShort[end.month - 1])"
+    }
+
+    /// With the year (v11 P1.8): "16.–22. Nov. 2026", "26. Okt. – 1. Nov. 2026", "28. Dez. 2026 – 3. Jan. 2027".
+    public var rangeLabelWithYear: String {
+        let start = monday
+        let end = sunday
+        if start.year == end.year { return "\(rangeLabel) \(end.year)" }
+        return "\(start.day). \(DayKey.monthShort[start.month - 1]) \(start.year) – \(end.day). \(DayKey.monthShort[end.month - 1]) \(end.year)"
+    }
+
+    /// The week "Wochenabschluss" is about on `day` (v11 P4.16): on Sunday this week; on another day the
+    /// week before when it has a plan or archive data (`hasData`) and is still open; otherwise this week
+    /// (a holiday week without a plan isn't offered).
+    public static func toClose(on day: DayKey, isClosed: (WeekKey) -> Bool, hasData: (WeekKey) -> Bool) -> WeekKey {
+        let current = day.week
+        guard day.weekday != .sunday else { return current }
+        let previous = current.adding(weeks: -1)
+        return hasData(previous) && !isClosed(previous) ? previous : current
     }
 
     public static func < (lhs: WeekKey, rhs: WeekKey) -> Bool {

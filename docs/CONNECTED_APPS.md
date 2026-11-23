@@ -1,8 +1,9 @@
 # Verbundene Apps – Binisoft-Austausch (Format v1)
 
 Ab Thalia 1.9.0 liefern andere Binisoft-Apps Thalia automatisch Daten: Theo erledigte Aufgaben und Power-Hours, George
-Workouts, Nina Kalorien und Makros, Finn Ausgaben und Vermögen. Diese Seite erklärt, wie das funktioniert, was du dafür
-tun musst, und enthält je App einen Auftrag zum Einfügen in deren Session. Plan: [TASKS-v10.md](TASKS-v10.md) §1.5–1.6.
+Workouts, Nina Kalorien und Makros, Finn Ausgaben, Vermögen und Sparquote – ab Thalia 1.10.0 auch Kontostände. Diese
+Seite erklärt, wie das funktioniert, was du dafür tun musst, und enthält je App einen Auftrag zum Einfügen in deren
+Session. Plan: [TASKS-v10.md](TASKS-v10.md) §1.5–1.6; Finn ab 1.10.0: [TASKS-v11.md](TASKS-v11.md) §1.5.
 
 Inhalt: [1. So funktioniert es](#1-so-funktioniert-es) · [2. Deine Aufgaben](#2-deine-aufgaben) ·
 [3. Aufträge für die anderen Apps](#3-aufträge-für-die-anderen-apps) · [4. Für Entwickler: was wo liegt](#4-für-entwickler-was-wo-liegt) ·
@@ -32,14 +33,16 @@ Inhalt: [1. So funktioniert es](#1-so-funktioniert-es) · [2. Deine Aufgaben](#2
 - **Thalia liest und legt in ihren Eingang.** Thalia sieht nach beim Start, im Vordergrund, alle 5 Minuten solange sie
   offen ist, nach ihrem eigenen iCloud-Abgleich, beim Tageswechsel und wenn eine App „etwas Neues“ meldet. Je App und
   Tag speichert sie die Datei im synchronisierten Eingang; ab da sehen alle Geräte mit Thalia die Werte – auch die
-  Watch. Der Eingang kommt in die Sicherung („Alles als CSV“), denn die Apps räumen ihre Dateien nach 62 Tagen auf.
+  Watch. Der Eingang kommt in die Sicherung („Sicherung erstellen…“), denn die Apps räumen ihre Dateien nach 62 Tagen
+  auf.
 - **Berechnet, nicht geschrieben.** Thalia legt für fremde Daten nie eigene Haken, Arbeitsblöcke oder Einträge an. Sie
   rechnet sie in jeder Woche dazu, so wie heute die Werte aus Apple Health. Verschwindet etwas in der anderen App (eine
   Aufgabe wieder offen), verschwindet auch die Wirkung in Thalia.
 - **Eigenes gewinnt immer.** Ein eigener Haken – auch ein geleerter – geht vor dem abgeleiteten; ein eigener Eintrag
   für Messwert und Tag ersetzt den Wert aus der App; „Übernehmen“ macht aus einem Power-Hour-Block „aus Theo“ einen
-  eigenen. Abgeschlossene Wochen vor dem aktuellen Abschnitt bleiben, wie sie gewertet wurden (nur „Neu berechnen“ in
-  der Woche ändert sie).
+  eigenen. Eine Notiz an einem abgeleiteten ✓ macht ihn zum eigenen – er bleibt, auch wenn die Tatsache später
+  verschwindet. Abgeschlossene Wochen vor dem aktuellen Abschnitt bleiben, wie sie gewertet wurden (nur „Neu
+  berechnen“ in der Woche ändert sie).
 - **Grenze: dasselbe Gerät.** Die App Group ist ein Ordner auf *einem* Gerät. Werte von Theo erreichen Thalia nur über
   ein Gerät, auf dem **beide** Apps installiert sind und **Thalia geöffnet wird**. Läuft Theo nur auf dem Mac, muss
   Thalia auf dem Mac ab und zu offen sein. Hinweis in Thalia: „Werte aus anderen Apps erscheinen, sobald Thalia auf
@@ -50,7 +53,8 @@ Inhalt: [1. So funktioniert es](#1-so-funktioniert-es) · [2. Deine Aufgaben](#2
 - **Apple Health nie.** Werte, die aus Apple Health stammen, gehen nie in den Austausch (Thalias Eingang liegt in
   iCloud; Richtlinie 5.1.3(ii)). Thalia liest Health wie bisher selbst auf dem Gerät.
 - **Thalias Katalog.** Thalia schreibt `Thalia/exchange/catalog.json` mit ihrer Struktur – Ziele, Kategorien, Messwerte
-  der Woche, Ergebnisse, nie Werte. Daraus bietet Theo im Gruppen-Editor die Auswahl „Thalia-Kategorie“ an. Schalter:
+  der Woche, Ergebnisse, nie Werte. Daraus bietet Theo im Gruppen-Editor die Auswahl „Thalia-Kategorie“ an, und Finn
+  zeigt je Zeile, wofür sie in Thalia zählt (ab 1.10.0 steht bei jedem Ergebnis seine Quelle, `source`). Schalter:
   Einstellungen → Verbundene Apps → „Thalia-Katalog bereitstellen“ (Standard ein).
 - **Später (nicht in 1.9.0):** ein Weg über den gemeinsamen iCloud-Container `iCloud.at.binisoft.shared` – dann muss
   Thalia nicht mehr auf demselben Gerät geöffnet werden; außerdem App Intents „Punkt erledigen“ und eine
@@ -64,14 +68,21 @@ Was wo in Thalia ankommt:
 | Theo | Power-Hours (`ph`) | Heute: Arbeitsblock „aus Theo“ in der zugeordneten Kategorie (nur lesen, zählt für die Woche, „Übernehmen“); ohne Kategorie „ohne Zuordnung“ |
 | George | Workouts (`workout.done`, je Vorlage) | Messwert `app:george:workout=<Vorlage>` zählt sie; ein verknüpfter Punkt wie „Krafttraining“ bekommt ✓ „⇄ George · Push“ |
 | Nina | Tageswerte (`kcal`, `protein_g`, `carbs_g`, `fat_g`, `water_ml`) | Messwert `app:nina:kcal` usw. zeigt den Tageswert; ein eigener Eintrag ersetzt ihn |
-| Finn | Ausgaben je Gruppe (`spending`) | Ausgaben-Messwert `app:finn:spending`: Zeilen „aus Finn – in Finn ändern“, eigene Ausgaben kommen dazu |
-| Finn | Vermögen (`net_worth`) | Ergebnis eines Jahresziels mit Quelle `app:finn:net_worth` (letzter Wert) |
+| Finn | Ausgaben je Gruppe (`spending`, jede Gruppe einzeln) | Ausgaben-Messwert `app:finn:spending` (alle Gruppen) oder `app:finn:spending=<Gruppe>`: Zeilen „aus Finn – in Finn ändern“, eigene Ausgaben kommen dazu |
+| Finn | Vermögen (`net_worth`, an jedem Tag mit Änderung) | Ergebnis eines Jahresziels (Art „Zielwert“) mit Quelle `app:finn:net_worth` – der letzte Wert zählt |
+| Finn | Sparquote (`savings_rate`, je Monat) | Ergebnis (Art „Zielwert“) mit Quelle `app:finn:savings_rate` (letzter Wert) |
+| Finn | Kontostände (`account_balance`, je Konto oder Kontogruppe, ab Thalia 1.10.0) | Ergebnis (Art „Zielwert“) mit Quelle `app:finn:account_balance=<Konto>` („Finn · Kontostand · Girokonto“, letzter Wert) – immer ein bestimmtes Konto, kein „alle“ |
+
+Vermögen, Sparquote und Kontostände sind **Quellen für Ergebnisse**, nicht für Messwerte: ein Messwert in € zählt in
+Thalia als Ausgabe. Ab 1.10.0 bietet der Messwert-Editor sie darum nicht mehr an; ein Messwert, der eine davon schon
+nutzt, bleibt und zeigt „Für ein Jahresziel-Ergebnis gedacht – ein Messwert in € zählt als Ausgabe.“
 
 In Einstellungen → **Verbundene Apps** steht je App: zuletzt gesehen, Formatversion, Tatsachen der letzten 30 Tage,
 „**Ohne Zuordnung**“ (Gruppen ohne Kategorie, mit Auswahl), die Zuordnungen mit ihrer Herkunft („Zuordnung aus Theo“ /
 „Zuordnung in Thalia“) und „Zuordnung prüfen“, wenn sich ein Kategorie-Titel geändert hat, darunter „**Was kommt an**“
-(die letzten Tage, nur lesen). `-Demo` und die Übungsseite der Tour zeigen das mit einer Beispiel-Quelle „Demo“ – der
-echte Speicher bekommt nie Beispieldaten.
+(die letzten Tage, nur lesen; ein Kontostand mit seinem Konto, z. B. „Kontostand 1.234,50 € · Girokonto“). `-Demo`
+und die Übungsseite der Tour zeigen das mit einer Beispiel-Quelle „Demo“ – der echte Speicher bekommt nie
+Beispieldaten.
 
 ## 2. Deine Aufgaben
 
@@ -80,7 +91,8 @@ Reihenfolge einhalten – Schritte 1–3 zuerst.
 1. **Alle Geräte auf Thalia 1.9.0** bringen (iPhone, iPad, Mac, Watch), *bevor* du Messwerte auf `app:…` oder
    `list:…` stellst oder Ergebnisse, Bücher und Abschnitte anlegst. Ältere Versionen behalten diese Quellen zwar
    unverändert, rechnen aber nichts damit und werten die Woche anders; Ergebnisse, Leseliste und Abschnitte kennen sie
-   nicht.
+   nicht. Finns Kontostände und die Anzeige in Finn, wofür eine Zeile zählt, brauchen Thalia 1.10.0 auf allen Geräten
+   (1.9.0 behält Kontostände als „nicht verwendet“ und schreibt den Katalog ohne `source`).
 2. **Thalia einmal auf jedem Gerät öffnen**, nach dem Update – vor allem auf den Geräten, auf denen Theo, George, Nina
    oder Finn laufen. Nur dort kommen deren Werte an; später reicht es, Thalia dort ab und zu zu öffnen.
 3. **App Group im Apple-Developer-Portal prüfen:** Certificates, Identifiers & Profiles → Identifiers → die App IDs von
@@ -92,9 +104,13 @@ Reihenfolge einhalten – Schritte 1–3 zuerst.
    Testdateien auf `main`; vorher liefern die Links 404, und die Session baut das Format von Hand nach, statt die Datei
    zu kopieren. Dann je App den Auftrag aus Abschnitt 3 in die Session ihres Repos kopieren (ein Block = ein Auftrag,
    nichts weglassen). Fragen der Session beantworten; ihr Bericht nennt Bundle-IDs, Schalter und offene Punkte.
+   **Mit Thalia 1.10.0:** den neuen Finn-Auftrag (3.4) erst einfügen, wenn 1.10.0 auf `main` ist – er braucht die neue
+   `ExchangeFormat.swift` mit `account_balance`. Theo, George und Nina, die ihren Auftrag schon umgesetzt haben, holen
+   nur diese neue Datei (nur Zusätze, Abschnitt 4); sonst ändert sich für sie nichts.
 5. **Nach ihren Builds** (TestFlight, auf denselben Geräten installiert): jede App einmal öffnen und die Schalter
-   „An Thalia liefern“ prüfen – in Finn je Kennzahl einschalten, was Thalia bekommen soll (Standard aus). Dann Thalia
-   öffnen → Einstellungen → Verbundene Apps: die Apps erscheinen mit „zuletzt gesehen“.
+   „An Thalia liefern“ prüfen – in Finn jede Zeile einzeln einschalten (Standard aus) – daneben steht, wofür sie in
+   Thalia zählt (bis du in Schritt 7 und 8 verknüpft hast: „noch nicht in Thalia verknüpft“). Dann Thalia öffnen →
+   Einstellungen → Verbundene Apps: die Apps erscheinen mit „zuletzt gesehen“.
 6. **Zuordnen:** in Theo im Gruppen-Editor „Thalia-Kategorie“ wählen (dafür muss Thalia auf diesem Gerät einmal offen
    gewesen sein, „Thalia-Katalog bereitstellen“ an) – und/oder in Thalia unter Einstellungen → Verbundene Apps →
    „Ohne Zuordnung“ je Gruppe die Kategorie. Theos Wahl geht vor; „Zuordnung prüfen“ beachten.
@@ -105,22 +121,26 @@ Reihenfolge einhalten – Schritte 1–3 zuerst.
    zählt doppelt. Dann die eigenen Blöcke dieser Tage löschen – oder die Gruppe weder in Theo noch in Thalia zuordnen,
    solange du lieber von Hand einträgst: ihre Power-Hours stehen dann nur „ohne Zuordnung“ da und zählen nirgends.
 7. **Messwerte verbinden:** im Messwert-Editor → „Quelle“ → „Verbundene App“ → App → Art → Eintrag (aus den Vorlagen
-   und Gruppen der App; eine Kennzahl wie Kalorien, Protein oder Vermögen hat kein „Eintrag“ – die Art ist schon die
-   Kennzahl), oder im Plan in der Spalte `link` (z. B. `app:george:workout=<Vorlagen-id>`,
-   `app:theo:task`, `app:nina:kcal`, `app:finn:spending`, für Bücher `list:buch`). Punkte wie gewohnt mit dem Messwert
+   und Gruppen der App; eine Kennzahl wie Kalorien oder Protein hat kein „Eintrag“ – die Art ist schon die Kennzahl;
+   Vermögen, Sparquote und Kontostand gibt es hier ab 1.10.0 nicht – sie gehören zu Ergebnissen, Schritt 8), oder im
+   Plan in der Spalte `link` (z. B. `app:george:workout=<Vorlagen-id>`, `app:theo:task`, `app:nina:kcal`,
+   `app:finn:spending`, für Bücher `list:buch`). Punkte wie gewohnt mit dem Messwert
    verknüpfen. Der Planungs-Prompt sagt ChatGPT, Verknüpfungen unverändert zu übernehmen; fehlt eine trotzdem, behält
    der Import die Quelle der Vorwoche (Hinweis in der Vorschau). Format: [IMPORT.md](IMPORT.md).
 8. **Ergebnisse, Bücher, Abschnitt:** Ziele → ein Ziel → „Ergebnisse“ → „Ergebnis anlegen“ (z. B. „Bücher“ zählen aus
-   der Leseliste, „Vermögen“ mit Quelle `app:finn:net_worth`, „Website online“ abhaken); Bücher unter Ziele →
+   der Leseliste, „Vermögen“ als „Zielwert“ mit Quelle „Verbundene App“ → Finn → Vermögen, also
+   `app:finn:net_worth`, ebenso die Sparquote; ab 1.10.0 ein Kontostand mit Finn → Kontostand → Konto, also
+   `app:finn:account_balance=<Konto>` – hier gibt es kein „alle“; „Website online“ abhaken); Bücher unter Ziele →
    Jahreskarte → ••• → „Leseliste“ → + („Buch hinzufügen“) – ab dem ersten Buch auch über die Karte „Gerade dabei“;
    Stand über „Erfassen“ → „Lesen“ oder Ziele → Jahreskarte → ••• → „Lesen…“ (auch rückwirkend). Bei Bedarf Ziele →
    Jahreskarte → ••• → „Neuen Abschnitt beginnen…“.
    Gut zu wissen: Stand und Ziel eines Ergebnisses stehen im Block „Jahresziel-Ergebnisse“ des Planungs-Prompts und
-   der Wochenberichte (die du in ChatGPT einfügst) und im Backup „Alles als CSV“ – bei „Vermögen“ aus Finn also der
-   Betrag. Werte aus Apple Health stehen dort nie. Wer das nicht will, gibt dem Ergebnis keine Quelle aus Finn.
+   der Wochenberichte (die du in ChatGPT einfügst) und in der Sicherung („Sicherung erstellen…“) – bei „Vermögen“ oder
+   einem Kontostand aus Finn also der Betrag. Werte aus Apple Health stehen dort nie. Wer das nicht will, gibt dem
+   Ergebnis keine Quelle aus Finn.
 9. **Nach ein paar Tagen prüfen:** Verbundene Apps → „Was kommt an“; in Heute die Blöcke „aus Theo“ und die Haken
-   „⇄ George · …“; in den Ausgaben die Zeilen „aus Finn“.
-10. **Eine Frage beantworten** (Abschnitt 5, Punkt 1): zählt „über 8,0“ ab 8,00 oder erst ab 8,01?
+   „⇄ George · …“; in den Ausgaben die Zeilen „aus Finn“; in Finn unter Einstellungen → „Thalia“ je Zeile
+   „→ Thalia: …“.
 
 ## 3. Aufträge für die anderen Apps
 
@@ -221,7 +241,7 @@ Felder einer Tatsache:
 | `id` | Pflicht | Stabil und auf allen Geräten gleich, in der Datei eindeutig. Aus der **synchronisierten** id des Datensatzes (z. B. sein UUID-Feld) – nie `persistentModelID` oder `NSManagedObjectID` (je Gerät verschieden). Präfix je Art, z. B. `"task-…"`. |
 | `kind` | Pflicht | Art, siehe unten. |
 | `origin` | Pflicht | `"app"` = in Theo selbst erfasst, `"health"` = aus Apple Health. Ohne `origin` (oder mit anderem Wert) verwendet Thalia die Tatsache nicht. |
-| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl. Über `ref` ordnet Bini in Thalia zu. |
+| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl, Konto. Über `ref` ordnet Bini in Thalia zu. |
 | `refTitle` | empfohlen | Anzeigename von `ref` („Arbeit/Kunden“). |
 | `title` | optional | Titel der Sache („Rechnung schreiben“); Thalia zeigt ihn an. |
 | `value` | je nach Art | JSON-Zahl mit Punkt (`1.5`), keine Zeichenkette. |
@@ -242,14 +262,15 @@ Arten (v1) und was Thalia damit tut:
 | `workout.done` | ein abgeschlossenes Workout | `ref` = Vorlage | zählt für `app:<quelle>:workout` (alle) und `app:<quelle>:workout=<ref>` |
 | `habit.done` | eine erledigte Gewohnheit | `ref` = Gewohnheit | zählt für `app:<quelle>:habit[=<ref>]` |
 | `ph` | Power-Hours (1 PH = 50 konzentrierte Minuten) | `value` in PH mit `unit` `"PH"`; mit `unit` `"min"` ist `value` in Minuten (Thalia teilt durch 50); `ref` = Gruppe | ein Arbeitsblock „aus <App>“ in der Kategorie aus `thalia.category`, sonst aus Thalias Zuordnung, sonst „ohne Zuordnung“; Summe für `app:<quelle>:ph[=<ref>]` |
-| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
+| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>[=<ref>]` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
 | `spending` | Ausgaben einer Gruppe an dem Tag (Tagessumme) | `value` (positiv), `currency`, `ref` = Gruppe | Summe für `app:<quelle>:spending[=<ref>]` |
 
 Bei gezählten Arten (`*.done`) zählt jede Tatsache als 1; `value` wird dort nicht gelesen. Unbekannte Arten und
 Kennzahlen behält Thalia und zeigt sie als „nicht verwendet“ – kein Fehler, aber keine Wirkung. Neue Arten nicht
 erfinden, sondern im Bericht vorschlagen.
 
-Kennzahlen für `value` (feste Tabelle v1):
+Kennzahlen für `value` (Tabelle v1 – sie wächst nur; eine neue Kennzahl behalten ältere Thalia-Versionen als „nicht
+verwendet“):
 
 | `metric` | `agg` | Einheit | Name |
 |---|---|---|---|
@@ -261,6 +282,11 @@ Kennzahlen für `value` (feste Tabelle v1):
 | `net_worth` | last | € | Vermögen |
 | `savings_rate` | last | % | Sparquote |
 | `body_weight_kg` | last | kg | Gewicht |
+| `account_balance` | last | € | Kontostand (ab Thalia 1.10.0) |
+
+`account_balance` ist der Stand eines Kontos oder einer Kontogruppe am Ende des Tages: `ref` = id des Kontos bzw. der
+Gruppe, `refTitle` = ihr Name, eine Tatsache je Konto. Thalia liest ihn nur für ein bestimmtes Konto
+(`app:<quelle>:account_balance=<ref>`). Bei allen anderen Kennzahlen ist `ref` die Kennzahl selbst (`"kcal"`).
 
 **Herkunft:** Thalias Eingang liegt in iCloud, und Gesundheitsdaten dürfen nicht nach iCloud (App Review Richtlinie
 5.1.3(ii)). Darum schreibt Theo **keine Werte, die aus Apple Health stammen**. Nur wenn sich ein Wert gar nicht
@@ -318,9 +344,11 @@ des Geräts (erledigt am, Ende des Workouts, Datum des Eintrags). Keine Tage in 
 - Felder: `v` (1), `source` (wie in den Tagesdateien), `app` (Anzeigename „Theo“), `appVersion`, `generatedAt`,
   `refs` = alle stabilen ids, die Bini in Thalia auswählen können soll, je ein Objekt mit `id`, `title` und `kind`.
 - `kind` eines refs: `"group"` (Gruppe von Aufgaben, Power-Hours oder Ausgaben), `"workout"` (Workout-Vorlage),
-  `"habit"`, `"metric"` (Kennzahl). Thalias Messwert-Editor bietet unter „Verbundene App → Art → Eintrag“ die passenden
-  an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben → `group`, Gewohnheiten → `habit`, Kennzahlen → `metric`; ein
-  ref ohne `kind` passt zu allem.
+  `"habit"`, `"account"` (Konto oder Kontogruppe, ab Thalia 1.10.0), `"metric"` (Kennzahl). Thalias Editoren bieten
+  unter „Verbundene App → Art → Eintrag“ die passenden an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben →
+  `group`, Gewohnheiten → `habit`, Kontostand → `account`; ein ref ohne `kind` passt zu allem. Andere Kennzahlen haben
+  kein „Eintrag“ (der `ref` ihrer Tatsachen ist die Kennzahl selbst) – ein ref mit `"kind":"metric"` schadet nicht,
+  Thalia bietet ihn aber nirgends an.
 - Schreiben: sofort, wenn sich `refs` oder die App-Version ändern, sonst höchstens einmal am Tag (Herzschlag – Thalia
   zeigt daraus „zuletzt gesehen“). Atomar, danach die Darwin-Benachrichtigung. `source` muss zum Ordner passen.
 
@@ -339,7 +367,7 @@ ist aus).
 | `goals` | `[{"key":"3","title":"Arbeit"}]` |
 | `categories` | `[{"key":"3.2","goal":"3","title":"Kunden","segment":"seg-2"}]` – `key` ist Text („1.1“, „5“) |
 | `measures` | Messwerte der Woche, je mit `code`, `title`, `unit`, `link` (die Quelle des Messwerts, z. B. `"app:george:workout=tpl-1"`) und `category` |
-| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`) und `goal` |
+| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`), `goal` und – ab Thalia 1.10.0 – `source`: woher der Wert kommt (`"app:finn:net_worth"`, `"app:finn:account_balance=acc-giro"`, `"list:buch"`); fehlt bei Ergebnissen mit eigenen Einträgen und in Katalogen von Thalia vor 1.10.0 |
 
 Ein vollständiges Beispiel steht bei den Testdateien (§10).
 
@@ -378,7 +406,11 @@ Thalias Referenz für das Format ist eine einzige Datei, nur Foundation, Swift 5
 (z. B. ins Core-Paket von Theo; die Typen sind `public`):
 https://github.com/Binisoft-at/thalia/blob/main/Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift
 – Testdateien: https://github.com/Binisoft-at/thalia/tree/main/Packages/ThaliaCore/Tests/ThaliaCoreTests/Fixtures/exchange
-(öffentlich, sobald Thalia 1.9.0 auf `main` ist). Die Datei enthält `BinisoftExchange` (Pfade, Dateinamen, Aufräumen,
+(öffentlich auf `main`). **Stand Thalia 1.10.0:** die Datei hat nur Zusätze bekommen – die Kennzahl `account_balance`,
+das Katalog-Feld `results[].source` und toleranteres Lesen (eine Zahl, die nicht endlich ist oder dem Betrag nach ab
+10¹², gilt als fehlend; ein unlesbares `v` gilt als 1). Wer sie schon aus Thalia 1.9.0 kopiert hat, ersetzt sie durch
+die neue Fassung; eigener Code, der sie benutzt, bleibt gültig. Die Datei enthält `BinisoftExchange` (Pfade,
+Dateinamen, Aufräumen,
 atomares Schreiben, Kodieren), `ExchangeOrigin`, `ExchangeKind`, `ExchangeMetric.table`, `ExchangeFact`,
 `ExchangeDayFile`, `ExchangeRef`, `ExchangeSourceInfo`, `ExchangeCatalog`, `ExchangeReader` (tolerantes Lesen mit
 deutschen Gründen), `ExchangeDate` und `ExchangeHash` (FNV-1a 64 Bit). Ist sie nicht erreichbar, nach §4–§8 selbst
@@ -545,7 +577,7 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
 }
 ```
 
-`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur.
+`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur; ab Thalia 1.10.0 mit `results[].source`.
 
 ```json
 {
@@ -557,21 +589,26 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
   "goals": [
     { "key": "1", "title": "Gesundheit" },
     { "key": "3", "title": "Arbeit" },
-    { "key": "5", "title": "Lesen" }
+    { "key": "5", "title": "Lesen" },
+    { "key": "8", "title": "Finanzen" }
   ],
   "categories": [
     { "key": "1.2", "goal": "1", "title": "Sport / Verein", "segment": "seg-2" },
     { "key": "3.2", "goal": "3", "title": "Kunden", "segment": "seg-2" },
-    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" }
+    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" },
+    { "key": "8.1", "goal": "8", "title": "Ausgaben", "segment": "seg-2" }
   ],
   "measures": [
     { "code": "workouts", "title": "Workouts", "unit": "Stück", "link": "app:george:workout=tpl-1", "category": "1.2" },
     { "code": "kunden_aufgaben", "title": "Aufgaben Kunden", "unit": "Stück", "link": "app:theo:task", "category": "3.2" },
-    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" }
+    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" },
+    { "code": "ausgaben", "title": "Ausgaben", "unit": "€", "link": "app:finn:spending", "category": "8.1" }
   ],
   "results": [
-    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5" },
-    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" }
+    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" },
+    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5", "source": "list:buch" },
+    { "id": "res-worth", "title": "Vermögen", "kind": "value", "goal": "8", "source": "app:finn:net_worth" },
+    { "id": "res-giro", "title": "Puffer Girokonto", "kind": "value", "goal": "8", "source": "app:finn:account_balance=acc-giro" }
   ]
 }
 ```
@@ -686,7 +723,7 @@ Felder einer Tatsache:
 | `id` | Pflicht | Stabil und auf allen Geräten gleich, in der Datei eindeutig. Aus der **synchronisierten** id des Datensatzes (z. B. sein UUID-Feld) – nie `persistentModelID` oder `NSManagedObjectID` (je Gerät verschieden). Präfix je Art, z. B. `"task-…"`. |
 | `kind` | Pflicht | Art, siehe unten. |
 | `origin` | Pflicht | `"app"` = in George selbst erfasst, `"health"` = aus Apple Health. Ohne `origin` (oder mit anderem Wert) verwendet Thalia die Tatsache nicht. |
-| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl. Über `ref` ordnet Bini in Thalia zu. |
+| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl, Konto. Über `ref` ordnet Bini in Thalia zu. |
 | `refTitle` | empfohlen | Anzeigename von `ref` („Arbeit/Kunden“). |
 | `title` | optional | Titel der Sache („Rechnung schreiben“); Thalia zeigt ihn an. |
 | `value` | je nach Art | JSON-Zahl mit Punkt (`1.5`), keine Zeichenkette. |
@@ -707,14 +744,15 @@ Arten (v1) und was Thalia damit tut:
 | `workout.done` | ein abgeschlossenes Workout | `ref` = Vorlage | zählt für `app:<quelle>:workout` (alle) und `app:<quelle>:workout=<ref>` |
 | `habit.done` | eine erledigte Gewohnheit | `ref` = Gewohnheit | zählt für `app:<quelle>:habit[=<ref>]` |
 | `ph` | Power-Hours (1 PH = 50 konzentrierte Minuten) | `value` in PH mit `unit` `"PH"`; mit `unit` `"min"` ist `value` in Minuten (Thalia teilt durch 50); `ref` = Gruppe | ein Arbeitsblock „aus <App>“ in der Kategorie aus `thalia.category`, sonst aus Thalias Zuordnung, sonst „ohne Zuordnung“; Summe für `app:<quelle>:ph[=<ref>]` |
-| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
+| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>[=<ref>]` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
 | `spending` | Ausgaben einer Gruppe an dem Tag (Tagessumme) | `value` (positiv), `currency`, `ref` = Gruppe | Summe für `app:<quelle>:spending[=<ref>]` |
 
 Bei gezählten Arten (`*.done`) zählt jede Tatsache als 1; `value` wird dort nicht gelesen. Unbekannte Arten und
 Kennzahlen behält Thalia und zeigt sie als „nicht verwendet“ – kein Fehler, aber keine Wirkung. Neue Arten nicht
 erfinden, sondern im Bericht vorschlagen.
 
-Kennzahlen für `value` (feste Tabelle v1):
+Kennzahlen für `value` (Tabelle v1 – sie wächst nur; eine neue Kennzahl behalten ältere Thalia-Versionen als „nicht
+verwendet“):
 
 | `metric` | `agg` | Einheit | Name |
 |---|---|---|---|
@@ -726,6 +764,11 @@ Kennzahlen für `value` (feste Tabelle v1):
 | `net_worth` | last | € | Vermögen |
 | `savings_rate` | last | % | Sparquote |
 | `body_weight_kg` | last | kg | Gewicht |
+| `account_balance` | last | € | Kontostand (ab Thalia 1.10.0) |
+
+`account_balance` ist der Stand eines Kontos oder einer Kontogruppe am Ende des Tages: `ref` = id des Kontos bzw. der
+Gruppe, `refTitle` = ihr Name, eine Tatsache je Konto. Thalia liest ihn nur für ein bestimmtes Konto
+(`app:<quelle>:account_balance=<ref>`). Bei allen anderen Kennzahlen ist `ref` die Kennzahl selbst (`"kcal"`).
 
 **Herkunft:** Thalias Eingang liegt in iCloud, und Gesundheitsdaten dürfen nicht nach iCloud (App Review Richtlinie
 5.1.3(ii)). Darum schreibt George **keine Werte, die aus Apple Health stammen**. Nur wenn sich ein Wert gar nicht
@@ -783,9 +826,11 @@ des Geräts (erledigt am, Ende des Workouts, Datum des Eintrags). Keine Tage in 
 - Felder: `v` (1), `source` (wie in den Tagesdateien), `app` (Anzeigename „George“), `appVersion`, `generatedAt`,
   `refs` = alle stabilen ids, die Bini in Thalia auswählen können soll, je ein Objekt mit `id`, `title` und `kind`.
 - `kind` eines refs: `"group"` (Gruppe von Aufgaben, Power-Hours oder Ausgaben), `"workout"` (Workout-Vorlage),
-  `"habit"`, `"metric"` (Kennzahl). Thalias Messwert-Editor bietet unter „Verbundene App → Art → Eintrag“ die passenden
-  an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben → `group`, Gewohnheiten → `habit`, Kennzahlen → `metric`; ein
-  ref ohne `kind` passt zu allem.
+  `"habit"`, `"account"` (Konto oder Kontogruppe, ab Thalia 1.10.0), `"metric"` (Kennzahl). Thalias Editoren bieten
+  unter „Verbundene App → Art → Eintrag“ die passenden an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben →
+  `group`, Gewohnheiten → `habit`, Kontostand → `account`; ein ref ohne `kind` passt zu allem. Andere Kennzahlen haben
+  kein „Eintrag“ (der `ref` ihrer Tatsachen ist die Kennzahl selbst) – ein ref mit `"kind":"metric"` schadet nicht,
+  Thalia bietet ihn aber nirgends an.
 - Schreiben: sofort, wenn sich `refs` oder die App-Version ändern, sonst höchstens einmal am Tag (Herzschlag – Thalia
   zeigt daraus „zuletzt gesehen“). Atomar, danach die Darwin-Benachrichtigung. `source` muss zum Ordner passen.
 
@@ -804,7 +849,7 @@ ist aus).
 | `goals` | `[{"key":"3","title":"Arbeit"}]` |
 | `categories` | `[{"key":"3.2","goal":"3","title":"Kunden","segment":"seg-2"}]` – `key` ist Text („1.1“, „5“) |
 | `measures` | Messwerte der Woche, je mit `code`, `title`, `unit`, `link` (die Quelle des Messwerts, z. B. `"app:george:workout=tpl-1"`) und `category` |
-| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`) und `goal` |
+| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`), `goal` und – ab Thalia 1.10.0 – `source`: woher der Wert kommt (`"app:finn:net_worth"`, `"app:finn:account_balance=acc-giro"`, `"list:buch"`); fehlt bei Ergebnissen mit eigenen Einträgen und in Katalogen von Thalia vor 1.10.0 |
 
 Ein vollständiges Beispiel steht bei den Testdateien (§10).
 
@@ -843,7 +888,11 @@ Thalias Referenz für das Format ist eine einzige Datei, nur Foundation, Swift 5
 (z. B. ins Core-Paket von George; die Typen sind `public`):
 https://github.com/Binisoft-at/thalia/blob/main/Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift
 – Testdateien: https://github.com/Binisoft-at/thalia/tree/main/Packages/ThaliaCore/Tests/ThaliaCoreTests/Fixtures/exchange
-(öffentlich, sobald Thalia 1.9.0 auf `main` ist). Die Datei enthält `BinisoftExchange` (Pfade, Dateinamen, Aufräumen,
+(öffentlich auf `main`). **Stand Thalia 1.10.0:** die Datei hat nur Zusätze bekommen – die Kennzahl `account_balance`,
+das Katalog-Feld `results[].source` und toleranteres Lesen (eine Zahl, die nicht endlich ist oder dem Betrag nach ab
+10¹², gilt als fehlend; ein unlesbares `v` gilt als 1). Wer sie schon aus Thalia 1.9.0 kopiert hat, ersetzt sie durch
+die neue Fassung; eigener Code, der sie benutzt, bleibt gültig. Die Datei enthält `BinisoftExchange` (Pfade,
+Dateinamen, Aufräumen,
 atomares Schreiben, Kodieren), `ExchangeOrigin`, `ExchangeKind`, `ExchangeMetric.table`, `ExchangeFact`,
 `ExchangeDayFile`, `ExchangeRef`, `ExchangeSourceInfo`, `ExchangeCatalog`, `ExchangeReader` (tolerantes Lesen mit
 deutschen Gründen), `ExchangeDate` und `ExchangeHash` (FNV-1a 64 Bit). Ist sie nicht erreichbar, nach §4–§8 selbst
@@ -1016,7 +1065,7 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
 }
 ```
 
-`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur.
+`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur; ab Thalia 1.10.0 mit `results[].source`.
 
 ```json
 {
@@ -1028,21 +1077,26 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
   "goals": [
     { "key": "1", "title": "Gesundheit" },
     { "key": "3", "title": "Arbeit" },
-    { "key": "5", "title": "Lesen" }
+    { "key": "5", "title": "Lesen" },
+    { "key": "8", "title": "Finanzen" }
   ],
   "categories": [
     { "key": "1.2", "goal": "1", "title": "Sport / Verein", "segment": "seg-2" },
     { "key": "3.2", "goal": "3", "title": "Kunden", "segment": "seg-2" },
-    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" }
+    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" },
+    { "key": "8.1", "goal": "8", "title": "Ausgaben", "segment": "seg-2" }
   ],
   "measures": [
     { "code": "workouts", "title": "Workouts", "unit": "Stück", "link": "app:george:workout=tpl-1", "category": "1.2" },
     { "code": "kunden_aufgaben", "title": "Aufgaben Kunden", "unit": "Stück", "link": "app:theo:task", "category": "3.2" },
-    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" }
+    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" },
+    { "code": "ausgaben", "title": "Ausgaben", "unit": "€", "link": "app:finn:spending", "category": "8.1" }
   ],
   "results": [
-    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5" },
-    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" }
+    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" },
+    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5", "source": "list:buch" },
+    { "id": "res-worth", "title": "Vermögen", "kind": "value", "goal": "8", "source": "app:finn:net_worth" },
+    { "id": "res-giro", "title": "Puffer Girokonto", "kind": "value", "goal": "8", "source": "app:finn:account_balance=acc-giro" }
   ]
 }
 ```
@@ -1154,7 +1208,7 @@ Felder einer Tatsache:
 | `id` | Pflicht | Stabil und auf allen Geräten gleich, in der Datei eindeutig. Aus der **synchronisierten** id des Datensatzes (z. B. sein UUID-Feld) – nie `persistentModelID` oder `NSManagedObjectID` (je Gerät verschieden). Präfix je Art, z. B. `"task-…"`. |
 | `kind` | Pflicht | Art, siehe unten. |
 | `origin` | Pflicht | `"app"` = in Nina selbst erfasst, `"health"` = aus Apple Health. Ohne `origin` (oder mit anderem Wert) verwendet Thalia die Tatsache nicht. |
-| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl. Über `ref` ordnet Bini in Thalia zu. |
+| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl, Konto. Über `ref` ordnet Bini in Thalia zu. |
 | `refTitle` | empfohlen | Anzeigename von `ref` („Arbeit/Kunden“). |
 | `title` | optional | Titel der Sache („Rechnung schreiben“); Thalia zeigt ihn an. |
 | `value` | je nach Art | JSON-Zahl mit Punkt (`1.5`), keine Zeichenkette. |
@@ -1175,14 +1229,15 @@ Arten (v1) und was Thalia damit tut:
 | `workout.done` | ein abgeschlossenes Workout | `ref` = Vorlage | zählt für `app:<quelle>:workout` (alle) und `app:<quelle>:workout=<ref>` |
 | `habit.done` | eine erledigte Gewohnheit | `ref` = Gewohnheit | zählt für `app:<quelle>:habit[=<ref>]` |
 | `ph` | Power-Hours (1 PH = 50 konzentrierte Minuten) | `value` in PH mit `unit` `"PH"`; mit `unit` `"min"` ist `value` in Minuten (Thalia teilt durch 50); `ref` = Gruppe | ein Arbeitsblock „aus <App>“ in der Kategorie aus `thalia.category`, sonst aus Thalias Zuordnung, sonst „ohne Zuordnung“; Summe für `app:<quelle>:ph[=<ref>]` |
-| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
+| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>[=<ref>]` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
 | `spending` | Ausgaben einer Gruppe an dem Tag (Tagessumme) | `value` (positiv), `currency`, `ref` = Gruppe | Summe für `app:<quelle>:spending[=<ref>]` |
 
 Bei gezählten Arten (`*.done`) zählt jede Tatsache als 1; `value` wird dort nicht gelesen. Unbekannte Arten und
 Kennzahlen behält Thalia und zeigt sie als „nicht verwendet“ – kein Fehler, aber keine Wirkung. Neue Arten nicht
 erfinden, sondern im Bericht vorschlagen.
 
-Kennzahlen für `value` (feste Tabelle v1):
+Kennzahlen für `value` (Tabelle v1 – sie wächst nur; eine neue Kennzahl behalten ältere Thalia-Versionen als „nicht
+verwendet“):
 
 | `metric` | `agg` | Einheit | Name |
 |---|---|---|---|
@@ -1194,6 +1249,11 @@ Kennzahlen für `value` (feste Tabelle v1):
 | `net_worth` | last | € | Vermögen |
 | `savings_rate` | last | % | Sparquote |
 | `body_weight_kg` | last | kg | Gewicht |
+| `account_balance` | last | € | Kontostand (ab Thalia 1.10.0) |
+
+`account_balance` ist der Stand eines Kontos oder einer Kontogruppe am Ende des Tages: `ref` = id des Kontos bzw. der
+Gruppe, `refTitle` = ihr Name, eine Tatsache je Konto. Thalia liest ihn nur für ein bestimmtes Konto
+(`app:<quelle>:account_balance=<ref>`). Bei allen anderen Kennzahlen ist `ref` die Kennzahl selbst (`"kcal"`).
 
 **Herkunft:** Thalias Eingang liegt in iCloud, und Gesundheitsdaten dürfen nicht nach iCloud (App Review Richtlinie
 5.1.3(ii)). Darum schreibt Nina **keine Werte, die aus Apple Health stammen**. Nur wenn sich ein Wert gar nicht
@@ -1244,9 +1304,11 @@ des Geräts (erledigt am, Ende des Workouts, Datum des Eintrags). Keine Tage in 
 - Felder: `v` (1), `source` (wie in den Tagesdateien), `app` (Anzeigename „Nina“), `appVersion`, `generatedAt`,
   `refs` = alle stabilen ids, die Bini in Thalia auswählen können soll, je ein Objekt mit `id`, `title` und `kind`.
 - `kind` eines refs: `"group"` (Gruppe von Aufgaben, Power-Hours oder Ausgaben), `"workout"` (Workout-Vorlage),
-  `"habit"`, `"metric"` (Kennzahl). Thalias Messwert-Editor bietet unter „Verbundene App → Art → Eintrag“ die passenden
-  an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben → `group`, Gewohnheiten → `habit`, Kennzahlen → `metric`; ein
-  ref ohne `kind` passt zu allem.
+  `"habit"`, `"account"` (Konto oder Kontogruppe, ab Thalia 1.10.0), `"metric"` (Kennzahl). Thalias Editoren bieten
+  unter „Verbundene App → Art → Eintrag“ die passenden an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben →
+  `group`, Gewohnheiten → `habit`, Kontostand → `account`; ein ref ohne `kind` passt zu allem. Andere Kennzahlen haben
+  kein „Eintrag“ (der `ref` ihrer Tatsachen ist die Kennzahl selbst) – ein ref mit `"kind":"metric"` schadet nicht,
+  Thalia bietet ihn aber nirgends an.
 - Schreiben: sofort, wenn sich `refs` oder die App-Version ändern, sonst höchstens einmal am Tag (Herzschlag – Thalia
   zeigt daraus „zuletzt gesehen“). Atomar, danach die Darwin-Benachrichtigung. `source` muss zum Ordner passen.
 
@@ -1265,7 +1327,7 @@ ist aus).
 | `goals` | `[{"key":"3","title":"Arbeit"}]` |
 | `categories` | `[{"key":"3.2","goal":"3","title":"Kunden","segment":"seg-2"}]` – `key` ist Text („1.1“, „5“) |
 | `measures` | Messwerte der Woche, je mit `code`, `title`, `unit`, `link` (die Quelle des Messwerts, z. B. `"app:george:workout=tpl-1"`) und `category` |
-| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`) und `goal` |
+| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`), `goal` und – ab Thalia 1.10.0 – `source`: woher der Wert kommt (`"app:finn:net_worth"`, `"app:finn:account_balance=acc-giro"`, `"list:buch"`); fehlt bei Ergebnissen mit eigenen Einträgen und in Katalogen von Thalia vor 1.10.0 |
 
 Ein vollständiges Beispiel steht bei den Testdateien (§10).
 
@@ -1304,7 +1366,11 @@ Thalias Referenz für das Format ist eine einzige Datei, nur Foundation, Swift 5
 (z. B. ins Core-Paket von Nina; die Typen sind `public`):
 https://github.com/Binisoft-at/thalia/blob/main/Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift
 – Testdateien: https://github.com/Binisoft-at/thalia/tree/main/Packages/ThaliaCore/Tests/ThaliaCoreTests/Fixtures/exchange
-(öffentlich, sobald Thalia 1.9.0 auf `main` ist). Die Datei enthält `BinisoftExchange` (Pfade, Dateinamen, Aufräumen,
+(öffentlich auf `main`). **Stand Thalia 1.10.0:** die Datei hat nur Zusätze bekommen – die Kennzahl `account_balance`,
+das Katalog-Feld `results[].source` und toleranteres Lesen (eine Zahl, die nicht endlich ist oder dem Betrag nach ab
+10¹², gilt als fehlend; ein unlesbares `v` gilt als 1). Wer sie schon aus Thalia 1.9.0 kopiert hat, ersetzt sie durch
+die neue Fassung; eigener Code, der sie benutzt, bleibt gültig. Die Datei enthält `BinisoftExchange` (Pfade,
+Dateinamen, Aufräumen,
 atomares Schreiben, Kodieren), `ExchangeOrigin`, `ExchangeKind`, `ExchangeMetric.table`, `ExchangeFact`,
 `ExchangeDayFile`, `ExchangeRef`, `ExchangeSourceInfo`, `ExchangeCatalog`, `ExchangeReader` (tolerantes Lesen mit
 deutschen Gründen), `ExchangeDate` und `ExchangeHash` (FNV-1a 64 Bit). Ist sie nicht erreichbar, nach §4–§8 selbst
@@ -1466,7 +1532,7 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
 }
 ```
 
-`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur.
+`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur; ab Thalia 1.10.0 mit `results[].source`.
 
 ```json
 {
@@ -1478,21 +1544,26 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
   "goals": [
     { "key": "1", "title": "Gesundheit" },
     { "key": "3", "title": "Arbeit" },
-    { "key": "5", "title": "Lesen" }
+    { "key": "5", "title": "Lesen" },
+    { "key": "8", "title": "Finanzen" }
   ],
   "categories": [
     { "key": "1.2", "goal": "1", "title": "Sport / Verein", "segment": "seg-2" },
     { "key": "3.2", "goal": "3", "title": "Kunden", "segment": "seg-2" },
-    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" }
+    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" },
+    { "key": "8.1", "goal": "8", "title": "Ausgaben", "segment": "seg-2" }
   ],
   "measures": [
     { "code": "workouts", "title": "Workouts", "unit": "Stück", "link": "app:george:workout=tpl-1", "category": "1.2" },
     { "code": "kunden_aufgaben", "title": "Aufgaben Kunden", "unit": "Stück", "link": "app:theo:task", "category": "3.2" },
-    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" }
+    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" },
+    { "code": "ausgaben", "title": "Ausgaben", "unit": "€", "link": "app:finn:spending", "category": "8.1" }
   ],
   "results": [
-    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5" },
-    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" }
+    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" },
+    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5", "source": "list:buch" },
+    { "id": "res-worth", "title": "Vermögen", "kind": "value", "goal": "8", "source": "app:finn:net_worth" },
+    { "id": "res-giro", "title": "Puffer Girokonto", "kind": "value", "goal": "8", "source": "app:finn:account_balance=acc-giro" }
   ]
 }
 ```
@@ -1535,36 +1606,56 @@ in ihren eigenen iCloud-Eingang und **rechnet** daraus Werte – Thalia legt daf
 Einträge in Thalia gewinnen immer. Finn liest von Thalia nur einen Katalog mit Thalias Struktur (§7). Keine App
 ändert die Daten der anderen; es gibt kein Netz, keinen Server, keine Berechtigungsabfrage.
 
+Diese Fassung gilt ab **Thalia 1.10.0** (Kontostände, Anzeige „→ Thalia: …“). Liefert Finn schon nach einer früheren
+Fassung: „monatlich“ beim Vermögen entfällt (eine gespeicherte Wahl „monatlich“ gilt als „bei jeder Änderung“), und
+Schalter, die in `UserDefaults` liegen, kommen einmal in den synchronisierten Datensatz aus §2.
+
 ## 2. Was Finn liefert
 
-Nur, was Bini in Finn **je Kennzahl einschaltet** – Einstellungen → Abschnitt „Thalia“, alles Standard **aus**:
+Nur, was Bini in Finn einschaltet – **jede Zeile einzeln, mit eigenem Schalter, Standard aus** (Einstellungen →
+Abschnitt „Thalia“, §7 „Anzeige in Finn“):
 
-- **Ausgaben je Gruppe** (Gruppen einzeln wählen): `spending`, eine Tatsache je gewählter Finn-Gruppe und Tag mit der
-  Tagessumme der eigenen Ausgaben:
+- **Ausgaben je Gruppe** (jede Gruppe ein eigener Schalter): `spending`, eine Tatsache je eingeschalteter Finn-Gruppe
+  und Tag mit der Tagessumme der eigenen Ausgaben:
   `{"id":"sp-<Gruppen-id>-2026-11-22","kind":"spending","ref":"<Gruppen-id>","refTitle":"Lebensmittel","title":"Lebensmittel","value":23.4,"currency":"EUR","at":"2026-11-22T17:45:00+01:00","origin":"app"}`
   - `value` positiv, auf Cent gerundet; nur Ausgaben – keine Einnahmen, keine Umbuchungen zwischen eigenen Konten;
     `at` = Zeitpunkt der letzten Ausgabe des Tages (optional).
   - Ein Tag ohne Ausgaben in der Gruppe: keine Tatsache.
-- **Vermögen** (`aus` / `monatlich` / `bei Änderung`): `kind` `"value"`, `metric` `"net_worth"` (`agg: last`), Wert in
-  Euro, `currency` `"EUR"`.
-  - bei Änderung: an jedem Tag, an dem sich das Vermögen ändert, eine Tatsache mit dem Stand am Ende des Tages,
-    `id` `"nw-2026-11-22"`.
-  - monatlich: eine Tatsache je Monat mit dem Stand am Monatsende, in der Datei des Monatsletzten, `id` `"nw-2026-11"`;
-    der laufende Monat kommt, sobald er vorbei ist.
-- **Sparquote** (optional, `aus` / `monatlich`): `metric` `"savings_rate"` in Prozent (`agg: last`), eine Tatsache je
-  Monat in der Datei des Monatsletzten, `id` `"sr-2026-11"`.
+- **Vermögen** (`aus` / `bei jeder Änderung`, kein „monatlich“): an jedem Tag, an dem sich das Vermögen ändert, eine
+  Tatsache mit dem Stand am Ende des Tages – `kind` `"value"`, `metric` `"net_worth"` (`agg: last`), `ref`
+  `"net_worth"`, `refTitle` `"Vermögen"`, Wert in Euro, `currency` `"EUR"`, `id` `"nw-<JJJJ-MM-TT>"`
+  (`"nw-2026-11-22"`). Ein Tag ohne Änderung hat keine Tatsache – Thalia nimmt den letzten Stand. Ältere Tatsachen
+  `nw-<JJJJ-MM>` in Thalias Eingang bleiben lesbar.
+- **Sparquote** (`aus` / `an`): eine Tatsache je Monat in der Datei des Monatsletzten – `metric` `"savings_rate"` in
+  Prozent (`agg: last`, `unit` `"%"`), `ref` `"savings_rate"`, `refTitle` `"Sparquote"`, `id` `"sr-<JJJJ-MM>"`
+  (`"sr-2026-10"` in `days/2026-10-31.json`). Der laufende Monat kommt, sobald er vorbei ist.
+- **Kontostände** (je Konto und je Kontogruppe ein eigener Schalter, `aus` / `an`): an jedem Tag, an dem sich der Stand
+  ändert, eine Tatsache mit dem Stand am Ende des Tages – `kind` `"value"`, `metric` `"account_balance"` (`agg: last`,
+  €, „Kontostand“, neu in Thalia 1.10.0), `ref` = id des Kontos bzw. der Kontogruppe (stabil, synchronisiert),
+  `refTitle` = ihr Name, `currency` `"EUR"`, `id` `"kb-<ref>-<JJJJ-MM-TT>"` (`"kb-acc-giro-2026-11-22"`). Eine
+  Kontogruppe liefert die Summe ihrer Konten.
 - **Nur eigene Daten:** nur Binis eigene Konten und Buchungen – **nie die geteilte Haushaltszone** und nie Buchungen
-  anderer Personen, auch nicht anteilig.
+  anderer Personen, auch nicht anteilig; auch kein Konto oder Vermögen der Haushaltszone.
 - **Währung EUR:** Beträge in Euro mit `"currency":"EUR"`. Thalia rechnet nicht um; Buchungen in anderer Währung mit dem
   Euro-Betrag, den Finn zeigt, sonst weglassen.
-- `source.json` → `refs`: nur die eingeschalteten Gruppen (`"kind":"group"`) und Kennzahlen (`"kind":"metric"`, z. B.
-  `{"id":"net_worth","title":"Vermögen","kind":"metric"}`).
+- `source.json` → `refs`: die eingeschalteten Gruppen (`"kind":"group"`) und Konten bzw. Kontogruppen
+  (`"kind":"account"`) – daraus wählt Bini in Thalia „Eintrag“. Vermögen und Sparquote brauchen keinen ref.
+- **Die Auswahl ist synchronisiert:** welche Zeilen an sind, liegt als JSON in einem **vorhandenen, synchronisierten
+  Einstellungs-Datensatz** von Finn, z. B. unter dem Schlüssel `thalia.delivery`:
+  `{"v":1,"spending":["grp-lebensmittel","grp-freizeit"],"netWorth":"change","savingsRate":true,"accounts":["acc-giro","accgrp-sparen"]}`
+  (Beispiel; unbekannte Felder beim Speichern behalten) – **nie in `UserDefaults`**. So schreibt jedes Gerät dieselben
+  Tagesdateien; sonst schrieben iPhone und Mac abwechselnd verschiedene Fassungen derselben Tage. Gibt es keinen
+  solchen Datensatz, vorher bei Bini nachfragen.
 - Ausschalten wirkt wie §5 Regel 10: die Tage der letzten 62 Tage werden ohne diese Tatsachen neu geschrieben.
+- **Anzeige in Finn:** jede Zeile zeigt unter ihrem Schalter, wofür sie in Thalia zählt (§7).
 
 Was Thalia daraus macht: Ausgaben erscheinen in Thalias Ausgabenliste und deren Gruppen nur zum Lesen („aus Finn – in
 Finn ändern“), eigene Ausgaben in Thalia kommen dazu (Messwert-Quelle `app:finn:spending` für alle Gruppen oder
-`app:finn:spending=<Gruppen-id>`). Das Vermögen speist ein Jahresziel-Ergebnis mit der Quelle `app:finn:net_worth`
-(der letzte Wert zählt).
+`app:finn:spending=<Gruppen-id>`). Vermögen, Sparquote und Kontostände speisen **Ergebnisse** der Jahresziele (Art
+„Zielwert“, der letzte Wert zählt) mit der Quelle `app:finn:net_worth`, `app:finn:savings_rate` oder
+`app:finn:account_balance=<Konto-id>` – ein Kontostand immer für ein bestimmtes Konto, nie „alle“. Als Messwert bietet
+Thalia sie nicht an (ein Messwert in € zählt in Thalia als Ausgabe). „Was kommt an“ in Thalia zeigt einen Kontostand
+mit seinem Konto: „Kontostand 1.234,50 € · Girokonto“.
 
 ## 3. Weg und Ordner
 
@@ -1615,7 +1706,7 @@ Felder einer Tatsache:
 | `id` | Pflicht | Stabil und auf allen Geräten gleich, in der Datei eindeutig. Aus der **synchronisierten** id des Datensatzes (z. B. sein UUID-Feld) – nie `persistentModelID` oder `NSManagedObjectID` (je Gerät verschieden). Präfix je Art, z. B. `"task-…"`. |
 | `kind` | Pflicht | Art, siehe unten. |
 | `origin` | Pflicht | `"app"` = in Finn selbst erfasst, `"health"` = aus Apple Health. Ohne `origin` (oder mit anderem Wert) verwendet Thalia die Tatsache nicht. |
-| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl. Über `ref` ordnet Bini in Thalia zu. |
+| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl, Konto. Über `ref` ordnet Bini in Thalia zu. |
 | `refTitle` | empfohlen | Anzeigename von `ref` („Arbeit/Kunden“). |
 | `title` | optional | Titel der Sache („Rechnung schreiben“); Thalia zeigt ihn an. |
 | `value` | je nach Art | JSON-Zahl mit Punkt (`1.5`), keine Zeichenkette. |
@@ -1636,14 +1727,15 @@ Arten (v1) und was Thalia damit tut:
 | `workout.done` | ein abgeschlossenes Workout | `ref` = Vorlage | zählt für `app:<quelle>:workout` (alle) und `app:<quelle>:workout=<ref>` |
 | `habit.done` | eine erledigte Gewohnheit | `ref` = Gewohnheit | zählt für `app:<quelle>:habit[=<ref>]` |
 | `ph` | Power-Hours (1 PH = 50 konzentrierte Minuten) | `value` in PH mit `unit` `"PH"`; mit `unit` `"min"` ist `value` in Minuten (Thalia teilt durch 50); `ref` = Gruppe | ein Arbeitsblock „aus <App>“ in der Kategorie aus `thalia.category`, sonst aus Thalias Zuordnung, sonst „ohne Zuordnung“; Summe für `app:<quelle>:ph[=<ref>]` |
-| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
+| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>[=<ref>]` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
 | `spending` | Ausgaben einer Gruppe an dem Tag (Tagessumme) | `value` (positiv), `currency`, `ref` = Gruppe | Summe für `app:<quelle>:spending[=<ref>]` |
 
 Bei gezählten Arten (`*.done`) zählt jede Tatsache als 1; `value` wird dort nicht gelesen. Unbekannte Arten und
 Kennzahlen behält Thalia und zeigt sie als „nicht verwendet“ – kein Fehler, aber keine Wirkung. Neue Arten nicht
 erfinden, sondern im Bericht vorschlagen.
 
-Kennzahlen für `value` (feste Tabelle v1):
+Kennzahlen für `value` (Tabelle v1 – sie wächst nur; eine neue Kennzahl behalten ältere Thalia-Versionen als „nicht
+verwendet“):
 
 | `metric` | `agg` | Einheit | Name |
 |---|---|---|---|
@@ -1655,6 +1747,11 @@ Kennzahlen für `value` (feste Tabelle v1):
 | `net_worth` | last | € | Vermögen |
 | `savings_rate` | last | % | Sparquote |
 | `body_weight_kg` | last | kg | Gewicht |
+| `account_balance` | last | € | Kontostand (ab Thalia 1.10.0) |
+
+`account_balance` ist der Stand eines Kontos oder einer Kontogruppe am Ende des Tages: `ref` = id des Kontos bzw. der
+Gruppe, `refTitle` = ihr Name, eine Tatsache je Konto. Thalia liest ihn nur für ein bestimmtes Konto
+(`app:<quelle>:account_balance=<ref>`). Bei allen anderen Kennzahlen ist `ref` die Kennzahl selbst (`"kcal"`).
 
 **Herkunft:** Thalias Eingang liegt in iCloud, und Gesundheitsdaten dürfen nicht nach iCloud (App Review Richtlinie
 5.1.3(ii)). Darum schreibt Finn **keine Werte, die aus Apple Health stammen**. Nur wenn sich ein Wert gar nicht
@@ -1696,17 +1793,31 @@ des Geräts (erledigt am, Ende des Workouts, Datum des Eintrags). Keine Tage in 
 ## 6. source.json
 
 ```json
-{"v":1,"source":"finn","app":"Finn","appVersion":"1.0","generatedAt":"2026-11-22T20:00:00+01:00","refs":[
-  {"id":"grp-lebensmittel","title":"Lebensmittel","kind":"group"},{"id":"grp-freizeit","title":"Freizeit","kind":"group"},
-  {"id":"net_worth","title":"Vermögen","kind":"metric"}]}
+{
+  "v": 1,
+  "source": "finn",
+  "app": "Finn",
+  "appVersion": "1.0",
+  "generatedAt": "2026-11-22T20:00:00Z",
+  "refs": [
+    { "id": "grp-lebensmittel", "title": "Lebensmittel", "kind": "group" },
+    { "id": "grp-freizeit", "title": "Freizeit", "kind": "group" },
+    { "id": "acc-giro", "title": "Girokonto", "kind": "account" },
+    { "id": "accgrp-sparen", "title": "Sparen", "kind": "account" }
+  ]
+}
 ```
 
 - Felder: `v` (1), `source` (wie in den Tagesdateien), `app` (Anzeigename „Finn“), `appVersion`, `generatedAt`,
   `refs` = alle stabilen ids, die Bini in Thalia auswählen können soll, je ein Objekt mit `id`, `title` und `kind`.
+- Finn: die eingeschalteten Ausgaben-Gruppen mit `"kind":"group"`, die eingeschalteten Konten und Kontogruppen mit
+  `"kind":"account"` (im Beispiel ein Konto und eine Kontogruppe). Vermögen und Sparquote brauchen keinen ref.
 - `kind` eines refs: `"group"` (Gruppe von Aufgaben, Power-Hours oder Ausgaben), `"workout"` (Workout-Vorlage),
-  `"habit"`, `"metric"` (Kennzahl). Thalias Messwert-Editor bietet unter „Verbundene App → Art → Eintrag“ die passenden
-  an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben → `group`, Gewohnheiten → `habit`, Kennzahlen → `metric`; ein
-  ref ohne `kind` passt zu allem.
+  `"habit"`, `"account"` (Konto oder Kontogruppe, ab Thalia 1.10.0), `"metric"` (Kennzahl). Thalias Editoren bieten
+  unter „Verbundene App → Art → Eintrag“ die passenden an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben →
+  `group`, Gewohnheiten → `habit`, Kontostand → `account`; ein ref ohne `kind` passt zu allem. Andere Kennzahlen haben
+  kein „Eintrag“ (der `ref` ihrer Tatsachen ist die Kennzahl selbst) – ein ref mit `"kind":"metric"` schadet nicht,
+  Thalia bietet ihn aber nirgends an.
 - Schreiben: sofort, wenn sich `refs` oder die App-Version ändern, sonst höchstens einmal am Tag (Herzschlag – Thalia
   zeigt daraus „zuletzt gesehen“). Atomar, danach die Darwin-Benachrichtigung. `source` muss zum Ordner passen.
 
@@ -1725,11 +1836,40 @@ ist aus).
 | `goals` | `[{"key":"3","title":"Arbeit"}]` |
 | `categories` | `[{"key":"3.2","goal":"3","title":"Kunden","segment":"seg-2"}]` – `key` ist Text („1.1“, „5“) |
 | `measures` | Messwerte der Woche, je mit `code`, `title`, `unit`, `link` (die Quelle des Messwerts, z. B. `"app:george:workout=tpl-1"`) und `category` |
-| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`) und `goal` |
+| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`), `goal` und – ab Thalia 1.10.0 – `source`: woher der Wert kommt (`"app:finn:net_worth"`, `"app:finn:account_balance=acc-giro"`, `"list:buch"`); fehlt bei Ergebnissen mit eigenen Einträgen und in Katalogen von Thalia vor 1.10.0 |
 
 Ein vollständiges Beispiel steht bei den Testdateien (§10).
 
-**Auswahl „Thalia-Kategorie“** (ob Finn sie braucht, steht hier: Finn braucht sie nicht – Ausgaben-Gruppen und Vermögen wählt Bini in Thalia über die ids aus `refs`. **Nichts von der folgenden Liste bauen:** keine Auswahl, kein `thalia.mapping`, kein Feld `thalia`; sie steht nur der Vollständigkeit halber da):
+**Anzeige in Finn: wofür eine Zeile in Thalia zählt** (das braucht Finn). Einstellungen → „Thalia“ listet jede Zeile
+aus §2 mit ihrem Schalter und darunter, klein und grau, wofür sie in Thalia zählt – gelesen aus dem Katalog dieses
+Geräts (neu lesen, wenn die Einstellungen erscheinen). Jede Zeile hat eine Thalia-Quelle; gesucht wird sie in
+`measures[].link` und in `results[].source` (Leerzeichen außen egal, `app:finn:<art>` ohne Groß-/Kleinschreibung, der
+Teil nach `=` genau):
+
+| Zeile in Finn | passt zu |
+|---|---|
+| Ausgaben-Gruppe `<g>` | `app:finn:spending=<g>` und `app:finn:spending` (alle Gruppen) |
+| Vermögen | `app:finn:net_worth` |
+| Sparquote | `app:finn:savings_rate` |
+| Konto oder Kontogruppe `<k>` | `app:finn:account_balance=<k>` |
+
+- Ein Messwert: „→ Thalia: Messwert „Ausgaben““, bei `app:finn:spending` ohne `=` mit „(alle Gruppen)“: „→ Thalia:
+  Messwert „Ausgaben“ (alle Gruppen)“. Ein Ergebnis: „→ Thalia: Ergebnis „Vermögen“ (Ziel 8)“ (`title` und `goal`).
+  Mehrere Treffer: je eine Zeile.
+- Kein Treffer: „noch nicht in Thalia verknüpft“.
+- Katalog fehlt (Thalia war auf diesem Gerät noch nicht offen, oder der Katalog ist aus): statt der Hinweise einmal
+  „Thalias Katalog fehlt auf diesem Gerät – Thalia hier einmal öffnen.“
+- Katalog ohne `results[].source` (Thalia vor 1.10.0 schreibt das Feld nicht): hat kein Ergebnis ein `source`, zeigen
+  Vermögen, Sparquote und Konten ohne Treffer „Thalia auf diesem Gerät aktualisieren – dann steht hier, wofür der Wert
+  zählt“ statt „noch nicht in Thalia verknüpft“. Ausgaben-Zeilen prüfen weiter `measures[].link` (gab es schon
+  vorher). Ein Katalog von 1.10.0 ohne ein einziges Ergebnis mit Quelle sieht gleich aus – der Hinweis schadet dort
+  nicht.
+- Mit dem Katalog aus §10: Vermögen → „→ Thalia: Ergebnis „Vermögen“ (Ziel 8)“; Konto „Girokonto“ → „→ Thalia:
+  Ergebnis „Puffer Girokonto“ (Ziel 8)“; „Lebensmittel“ und „Freizeit“ → „→ Thalia: Messwert „Ausgaben“ (alle
+  Gruppen)“; Kontogruppe „Sparen“ und Sparquote → „noch nicht in Thalia verknüpft“.
+- Nur anzeigen: die Anzeige ändert keine Tatsache und keinen Schalter.
+
+**Auswahl „Thalia-Kategorie“** (ob Finn sie braucht, steht hier: Finn braucht sie nicht – Ausgaben-Gruppen, Vermögen, Sparquote und Konten verknüpft Bini in Thalia, mit den ids aus `refs`. **Nichts von der folgenden Liste bauen:** keine Auswahl, kein `thalia.mapping`, kein Feld `thalia`; sie steht nur der Vollständigkeit halber da):
 
 - Zeilen „3.2 Kunden“, gruppiert nach Ziel („3 Arbeit“), oben „Keine“; auf iPhone, iPad und Mac gleich.
 - Die Wahl wird je Gruppe als JSON in einem **vorhandenen, synchronisierten Einstellungs-Datensatz** von Finn
@@ -1764,7 +1904,11 @@ Thalias Referenz für das Format ist eine einzige Datei, nur Foundation, Swift 5
 (z. B. ins Core-Paket von Finn; die Typen sind `public`):
 https://github.com/Binisoft-at/thalia/blob/main/Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift
 – Testdateien: https://github.com/Binisoft-at/thalia/tree/main/Packages/ThaliaCore/Tests/ThaliaCoreTests/Fixtures/exchange
-(öffentlich, sobald Thalia 1.9.0 auf `main` ist). Die Datei enthält `BinisoftExchange` (Pfade, Dateinamen, Aufräumen,
+(öffentlich auf `main`). **Stand Thalia 1.10.0:** die Datei hat nur Zusätze bekommen – die Kennzahl `account_balance`,
+das Katalog-Feld `results[].source` und toleranteres Lesen (eine Zahl, die nicht endlich ist oder dem Betrag nach ab
+10¹², gilt als fehlend; ein unlesbares `v` gilt als 1). Wer sie schon aus Thalia 1.9.0 kopiert hat, ersetzt sie durch
+die neue Fassung; eigener Code, der sie benutzt, bleibt gültig. Die Datei enthält `BinisoftExchange` (Pfade,
+Dateinamen, Aufräumen,
 atomares Schreiben, Kodieren), `ExchangeOrigin`, `ExchangeKind`, `ExchangeMetric.table`, `ExchangeFact`,
 `ExchangeDayFile`, `ExchangeRef`, `ExchangeSourceInfo`, `ExchangeCatalog`, `ExchangeReader` (tolerantes Lesen mit
 deutschen Gründen), `ExchangeDate` und `ExchangeHash` (FNV-1a 64 Bit). Ist sie nicht erreichbar, nach §4–§8 selbst
@@ -1895,15 +2039,49 @@ Darwin-Benachrichtigung und Entitlement-Prüfung in die App-Schicht. Tests (Swif
 6. Keine Health-Werte: aus Apple Health stammende Datensätze ergeben keine Tatsache.
 7. Werden ids mit FNV-1a gebildet (`ExchangeHash.hex`): `""` → `cbf29ce484222325`, `"a"` → `af63dc4c8601ec8c`,
    `"foobar"` → `85944171f73967e8`.
-8. Finn: alles aus → keine Tatsachen und `refs` leer; eine eingeschaltete Gruppe mit drei Ausgaben an einem Tag → eine
-   `spending`-Tatsache mit der Summe in EUR; Einnahmen und Umbuchungen zählen nicht; Buchungen der geteilten
-   Haushaltszone ergeben nie eine Tatsache; Vermögen „monatlich“ → eine Tatsache am Monatsletzten mit `"nw-JJJJ-MM"`,
-   „bei Änderung“ → eine je Tag mit Änderung; eine Gruppe ausgeschaltet → die betroffenen Tage ohne sie neu geschrieben.
+8. Finn:
+   - **Schalter je Zeile:** alles aus → keine Tatsachen und `refs` leer; jede Gruppe, Vermögen, Sparquote und jedes
+     Konto bzw. jede Kontogruppe einzeln an und aus; eine eingeschaltete Gruppe mit drei Ausgaben an einem Tag → eine
+     `spending`-Tatsache mit der Summe in EUR, eine ausgeschaltete Gruppe am selben Tag → keine; Einnahmen und
+     Umbuchungen zählen nicht; Buchungen, Konten und Vermögen der geteilten Haushaltszone ergeben nie eine Tatsache.
+   - **Vermögen je Änderungstag:** drei Tage mit Änderung und einer ohne → drei Tatsachen `nw-JJJJ-MM-TT` mit dem Stand
+     am Tagesende, der Tag ohne Änderung keine; nie eine Tatsache `nw-JJJJ-MM`.
+   - **Sparquote:** an → eine Tatsache `sr-JJJJ-MM` nur in der Datei des Monatsletzten, der laufende Monat erst, wenn er
+     vorbei ist.
+   - **Konto ein/aus:** ein Konto an → je Änderungstag `kb-<Konto>-<Tag>` mit `metric` `account_balance`, `ref` =
+     Konto-id und `refTitle` = Kontoname, das Konto in `refs` mit `"kind":"account"`; eine Kontogruppe → die Summe
+     ihrer Konten; wieder aus → die betroffenen Tage ohne diese Tatsachen neu geschrieben und das Konto nicht mehr in
+     `refs`.
+   - **Auswahl synchronisiert:** die Schalter kommen aus dem synchronisierten Datensatz (§2), nicht aus
+     `UserDefaults`; zwei Geräte mit demselben Speicher bauen dieselben Tatsachen.
+   - **Katalog mit und ohne `source`:** der Katalog unten → die Hinweise aus §7 („→ Thalia: Ergebnis „Vermögen“
+     (Ziel 8)“, „→ Thalia: Messwert „Ausgaben“ (alle Gruppen)“, „noch nicht in Thalia verknüpft“); derselbe Katalog
+     ohne die Felder `source` → Vermögen, Sparquote und Konten „Thalia auf diesem Gerät aktualisieren – dann steht
+     hier, wofür der Wert zählt“, die Gruppen weiter über `measures[].link`; kein Katalog → „Thalias Katalog fehlt auf
+     diesem Gerät – Thalia hier einmal öffnen.“
 
 Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Ziele). Testdateien aus Thalias Repo
 (Ordner wie in der App Group):
 
-`Finn/exchange/days/2026-11-22.json` – Testdatei für Thalias Leser: zwei Gruppen mit Tagessumme (eine ohne `at`) und ein Vermögensstand (`nw-2026-11`). Finn selbst legt den Monatsstand nach §2 in die Datei des Monatsletzten.
+`Finn/exchange/source.json` – zwei Gruppen, ein Konto und eine Kontogruppe (`"kind":"account"`).
+
+```json
+{
+  "v": 1,
+  "source": "finn",
+  "app": "Finn",
+  "appVersion": "1.0",
+  "generatedAt": "2026-11-22T20:00:00Z",
+  "refs": [
+    { "id": "grp-lebensmittel", "title": "Lebensmittel", "kind": "group" },
+    { "id": "grp-freizeit", "title": "Freizeit", "kind": "group" },
+    { "id": "acc-giro", "title": "Girokonto", "kind": "account" },
+    { "id": "accgrp-sparen", "title": "Sparen", "kind": "account" }
+  ]
+}
+```
+
+`Finn/exchange/days/2026-11-22.json` – ein Tag mit Änderungen: zwei Gruppen mit Tagessumme (eine ohne `at`), das Vermögen am Tagesende (`nw-2026-11-22`) und der Stand eines Kontos und einer Kontogruppe (`kb-acc-giro-2026-11-22`, `kb-accgrp-sparen-2026-11-22`).
 
 ```json
 {
@@ -1916,13 +2094,36 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
       "value": 23.4, "currency": "EUR", "at": "2026-11-22T17:45:00+01:00", "origin": "app" },
     { "id": "sp-grp-freizeit-2026-11-22", "kind": "spending", "ref": "grp-freizeit", "refTitle": "Freizeit", "title": "Freizeit",
       "value": 12, "currency": "EUR", "origin": "app" },
-    { "id": "nw-2026-11", "kind": "value", "ref": "net_worth", "refTitle": "Vermögen", "metric": "net_worth", "value": 52000,
-      "currency": "EUR", "origin": "app" }
+    { "id": "nw-2026-11-22", "kind": "value", "ref": "net_worth", "refTitle": "Vermögen", "metric": "net_worth", "value": 52000,
+      "currency": "EUR", "origin": "app" },
+    { "id": "kb-acc-giro-2026-11-22", "kind": "value", "ref": "acc-giro", "refTitle": "Girokonto", "metric": "account_balance",
+      "value": 1234.5, "currency": "EUR", "origin": "app" },
+    { "id": "kb-accgrp-sparen-2026-11-22", "kind": "value", "ref": "accgrp-sparen", "refTitle": "Sparen", "metric": "account_balance",
+      "value": 8000, "currency": "EUR", "origin": "app" }
   ]
 }
 ```
 
-`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur.
+`Finn/exchange/days/2026-10-31.json` – ein Monatsletzter: das Vermögen, die Sparquote des Monats (`sr-2026-10`) und der Stand des Girokontos.
+
+```json
+{
+  "v": 1,
+  "source": "finn",
+  "day": "2026-10-31",
+  "generatedAt": "2026-10-31T21:30:00Z",
+  "facts": [
+    { "id": "nw-2026-10-31", "kind": "value", "ref": "net_worth", "refTitle": "Vermögen", "metric": "net_worth", "value": 51000,
+      "currency": "EUR", "origin": "app" },
+    { "id": "sr-2026-10", "kind": "value", "ref": "savings_rate", "refTitle": "Sparquote", "metric": "savings_rate", "value": 18.5,
+      "unit": "%", "origin": "app" },
+    { "id": "kb-acc-giro-2026-10-31", "kind": "value", "ref": "acc-giro", "refTitle": "Girokonto", "metric": "account_balance",
+      "value": 980, "currency": "EUR", "origin": "app" }
+  ]
+}
+```
+
+`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur; ab Thalia 1.10.0 mit `results[].source`. Für Finn: „Vermögen“ und „Puffer Girokonto“ zählen Werte aus Finn, „Ausgaben“ alle Ausgaben-Gruppen (die Hinweise dazu in §7).
 
 ```json
 {
@@ -1934,21 +2135,26 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
   "goals": [
     { "key": "1", "title": "Gesundheit" },
     { "key": "3", "title": "Arbeit" },
-    { "key": "5", "title": "Lesen" }
+    { "key": "5", "title": "Lesen" },
+    { "key": "8", "title": "Finanzen" }
   ],
   "categories": [
     { "key": "1.2", "goal": "1", "title": "Sport / Verein", "segment": "seg-2" },
     { "key": "3.2", "goal": "3", "title": "Kunden", "segment": "seg-2" },
-    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" }
+    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" },
+    { "key": "8.1", "goal": "8", "title": "Ausgaben", "segment": "seg-2" }
   ],
   "measures": [
     { "code": "workouts", "title": "Workouts", "unit": "Stück", "link": "app:george:workout=tpl-1", "category": "1.2" },
     { "code": "kunden_aufgaben", "title": "Aufgaben Kunden", "unit": "Stück", "link": "app:theo:task", "category": "3.2" },
-    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" }
+    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" },
+    { "code": "ausgaben", "title": "Ausgaben", "unit": "€", "link": "app:finn:spending", "category": "8.1" }
   ],
   "results": [
-    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5" },
-    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" }
+    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" },
+    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5", "source": "list:buch" },
+    { "id": "res-worth", "title": "Vermögen", "kind": "value", "goal": "8", "source": "app:finn:net_worth" },
+    { "id": "res-giro", "title": "Puffer Girokonto", "kind": "value", "goal": "8", "source": "app:finn:account_balance=acc-giro" }
   ]
 }
 ```
@@ -1957,13 +2163,16 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
 
 - **Keine CloudKit-Schemaänderung** in Finn: neue Einstellungen als JSON in einem vorhandenen Einstellungs-Datensatz;
   ein neues Feld oder eine neue Datensatzart nur nach Rückfrage bei Bini (das braucht „Deploy Schema Changes“).
+- **Schalter synchronisiert:** die Auswahl, welche Zeilen an Thalia gehen, liegt im synchronisierten
+  Einstellungs-Datensatz (§2), nie in `UserDefaults` – jedes Gerät schreibt dieselben Tagesdateien.
+- **Jede Zeile einzeln, Standard aus;** Vermögen nur `aus` / `bei jeder Änderung`, kein „monatlich“.
 - **Keine Werte aus Apple Health** (§4, Herkunft).
 - **Öffentliches Repo:** keine persönlichen Daten in Code, Tests, Testdateien oder Doku – keine echten Namen, Beträge,
   Gewichte oder Ziele; neutrale Beispiele wie „Arbeit/Kunden“, „Push“, „Lesen“.
 - Nie aus Demo- oder In-Memory-Speichern schreiben, nie auf der Watch.
 - Bestehendes Verhalten von Finn bleibt, wie es ist. Deutsche Texte kurz und schlicht, z. B. in den Einstellungen
-  ein Abschnitt „Thalia“ mit den Schaltern aus §2, „Zuletzt geschrieben: …“ und dem Hinweis „Thalia übernimmt die
-  Werte, sobald Thalia auf diesem Gerät geöffnet wird.“
+  ein Abschnitt „Thalia“ mit den Schaltern aus §2 (je Zeile, darunter „→ Thalia: …“ nach §7), „Zuletzt geschrieben: …“
+  und dem Hinweis „Thalia übernimmt die Werte, sobald Thalia auf diesem Gerät geöffnet wird.“
 
 ## 12. Bericht
 
@@ -2006,8 +2215,9 @@ nennen.
 - Hat die App Gruppen, deren Aufgaben oder Power-Hours zu Thalias Kategorien passen: die Auswahl „Thalia-Kategorie“
   (§7). Gezählte Dinge wie Workouts oder Gewohnheiten brauchen sie nicht – Bini wählt sie in Thalia über `ref`.
 - `source.json` → `refs`: alles, was Bini in Thalia auswählen können soll, mit passendem `kind`.
-- Einstellungen: Abschnitt „Thalia“ mit dem Schalter „An Thalia liefern“; bei Geld oder anderen heiklen Werten je
-  Kennzahl einzeln und Standard aus.
+- Einstellungen: Abschnitt „Thalia“ mit dem Schalter „An Thalia liefern“; bei Geld oder anderen heiklen Werten jede
+  Zeile mit eigenem Schalter und Standard aus (wie Finn). Die Auswahl liegt in einem synchronisierten
+  Einstellungs-Datensatz, nicht in `UserDefaults` – sonst schreiben zwei Geräte verschiedene Fassungen derselben Tage.
 - Nur Daten, die in der App selbst erfasst wurden – nichts aus Apple Health, nichts aus geteilten Bereichen anderer
   Personen.
 
@@ -2066,7 +2276,7 @@ Felder einer Tatsache:
 | `id` | Pflicht | Stabil und auf allen Geräten gleich, in der Datei eindeutig. Aus der **synchronisierten** id des Datensatzes (z. B. sein UUID-Feld) – nie `persistentModelID` oder `NSManagedObjectID` (je Gerät verschieden). Präfix je Art, z. B. `"task-…"`. |
 | `kind` | Pflicht | Art, siehe unten. |
 | `origin` | Pflicht | `"app"` = in <App> selbst erfasst, `"health"` = aus Apple Health. Ohne `origin` (oder mit anderem Wert) verwendet Thalia die Tatsache nicht. |
-| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl. Über `ref` ordnet Bini in Thalia zu. |
+| `ref` | empfohlen | Stabile id in der Quelle, auf die sich die Tatsache bezieht: Gruppe, Workout-Vorlage, Kennzahl, Konto. Über `ref` ordnet Bini in Thalia zu. |
 | `refTitle` | empfohlen | Anzeigename von `ref` („Arbeit/Kunden“). |
 | `title` | optional | Titel der Sache („Rechnung schreiben“); Thalia zeigt ihn an. |
 | `value` | je nach Art | JSON-Zahl mit Punkt (`1.5`), keine Zeichenkette. |
@@ -2087,14 +2297,15 @@ Arten (v1) und was Thalia damit tut:
 | `workout.done` | ein abgeschlossenes Workout | `ref` = Vorlage | zählt für `app:<quelle>:workout` (alle) und `app:<quelle>:workout=<ref>` |
 | `habit.done` | eine erledigte Gewohnheit | `ref` = Gewohnheit | zählt für `app:<quelle>:habit[=<ref>]` |
 | `ph` | Power-Hours (1 PH = 50 konzentrierte Minuten) | `value` in PH mit `unit` `"PH"`; mit `unit` `"min"` ist `value` in Minuten (Thalia teilt durch 50); `ref` = Gruppe | ein Arbeitsblock „aus <App>“ in der Kategorie aus `thalia.category`, sonst aus Thalias Zuordnung, sonst „ohne Zuordnung“; Summe für `app:<quelle>:ph[=<ref>]` |
-| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
+| `value` | Kennzahl eines Tages | `metric`, `value` | Tageswert für `app:<quelle>:<metric>[=<ref>]` – bei `agg: sum` die Summe der Tatsachen des Tages, bei `agg: last` die letzte nach `at` (ohne `at` davor, in Dateireihenfolge) |
 | `spending` | Ausgaben einer Gruppe an dem Tag (Tagessumme) | `value` (positiv), `currency`, `ref` = Gruppe | Summe für `app:<quelle>:spending[=<ref>]` |
 
 Bei gezählten Arten (`*.done`) zählt jede Tatsache als 1; `value` wird dort nicht gelesen. Unbekannte Arten und
 Kennzahlen behält Thalia und zeigt sie als „nicht verwendet“ – kein Fehler, aber keine Wirkung. Neue Arten nicht
 erfinden, sondern im Bericht vorschlagen.
 
-Kennzahlen für `value` (feste Tabelle v1):
+Kennzahlen für `value` (Tabelle v1 – sie wächst nur; eine neue Kennzahl behalten ältere Thalia-Versionen als „nicht
+verwendet“):
 
 | `metric` | `agg` | Einheit | Name |
 |---|---|---|---|
@@ -2106,6 +2317,11 @@ Kennzahlen für `value` (feste Tabelle v1):
 | `net_worth` | last | € | Vermögen |
 | `savings_rate` | last | % | Sparquote |
 | `body_weight_kg` | last | kg | Gewicht |
+| `account_balance` | last | € | Kontostand (ab Thalia 1.10.0) |
+
+`account_balance` ist der Stand eines Kontos oder einer Kontogruppe am Ende des Tages: `ref` = id des Kontos bzw. der
+Gruppe, `refTitle` = ihr Name, eine Tatsache je Konto. Thalia liest ihn nur für ein bestimmtes Konto
+(`app:<quelle>:account_balance=<ref>`). Bei allen anderen Kennzahlen ist `ref` die Kennzahl selbst (`"kcal"`).
 
 **Herkunft:** Thalias Eingang liegt in iCloud, und Gesundheitsdaten dürfen nicht nach iCloud (App Review Richtlinie
 5.1.3(ii)). Darum schreibt <App> **keine Werte, die aus Apple Health stammen**. Nur wenn sich ein Wert gar nicht
@@ -2163,9 +2379,11 @@ des Geräts (erledigt am, Ende des Workouts, Datum des Eintrags). Keine Tage in 
 - Felder: `v` (1), `source` (wie in den Tagesdateien), `app` (Anzeigename „<App>“), `appVersion`, `generatedAt`,
   `refs` = alle stabilen ids, die Bini in Thalia auswählen können soll, je ein Objekt mit `id`, `title` und `kind`.
 - `kind` eines refs: `"group"` (Gruppe von Aufgaben, Power-Hours oder Ausgaben), `"workout"` (Workout-Vorlage),
-  `"habit"`, `"metric"` (Kennzahl). Thalias Messwert-Editor bietet unter „Verbundene App → Art → Eintrag“ die passenden
-  an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben → `group`, Gewohnheiten → `habit`, Kennzahlen → `metric`; ein
-  ref ohne `kind` passt zu allem.
+  `"habit"`, `"account"` (Konto oder Kontogruppe, ab Thalia 1.10.0), `"metric"` (Kennzahl). Thalias Editoren bieten
+  unter „Verbundene App → Art → Eintrag“ die passenden an: Workouts → `workout`, Aufgaben/Power-Hours/Ausgaben →
+  `group`, Gewohnheiten → `habit`, Kontostand → `account`; ein ref ohne `kind` passt zu allem. Andere Kennzahlen haben
+  kein „Eintrag“ (der `ref` ihrer Tatsachen ist die Kennzahl selbst) – ein ref mit `"kind":"metric"` schadet nicht,
+  Thalia bietet ihn aber nirgends an.
 - Schreiben: sofort, wenn sich `refs` oder die App-Version ändern, sonst höchstens einmal am Tag (Herzschlag – Thalia
   zeigt daraus „zuletzt gesehen“). Atomar, danach die Darwin-Benachrichtigung. `source` muss zum Ordner passen.
 
@@ -2184,7 +2402,7 @@ ist aus).
 | `goals` | `[{"key":"3","title":"Arbeit"}]` |
 | `categories` | `[{"key":"3.2","goal":"3","title":"Kunden","segment":"seg-2"}]` – `key` ist Text („1.1“, „5“) |
 | `measures` | Messwerte der Woche, je mit `code`, `title`, `unit`, `link` (die Quelle des Messwerts, z. B. `"app:george:workout=tpl-1"`) und `category` |
-| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`) und `goal` |
+| `results` | Ergebnisse der Jahresziele, je mit `id`, `title`, `kind` (`check` / `count` / `value`), `goal` und – ab Thalia 1.10.0 – `source`: woher der Wert kommt (`"app:finn:net_worth"`, `"app:finn:account_balance=acc-giro"`, `"list:buch"`); fehlt bei Ergebnissen mit eigenen Einträgen und in Katalogen von Thalia vor 1.10.0 |
 
 Ein vollständiges Beispiel steht bei den Testdateien (§10).
 
@@ -2223,7 +2441,11 @@ Thalias Referenz für das Format ist eine einzige Datei, nur Foundation, Swift 5
 (z. B. ins Core-Paket von <App>; die Typen sind `public`):
 https://github.com/Binisoft-at/thalia/blob/main/Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift
 – Testdateien: https://github.com/Binisoft-at/thalia/tree/main/Packages/ThaliaCore/Tests/ThaliaCoreTests/Fixtures/exchange
-(öffentlich, sobald Thalia 1.9.0 auf `main` ist). Die Datei enthält `BinisoftExchange` (Pfade, Dateinamen, Aufräumen,
+(öffentlich auf `main`). **Stand Thalia 1.10.0:** die Datei hat nur Zusätze bekommen – die Kennzahl `account_balance`,
+das Katalog-Feld `results[].source` und toleranteres Lesen (eine Zahl, die nicht endlich ist oder dem Betrag nach ab
+10¹², gilt als fehlend; ein unlesbares `v` gilt als 1). Wer sie schon aus Thalia 1.9.0 kopiert hat, ersetzt sie durch
+die neue Fassung; eigener Code, der sie benutzt, bleibt gültig. Die Datei enthält `BinisoftExchange` (Pfade,
+Dateinamen, Aufräumen,
 atomares Schreiben, Kodieren), `ExchangeOrigin`, `ExchangeKind`, `ExchangeMetric.table`, `ExchangeFact`,
 `ExchangeDayFile`, `ExchangeRef`, `ExchangeSourceInfo`, `ExchangeCatalog`, `ExchangeReader` (tolerantes Lesen mit
 deutschen Gründen), `ExchangeDate` und `ExchangeHash` (FNV-1a 64 Bit). Ist sie nicht erreichbar, nach §4–§8 selbst
@@ -2407,7 +2629,7 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
 }
 ```
 
-`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur.
+`Thalia/exchange/catalog.json` – Thalias Katalog (§7) – nur Struktur; ab Thalia 1.10.0 mit `results[].source`.
 
 ```json
 {
@@ -2419,21 +2641,26 @@ Testdaten bleiben neutral wie diese (keine echten Namen, Beträge, Gewichte, Zie
   "goals": [
     { "key": "1", "title": "Gesundheit" },
     { "key": "3", "title": "Arbeit" },
-    { "key": "5", "title": "Lesen" }
+    { "key": "5", "title": "Lesen" },
+    { "key": "8", "title": "Finanzen" }
   ],
   "categories": [
     { "key": "1.2", "goal": "1", "title": "Sport / Verein", "segment": "seg-2" },
     { "key": "3.2", "goal": "3", "title": "Kunden", "segment": "seg-2" },
-    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" }
+    { "key": "5", "goal": "5", "title": "Lesen", "segment": "seg-2" },
+    { "key": "8.1", "goal": "8", "title": "Ausgaben", "segment": "seg-2" }
   ],
   "measures": [
     { "code": "workouts", "title": "Workouts", "unit": "Stück", "link": "app:george:workout=tpl-1", "category": "1.2" },
     { "code": "kunden_aufgaben", "title": "Aufgaben Kunden", "unit": "Stück", "link": "app:theo:task", "category": "3.2" },
-    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" }
+    { "code": "seiten", "title": "Seiten", "unit": "Seiten", "link": "list:buch", "category": "5" },
+    { "code": "ausgaben", "title": "Ausgaben", "unit": "€", "link": "app:finn:spending", "category": "8.1" }
   ],
   "results": [
-    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5" },
-    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" }
+    { "id": "res-web", "title": "Website online", "kind": "check", "goal": "3" },
+    { "id": "res-books", "title": "Bücher gelesen", "kind": "count", "goal": "5", "source": "list:buch" },
+    { "id": "res-worth", "title": "Vermögen", "kind": "value", "goal": "8", "source": "app:finn:net_worth" },
+    { "id": "res-giro", "title": "Puffer Girokonto", "kind": "value", "goal": "8", "source": "app:finn:account_balance=acc-giro" }
   ]
 }
 ```
@@ -2461,17 +2688,27 @@ tun muss (z. B. Schalter einschalten, Zuordnung wählen); offene Fragen.
 
 | Teil | Datei |
 |---|---|
-| Format v1 zum Kopieren (nur Foundation, Swift 5 und 6): `BinisoftExchange`, `ExchangeFact`, `ExchangeDayFile`, `ExchangeSourceInfo`, `ExchangeCatalog`, `ExchangeReader`, `ExchangeDate`, `ExchangeHash` | `Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift` |
-| Thalias Seite: `AppSource` (`app:<quelle>:<art\|kennzahl>[=<ref>]`), `LinkRule`, `ExchangeInbox` (`x.<quelle>.<Tag>`, `x.sources`), `ExchangeDerivation` (Wirkung auf eine Woche, berechnet), `ExchangeOverview` („Verbundene Apps“), `ExchangeCatalog.thalia` | `Packages/ThaliaCore/Sources/ThaliaCore/Exchange.swift` |
+| Format v1 zum Kopieren (nur Foundation, Swift 5 und 6): `BinisoftExchange`, `ExchangeFact`, `ExchangeDayFile`, `ExchangeSourceInfo`, `ExchangeCatalog` (ab 1.10.0 `ResultEntry.source`), `ExchangeMetric.table` (ab 1.10.0 mit `account_balance`), `ExchangeReader`, `ExchangeDate`, `ExchangeHash` | `Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift` |
+| Thalias Seite: `AppSource` (`app:<quelle>:<art\|kennzahl>[=<ref>]`; ab 1.10.0 `resultOnlyKinds`, `requiresRef`, `refChoices` mit `account`), `LinkRule`, `ExchangeInbox` (`x.<quelle>.<Tag>`, `x.sources`), `ExchangeDerivation` (Wirkung auf eine Woche, berechnet), `ExchangeOverview` („Verbundene Apps“, „Was kommt an“ mit dem Konto eines Kontostands), `ExchangeCatalog.thalia` (füllt `source`), `ExchangeFact.powerHoursValue` | `Packages/ThaliaCore/Sources/ThaliaCore/Exchange.swift` |
 | Testdateien, angeordnet wie die App Group: `<App>/exchange/source.json`, `<App>/exchange/days/JJJJ-MM-TT.json`, `Thalia/exchange/catalog.json`, `invalid/`; `Demo/` ist die Quelle von `-Demo` und der Übungsseite | `Packages/ThaliaCore/Tests/ThaliaCoreTests/Fixtures/exchange/` (mit `README.md`) |
 | Tests (B6 Format, B7 Wirkung, B8 Quellen, B9 `Measures.merged`, Demo = Testdateien) | `Packages/ThaliaCore/Tests/ThaliaCoreTests/V10Tests.swift` |
+| Tests ab 1.10.0 (C1 Zahlen, C4 PH in Minuten, C15 Finn: Kontostand, Ergebnis-Quellen, Katalog mit und ohne `source`, Finn-Testdateien und Katalog = was der Encoder schreibt) | `Packages/ThaliaCore/Tests/ThaliaCoreTests/V11Tests.swift` |
 | Lesen der App Group, Katalog schreiben, Auslöser (`ExchangeFolders`, `ExchangeMonitor`, Mac-Entitlement), nicht auf der Watch | `Shared/ExchangeInboxReader.swift` |
 | Eingang speichern (Health-Tatsachen vorher entfernt), Zuordnungen, Übersicht, „Übernehmen“, Katalog-Schalter | `Shared/TrackerStore+Records.swift` (`storeInbox`, `mapGroup`, `exchangeSummaries`, `exchangeArrivals`, `adoptWork`, `providesCatalog`) |
 | Einmischen in die Woche (abgeleitete Werte, Blöcke, Haken; eigenes gewinnt) | `Shared/WeekContext.swift` über `WeekExtras.compute` (`Packages/ThaliaCore/Sources/ThaliaCore/WeekExtras.swift`) |
 
-Öffentliche Adressen für die anderen Apps (sobald 1.9.0 auf `main` ist):
+Öffentliche Adressen für die anderen Apps (auf `main`):
 https://github.com/Binisoft-at/thalia/blob/main/Packages/ThaliaCore/Sources/ThaliaCore/ExchangeFormat.swift und
 https://github.com/Binisoft-at/thalia/tree/main/Packages/ThaliaCore/Tests/ThaliaCoreTests/Fixtures/exchange.
+
+**Thalia 1.10.0 – `ExchangeFormat.swift` hat sich nur additiv geändert** (Format bleibt v1): die Kennzahl
+`account_balance` in `ExchangeMetric.table` (Kontostand je Konto, `agg: last`, €), das Katalog-Feld
+`ExchangeCatalog.ResultEntry.source` (nur geschrieben, wenn nicht leer; tolerant gelesen – fehlt es, ist es leer oder
+kein Text, gilt nil) und toleranteres Lesen (`ExchangeRead.number`: nicht endliche Zahlen und Beträge ab 10¹² gelten als
+fehlend; `v` über `ExchangeRead.version`, ein unlesbares `v` gilt als 1). Apps, die die Datei kopiert haben, holen die
+neue Fassung – die Aufträge oben sagen es (§9). Ältere Thalia-Versionen behalten `account_balance`-Tatsachen als „nicht
+verwendet“ im Eingang; ein Katalog ohne `source` stört niemanden (Finn zeigt dann „Thalia auf diesem Gerät
+aktualisieren …“).
 
 Ändert sich das Format, steigt `v`; Thalia liest jede Version ab 1 und übergeht unbekannte Arten, Kennzahlen und Felder.
 Eine neue Art oder Kennzahl kommt zuerst in `ExchangeFormat.swift` (Tabelle) und die Testdateien, dann in die Aufträge
@@ -2479,12 +2716,15 @@ oben.
 
 ## 5. Offene Fragen
 
-1. **„Über 8,0“:** umgesetzt als „gerundet auf zwei Stellen ab 8,00“ (`GoalTrack.threshold`). Soll es erst ab 8,01
-   zählen, ist das eine Zeile in `GoalTrack` und ein Test.
-2. **Finn – Vermögen:** „monatlich“ oder „bei Änderung“? Der Auftrag lässt beides wählen (Standard aus); „bei Änderung“
-   gibt Thalias Ergebnis den frischeren Stand, „monatlich“ weniger Einzelheiten. Sparquote ist optional.
+1. **„Über 8,0“ – Entschieden (23. Nov. 2026): ab 8,00, gerundet auf zwei Stellen** (nicht erst ab 8,01;
+   `GoalTrack.threshold`).
+2. **Finn – Vermögen – Entschieden (23. Nov. 2026):** bei jeder Änderung, kein „monatlich“. In Finn ist jede Zeile
+   einzeln wählbar (jede Ausgaben-Gruppe, Vermögen, Sparquote, Kontostände einzelner Konten und Kontogruppen), Standard
+   aus, die Auswahl synchronisiert; Finn zeigt je Zeile, welchen Thalia-Messwert bzw. welches Ergebnis sie speist
+   (Auftrag 3.4, TASKS-v11 §1.5).
 3. **Darwin-Benachrichtigung am Mac:** ob sie zwischen zwei Mac-Apps in der Sandbox ankommt, ist ungeprüft. Thalia liest
-   ohnehin beim Start, im Vordergrund und alle 5 Minuten – es kann nur etwas länger dauern.
+   ohnehin beim Start, im Vordergrund und alle 5 Minuten – ab 1.10.0 am Mac auch, während eine andere App vorn ist
+   (der 5-Minuten-Takt läuft, solange Thalia offen ist). Es kann nur etwas länger dauern.
 4. **Theo – Power-Hours:** Der Auftrag geht davon aus, dass Theo PH-Einträge je Gruppe hat; sonst liefert Theo nur
    Aufgaben und sagt es im Bericht.
 5. **CloudKit-Weg** über `iCloud.at.binisoft.shared` (ohne „dasselbe Gerät“): eigener Plan nach 1.9.0.

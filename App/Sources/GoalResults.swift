@@ -144,6 +144,46 @@ enum ResultTexts {
     static func choiceLabel(_ result: GoalResult) -> String {
         "\(result.goalKey) · \(result.title)"
     }
+
+    /// v11 P7.7: the footer of "Ergebnisse" without a quick action, when a result counts through the reading list.
+    static let listFooter = "Bücher zählen über die Leseliste: fertig ist ein Buch mit der letzten Seite unter „Lesen“ oder mit „Fertig“ im Buch-Fenster."
+
+    /// v11 P7.7: the footer of the goal page's "Ergebnisse" from what it shows – nil when nothing needs saying.
+    /// With quick actions the capture day, and how another date goes: "Eintrag mit Datum…" where a tick or +1 is
+    /// shown, else "Wert eintragen" asks for the date.
+    static func sectionFooter(_ results: [GoalResult], captureDay: DayKey, today: DayKey) -> String? {
+        let quick: [GoalResult] = results.filter { quickAction($0) != nil }
+        guard !quick.isEmpty else {
+            let hasList: Bool = results.contains { ResultSourceType($0.resultSource) == .list }
+            return hasList ? listFooter : nil
+        }
+        let dated: Bool = quick.contains { $0.kind != .value }
+        let base: String = captureDay == today
+            ? "Abhaken, +1 und Werte zählen für heute"
+            : "Abhaken, +1 und Werte zählen für \(captureDay.shortLabel) – den Tag, den Thalia gerade zeigt"
+        return base + (dated ? "; ein anderes Datum geht über „Eintrag mit Datum…“." : "; „Wert eintragen“ fragt nach dem Datum.")
+    }
+
+    /// v11 P1.11: the books a reading-list result counts in `from…through` – every finished entry of its kind that
+    /// counts for no result, plus each that counts for this one ("zählt für", e.g. an audio book), each once.
+    /// An entry of another result stays out; one counting for a deleted result (not in `resultIDs`) counts by kind.
+    /// The same rule as `ResultProgress.compute`.
+    static func countedBooks(_ result: GoalResult, items: [ListItem], resultIDs: Set<String>, from: DayKey,
+                             through: DayKey) -> [ListItem] {
+        guard case .list(let kind) = result.resultSource else { return [] }
+        let live: [ListItem] = items.filter { $0.deletedAt == nil }
+        func owner(_ item: ListItem) -> String? {
+            guard let id = item.resultID?.trimmingCharacters(in: .whitespaces), !id.isEmpty else { return nil }
+            if id != result.id, !resultIDs.contains(id) { return nil }
+            return id
+        }
+        let assigned: [ListItem] = ListMath.finished(live.filter { owner($0) == result.id }, from: from, through: through)
+        let byKind: [ListItem] = ListMath.finished(live.filter { owner($0) == nil }, from: from, through: through,
+                                                   kind: kind ?? ListItem.kindKey(ListItem.defaultKind))
+        var seen: Set<String> = []
+        let counted: [ListItem] = (assigned + byKind).filter { seen.insert($0.id).inserted }
+        return counted.sorted { ($0.finishedOn?.ordinal ?? 0, $0.title) < ($1.finishedOn?.ordinal ?? 0, $1.title) }
+    }
 }
 
 /// Where a result's value comes from, as the editor offers it.
@@ -222,6 +262,14 @@ struct ResultProgressTable {
         return ResultTexts.cardLine(lines)
     }
 
+    /// v11 P6.14: the result counts a measure from Apple Health that this device doesn't read (Mac, Watch) – its row
+    /// says so ("Wert aus Health auf dem iPhone – hier ohne").
+    func usesHealthElsewhere(_ result: GoalResult) -> Bool {
+        guard case .measure(let code) = result.resultSource,
+              let measure = context.measures.first(where: { $0.code == code }) else { return false }
+        return context.isHealthElsewhere(measure, on: context.today)
+    }
+
     /// "zählt für Ziel 5 · Bücher 3/10" for each result a measure feeds.
     func countsFor(_ measure: MeasureDefinition) -> [String] {
         context.results(feedBy: measure).map { result in
@@ -241,11 +289,52 @@ struct ResultProgressTable {
     }
 
     /// Changes when a result or the values behind it may have changed (the task loads again).
+    /// v11 P7.11 (SYNC-3): a fingerprint of the values, not their counts – a changed weight or a newer Finn file changes
+    /// the key; the number of Health values stays in it.
     static func loadKey(_ results: [GoalResult], context: WeekContext) -> String {
         let fed: [GoalResult] = results.filter { context.needsSeries($0) }
         guard !fed.isEmpty else { return "" }
         let ids: String = fed.map { "\($0.id):\($0.source):\($0.modifiedAt.timeIntervalSince1970)" }.joined(separator: ",")
-        return "\(ids)|\(context.today.string)|\(context.entries.count)|\(context.health.count)|\(context.inbox.count)"
+        // HEALTHSHARE: also the shared days' count and newest change (Mac, watch, iPad – P9.3).
+        let shared: String = context.healthShare.fingerprint
+        return "\(ids)|\(context.today.string)|\(valuesFingerprint(fed, context: context))|\(context.health.count)|\(shared)"
+    }
+
+    /// The task's id: `loadKey` plus the sync counter, so values that arrive with iCloud load again (v11 P7.11).
+    static func taskKey(_ results: [GoalResult], context: WeekContext, syncTick: Int) -> String {
+        let key: String = loadKey(results, context: context)
+        return key.isEmpty ? "" : key + "|\(syncTick)"
+    }
+
+    /// The fed values of the shown week: per `measure:` code the number, newest change and sum of its own entries
+    /// (power-hours: the newest block); per `app:` source the day and `generatedAt` of each of its day files.
+    static func valuesFingerprint(_ results: [GoalResult], context: WeekContext) -> String {
+        var codes: Set<String> = []
+        var sources: Set<String> = []
+        for result in results {
+            switch result.resultSource {
+            case .measure(let code): codes.insert(code)
+            case .app(let app): sources.insert(BinisoftExchange.sourceID(app.source))
+            default: break
+            }
+        }
+        var parts: [String] = []
+        for code in codes.sorted() {
+            let entries: [MeasureEntry] = context.entries.filter { $0.code == code && $0.deletedAt == nil }
+            let newest: Double = entries.map(\.modifiedAt).max()?.timeIntervalSince1970 ?? 0
+            let sum: Double = entries.compactMap(\.value).reduce(0, +)
+            parts.append("\(code):\(entries.count):\(newest):\(sum)")
+        }
+        if !codes.isEmpty {
+            let newestWork: Double = context.work.map(\.modifiedAt).max()?.timeIntervalSince1970 ?? 0
+            parts.append("work:\(context.work.count):\(newestWork)")
+        }
+        for source in sources.sorted() {
+            let stamps: [String] = context.inbox.filter { BinisoftExchange.sourceID($0.source) == source }
+                .map { "\($0.day)@\($0.generatedAt)" }.sorted()
+            parts.append("\(source):" + stamps.joined(separator: ","))
+        }
+        return parts.joined(separator: ";")
     }
 }
 
@@ -275,18 +364,6 @@ enum RecordToast {
 
 // MARK: Shared pieces
 
-extension ResultProgress.Status {
-    /// The status in colour: reached and on track in the accent, behind orange, missed red.
-    var tint: Color {
-        switch self {
-        case .reached, .onTrack: Brand.accent
-        case .behind: Color.orange
-        case .missed: Color("MarkMissedText")
-        case .open, .untargeted: Color.secondary
-        }
-    }
-}
-
 extension View {
     /// A sheet shown from a screen of its own (not through `app.sheet`): the app, its store and the toasts.
     func thaliaLocalSheet(_ app: AppModel) -> some View {
@@ -298,18 +375,25 @@ extension View {
 }
 
 /// "auf Kurs" in a small capsule; nothing for a result without a target.
+/// v11 P7.2 (§1.2.4): one word set – "auf Kurs", "im Rückstand", "erreicht", "nicht erreicht"; a limit "im Rahmen",
+/// "zu schnell", "eingehalten", "überschritten" – and one colour per status (`StatusTint`).
 struct ResultStatusTag: View {
     let status: ResultProgress.Status
+    /// A count with a limit ("höchstens 20 Packungen", `ResultProgress.isLimit`).
+    var isLimit = false
+
+    private var text: String { status.label(isLimit: isLimit) }
+    private var color: Color { StatusTint(status).color }
 
     var body: some View {
-        if !status.label.isEmpty {
-            Text(status.label)
+        if !text.isEmpty {
+            Text(text)
                 .font(.caption2.weight(.bold))
                 .lineLimit(1)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 1)
-                .foregroundStyle(status.tint)
-                .background(status.tint.opacity(0.12), in: .capsule)
+                .foregroundStyle(color)
+                .background(color.opacity(0.12), in: .capsule)
         }
     }
 }
@@ -334,11 +418,19 @@ struct GoalResultRow: View {
     let result: GoalResult
     let progress: ResultProgress
     var showsGoal = false
+    /// The goal's colour (kept for the callers). v11 P7.2, P1.10: the bar takes the status colour (`StatusTint`) –
+    /// no colour that depends on the value.
     var tint: Color = Brand.accent
+    /// v11 P6.14: the value comes from Apple Health on the iPhone – this device counts without it.
+    var usesHealthElsewhere = false
+
+    static let healthElsewhereText = "Wert aus Health auf dem iPhone – hier ohne"
 
     private var title: String {
         showsGoal ? ResultTexts.choiceLabel(result) : result.title
     }
+
+    private var barColor: Color { StatusTint(progress.status).color }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -347,15 +439,20 @@ struct GoalResultRow: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
                 Spacer(minLength: 6)
-                ResultStatusTag(status: progress.status)
+                ResultStatusTag(status: progress.status, isLimit: progress.isLimit)
             }
             Text(progress.text)
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+            if usesHealthElsewhere {
+                Text(GoalResultRow.healthElsewhereText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let fraction = progress.fraction, result.kind != .check {
                 ProgressView(value: min(1, max(0, fraction)))
-                    .tint(tint)
+                    .tint(barColor)
             }
         }
         .accessibilityElement(children: .combine)
@@ -378,7 +475,8 @@ struct ResultSeriesReader<Content: View>: View {
 
     var body: some View {
         content(ResultProgressTable(context: context, series: series))
-            .task(id: ResultProgressTable.loadKey(results, context: context)) {
+            // v11 P7.11: also after an iCloud import (`syncTick`) – a weight or a Finn value of another week.
+            .task(id: ResultProgressTable.taskKey(results, context: context, syncTick: app.syncTick)) {
                 series = ResultProgressTable.loadSeries(results, context: context, store: app.store)
             }
     }
@@ -421,7 +519,8 @@ struct GoalResultsSection: View {
                 NavigationLink {
                     ResultDetailView(resultID: result.id)
                 } label: {
-                    GoalResultRow(result: result, progress: table.progress(result), tint: goal.color)
+                    GoalResultRow(result: result, progress: table.progress(result), tint: goal.color,
+                                  usesHealthElsewhere: table.usesHealthElsewhere(result))
                 }
                 .contextMenu { menu(result) }
                 if let action = ResultTexts.quickAction(result) {
@@ -457,14 +556,15 @@ struct GoalResultsSection: View {
         } header: {
             Text("Ergebnisse")
         } footer: {
-            Text(footer)
+            if let footer {
+                Text(footer)
+            }
         }
     }
 
-    private var footer: String {
-        let hint: String = "Abhaken, +1 und Werte zählen für \(app.captureDay.shortLabel)"
-        guard app.captureDay != app.today else { return "Abhaken, +1 und Werte zählen für heute; ein anderes Datum geht über „Eintrag mit Datum…“." }
-        return hint + " – den Tag, den Thalia gerade zeigt."
+    /// v11 P7.7: from what the section shows – no "Eintrag mit Datum…" where there is no such button.
+    private var footer: String? {
+        ResultTexts.sectionFooter(results, captureDay: app.captureDay, today: app.today)
     }
 
     /// "Abhaken" · "+1" · "Wert eintragen", and "Eintrag mit Datum…".
@@ -517,7 +617,7 @@ struct GoalResultsSection: View {
         switch result.kind {
         case .check, .count:
             let change: RecordChange = app.store.addGoalEntry(to: result, day: day)
-            RecordToast.show(app, ResultTexts.entryToast(result, value: nil, day: day, today: app.today), symbol: "flag.checkered", change: change)
+            RecordToast.show(app, ResultTexts.entryToast(result, value: nil, day: day, today: app.today), symbol: "trophy", change: change)
         case .value:
             onSheet(ResultSheet(kind: .entry(resultID: result.id, day: day)))
         }
@@ -555,10 +655,11 @@ struct ResultDetailView: View {
         WeekReader(week: app.today.week, today: app.today) { context in
             if let result = context.results.first(where: { $0.id == resultID }) {
                 ResultSeriesReader(results: [result], context: context) { table in
-                    ResultDetailContent(result: result, context: context, progress: table.progress(result))
+                    ResultDetailContent(result: result, context: context, progress: table.progress(result),
+                                        usesHealthElsewhere: table.usesHealthElsewhere(result))
                 }
             } else {
-                ContentUnavailableView("Ergebnis nicht gefunden", systemImage: "flag.checkered",
+                ContentUnavailableView("Ergebnis nicht gefunden", systemImage: "trophy",
                                        description: Text("Vielleicht wurde es gelöscht – „Zuletzt gelöscht“ holt es zurück."))
             }
         }
@@ -574,6 +675,8 @@ struct ResultDetailContent: View {
     let result: GoalResult
     let context: WeekContext
     let progress: ResultProgress
+    /// v11 P6.14: the value comes from Apple Health on the iPhone.
+    var usesHealthElsewhere = false
     @Environment(AppModel.self) private var app
     @State private var sheet: ResultSheet?
     @State private var editingEntry: EntryEditTarget?
@@ -588,13 +691,11 @@ struct ResultDetailContent: View {
     private var tint: Color { GoalPalette.color(goal: result.goalKey) }
     private var entries: [GoalEntry] { context.entries(of: result).reversed() }
 
-    /// Books that count for a reading-list result (finished in its time span).
+    /// Books that count for a reading-list result (finished in its time span). v11 P1.11: every finished one of
+    /// its kind plus each that counts for it explicitly.
     private var countedBooks: [ListItem] {
-        guard case .list(let kind) = result.resultSource else { return [] }
-        let assigned: [ListItem] = context.listItems.filter { $0.resultID == result.id }
-        if !assigned.isEmpty { return ListMath.finished(assigned, from: progress.from, through: progress.through) }
-        let unassigned: [ListItem] = context.listItems.filter { ($0.resultID ?? "").isEmpty }
-        return ListMath.finished(unassigned, from: progress.from, through: progress.through, kind: kind ?? ListItem.kindKey(ListItem.defaultKind))
+        ResultTexts.countedBooks(result, items: context.listItems, resultIDs: Set(context.results.map(\.id)),
+                                 from: progress.from, through: progress.through)
     }
 
     /// "Abschnitt 1: 3 · Abschnitt 2: 4" when the goal year has several segments.
@@ -619,7 +720,7 @@ struct ResultDetailContent: View {
     var body: some View {
         List {
             Section {
-                GoalResultRow(result: result, progress: progress, tint: tint)
+                GoalResultRow(result: result, progress: progress, tint: tint, usesHealthElsewhere: usesHealthElsewhere)
                 if let pace = ResultTexts.paceText(progress) {
                     LabeledContent("Gleichmäßiges Tempo", value: pace)
                 }
@@ -751,6 +852,8 @@ struct ResultDetailContent: View {
 
 /// "Jahresziel eintragen" (§1.2.6): choose a result, then abhaken, +n or a value – on `day` (the capture
 /// day; any other day too, "Zählt für Di, 17. Nov.").
+/// v11 P7.4: with exactly one result to choose it is chosen; a count or a value gets the focus, Return (Mac) and
+/// "Eintragen" above the iPhone's number pad save.
 struct GoalEntrySheet: View {
     let resultID: String?
     @Environment(AppModel.self) private var app
@@ -760,6 +863,7 @@ struct GoalEntrySheet: View {
     @State private var amountText = "1"
     @State private var valueText = ""
     @State private var note = ""
+    @FocusState private var numberFocused: Bool
 
     init(day: DayKey, resultID: String? = nil) {
         self.resultID = resultID
@@ -836,6 +940,27 @@ struct GoalEntrySheet: View {
                     .disabled(!canSave(result))
             }
         }
+        .onAppear { preselect(context) }
+        // A moment after appearing (and after each choice): a focus set while the sheet still slides in can get lost.
+        .task(id: chosenID) {
+            guard GoalEntrySheet.takesNumber(chosen(context)) else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            numberFocused = true
+        }
+    }
+
+    /// v11 P7.4: only when there is exactly one choice – no "zuletzt benutzt" (a wrong guess would be one tap away).
+    private func preselect(_ context: WeekContext) {
+        guard chosenID.isEmpty else { return }
+        let all: [GoalResult] = choices(context)
+        if all.count == 1, let only = all.first { chosenID = only.id }
+    }
+
+    /// A count or a value is typed (a tick isn't).
+    static func takesNumber(_ result: GoalResult?) -> Bool {
+        guard let result else { return false }
+        return result.kind != .check
     }
 
     @ViewBuilder
@@ -847,12 +972,18 @@ struct GoalEntrySheet: View {
             HStack {
                 TextField("Anzahl", text: $amountText)
                     .decimalKeyboard()
+                    .focused($numberFocused)
+                    .onSubmit { save(context) }
+                    .keypadButton("Eintragen", isActive: numberFocused) { save(context) }
                 Text(Units.display(result.unit)).foregroundStyle(.secondary)
             }
         case .value:
             HStack {
                 TextField("Wert", text: $valueText)
                     .decimalKeyboard()
+                    .focused($numberFocused)
+                    .onSubmit { save(context) }
+                    .keypadButton("Eintragen", isActive: numberFocused) { save(context) }
                 Text(Units.display(result.unit)).foregroundStyle(.secondary)
             }
         }
@@ -886,7 +1017,7 @@ struct GoalEntrySheet: View {
         case .value: value = Format.parse(valueText)
         }
         let change: RecordChange = app.store.addGoalEntry(to: result, day: day, value: value, note: note)
-        RecordToast.show(app, ResultTexts.entryToast(result, value: value, day: day, today: app.today), symbol: "flag.checkered", change: change)
+        RecordToast.show(app, ResultTexts.entryToast(result, value: value, day: day, today: app.today), symbol: "trophy", change: change)
         dismiss()
     }
 }
@@ -968,7 +1099,7 @@ struct GoalEntryEditor: View {
         changed.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         if hasValue { changed.value = Format.parse(valueText) }
         let change: RecordChange = app.store.saveGoalEntry(changed)
-        RecordToast.show(app, "Eintrag gesichert · \(day.shortLabel)", symbol: "flag.checkered", change: change)
+        RecordToast.show(app, "Eintrag gesichert · \(day.shortLabel)", symbol: "trophy", change: change)
         dismiss()
     }
 
@@ -1095,7 +1226,8 @@ struct ResultEditor: View {
     private var sourceIncomplete: Bool {
         switch sourceType {
         case .measure: return measureCode.isEmpty
-        case .app: return appSource == nil
+        // v11 §1.5.4: a balance needs its account – "alle" would be the latest balance of any account.
+        case .app: return appSource.map { $0.requiresRef && ($0.ref ?? "").isEmpty } ?? true
         default: return false
         }
     }
@@ -1157,7 +1289,11 @@ struct ResultEditor: View {
             .onAppear(perform: load)
             .onChange(of: sourceType) { _, type in suggestUnit(type) }
             .onChange(of: measureCode) { _, _ in suggestUnit(sourceType) }
-            .onChange(of: appKind) { _, _ in suggestUnit(sourceType) }
+            .onChange(of: appKind) { _, _ in
+                suggestUnit(sourceType)
+                // A ref of another kind doesn't fit the new one (a group is no account).
+                if sourceInfo != nil, !appRef.isEmpty, !refChoices.contains(where: { $0.id == appRef }) { appRef = "" }
+            }
             .onChange(of: kind) { _, newKind in
                 let allowed: [ResultSourceType] = ResultSourceType.choices(for: newKind, current: sourceType)
                 if !allowed.contains(sourceType) { sourceType = .entries }
@@ -1266,7 +1402,7 @@ struct ResultEditor: View {
             switch sourceType {
             case .list:
                 TextField("Art (z. B. Buch)", text: $listKind)
-                Text("Zählt fertige Einträge der Leseliste, die „zählt für“ dieses Ergebnis haben – ohne solche alle fertigen dieser Art.")
+                Text("Zählt alle fertigen Einträge dieser Art der Leseliste – dazu jeden, der ausdrücklich für dieses Ergebnis zählt (z. B. ein Hörbuch).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .measure:
@@ -1312,6 +1448,9 @@ struct ResultEditor: View {
         if sources.isEmpty {
             TextField("Quelle (z. B. finn)", text: $appSourceID)
             TextField("Art oder Kennzahl (z. B. net_worth)", text: $appKind)
+            if requiresRef {
+                TextField("Konto (id aus der App)", text: $appRef)
+            }
             Text("Noch keine verbundene App gesehen. Werte erscheinen, sobald Thalia die Daten auf diesem Gerät gelesen hat.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1328,19 +1467,47 @@ struct ResultEditor: View {
                     Text(AppSource(source: appSourceID, kind: choice).kindTitle).tag(choice)
                 }
             }
-            if let info = sourceInfo, let source = appSource, !source.refChoices(info.refs).isEmpty {
-                Picker("Eintrag", selection: $appRef) {
-                    Text("alle").tag("")
-                    ForEach(source.refChoices(info.refs), id: \.id) { ref in
-                        Text(ref.title.isEmpty ? ref.id : ref.title).tag(ref.id)
-                    }
-                }
-            }
+            refPicker
             if let source = appSource {
                 Text(source.label(refs: sourceInfo?.refs ?? []))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// The refs that fit the chosen kind (`AppSource.refChoices` – accounts for "Kontostand").
+    private var refChoices: [ExchangeRef] {
+        guard let info = sourceInfo, let source = appSource else { return [] }
+        return source.refChoices(info.refs)
+    }
+
+    /// v11 §1.5.4: the chosen kind needs a ref (`AppSource.requiresRef`, an account balance) – no "alle".
+    private var requiresRef: Bool { appSource?.requiresRef ?? false }
+
+    /// "Eintrag": "alle" or one ref; for a balance only an account ("Bitte wählen" until one is chosen).
+    @ViewBuilder
+    private var refPicker: some View {
+        let choices: [ExchangeRef] = refChoices
+        if !choices.isEmpty || !appRef.isEmpty {
+            Picker(requiresRef ? "Konto" : "Eintrag", selection: $appRef) {
+                if requiresRef {
+                    if appRef.isEmpty { Text("Bitte wählen").tag("") }
+                } else {
+                    Text("alle").tag("")
+                }
+                ForEach(choices, id: \.id) { ref in
+                    Text(ref.title.isEmpty ? ref.id : ref.title).tag(ref.id)
+                }
+                if !appRef.isEmpty && !choices.contains(where: { $0.id == appRef }) {
+                    Text(appRef).tag(appRef)
+                }
+            }
+        } else if requiresRef {
+            TextField("Konto (id aus der App)", text: $appRef)
+            Text("Noch kein Konto aus dieser App gesehen – in der App die Kontostände für Thalia einschalten.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -1438,7 +1605,7 @@ struct ResultEditor: View {
         record.endedAfter = endedAfter.isEmpty ? nil : endedAfter
         record.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let change: RecordChange = store.saveResult(record)
-        RecordToast.show(app, result == nil ? "Ergebnis „\(record.title)“ angelegt" : "Ergebnis gesichert", symbol: "flag.checkered", change: change)
+        RecordToast.show(app, result == nil ? "Ergebnis „\(record.title)“ angelegt" : "Ergebnis gesichert", symbol: "trophy", change: change)
         dismiss()
     }
 

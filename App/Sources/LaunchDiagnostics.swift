@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Counts body runs on the Mac in debug builds (see LaunchDiagnostics); does nothing elsewhere.
 func diagBody(_ name: String) {
@@ -12,6 +13,31 @@ func diagNote(_ message: String) {
     #if os(macOS) && DEBUG
     LaunchDiagnostics.note(message)
     #endif
+}
+
+/// v11 P4.1 (1): a measured width in the Mac debug log – "diag: width today list 270" whenever it changes by a
+/// whole point, and all of them in one line ("widths at 8 s: …") with the windows; nothing elsewhere.
+func diagMeasure(_ name: String, _ width: CGFloat) {
+    #if os(macOS) && DEBUG
+    LaunchDiagnostics.width(name, width)
+    #endif
+}
+
+extension View {
+    /// v11 P4.1 (1): logs this view's width under `name` (`diagMeasure`) – Mac debug builds only, so CI's
+    /// mac-log shows at 1024 pt which column stays above its minimum. Everywhere else the view as it is.
+    @ViewBuilder
+    func diagWidth(_ name: String) -> some View {
+        #if os(macOS) && DEBUG
+        onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            diagMeasure(name, width)
+        }
+        #else
+        self
+        #endif
+    }
 }
 
 #if os(macOS) && DEBUG
@@ -29,11 +55,23 @@ enum LaunchDiagnostics {
     private static let log = Logger(subsystem: "at.binisoft.thalia", category: "diag")
     private static let lock = NSLock()
     nonisolated(unsafe) private static var counts: [String: Int] = [:]
+    nonisolated(unsafe) private static var widths: [String: Int] = [:]
     nonisolated(unsafe) private static var lastPing = Date()
     nonisolated(unsafe) private static var started = false
 
     static func note(_ message: String) {
         log.notice("diag: \(message, privacy: .public)")
+    }
+
+    /// v11 P4.1 (1): a width, logged when it changed by a whole point.
+    static func width(_ name: String, _ value: CGFloat) {
+        let rounded = Int(value.rounded())
+        lock.lock()
+        let old = widths[name]
+        widths[name] = rounded
+        lock.unlock()
+        guard old != rounded else { return }
+        note("width \(name) \(rounded)")
     }
 
     /// Call from a body: logs the 1st, 2nd, 3rd, 10th, 100th, 1000th … run.
@@ -91,8 +129,14 @@ enum LaunchDiagnostics {
     private static func logWindows(at second: Int) {
         let windows = NSAppWindows.describe()
         note("windows at \(second) s: \(windows)")
-        lock.lock(); let snapshot = counts; lock.unlock()
+        lock.lock(); let snapshot = counts; let measured = widths; lock.unlock()
         note("body counts at \(second) s: \(snapshot.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))")
+        note("widths at \(second) s: \(measured.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))")
+        // P4.1: about 0 means an open inspector sits inside the detail column (the premise of `detailWidth`);
+        // about the inspector's width means it is a column of its own next to the detail.
+        if let window = measured["window"], let sidebar = measured["sidebar"], let detail = measured["detail"] {
+            note("detail check at \(second) s: window \(window) − sidebar \(sidebar) − detail \(detail) = \(window - sidebar - detail)")
+        }
     }
 }
 

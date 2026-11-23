@@ -22,14 +22,24 @@ public struct ThaliaTourSnapshot: Equatable, Sendable {
 /// Thalia's interactive tour (German). To teach a new feature: add a step with
 /// `since: version + 1` and bump `version`; people who took the tour get only the new steps.
 public enum ThaliaTour {
-    public static let version = 10
+    public static let version = 11
 
-    /// v10: 21 cards in the full tour (welcome, 19 steps, finish); the four steps with `since: 10`
-    /// (Ergebnisse und Wochen über 8, Leseliste, Abschnitte, Verbundene Apps) make up "Neu in Thalia" after 1.8.
+    /// The tour without the TestFlight step (`catalog(healthShare: false)`).
+    public static var catalog: TourCatalog<ThaliaTourSnapshot> { catalog(healthShare: false) }
+
+    /// v11: 24 cards in the full tour (welcome, 22 steps, finish) – 23 without `health-share`; the steps with
+    /// `since: 11` (Sicherung, Genauer gerechnet, Health am Mac und auf der Watch) make up "Neu in Thalia"
+    /// after 1.9. `healthShare`: the step `health-share` only where sharing Health values is allowed
+    /// (TestFlight, the gate in Shared); `catalog` stays the tour without it.
+    /// v10: 21 cards (welcome, 19 steps, finish); the four steps with `since: 10` (Ergebnisse und Wochen
+    /// über 8, Leseliste, Abschnitte, Verbundene Apps) made up "Neu in Thalia" after 1.8.
     /// v9: 17 cards; the step with `since: 9` (Archiv-Wochen) made up "Neu in Thalia" after 1.7. v8 added three
     /// (Krank & Urlaub, Vergangene Wochen, PDF-Bericht).
     /// v7 had 13 cards: colours, the "Wofür" rule, weekly goals, sharing and PDF moved into other cards then.
-    public static let catalog = TourCatalog<ThaliaTourSnapshot>(
+    public static func catalog(healthShare: Bool) -> TourCatalog<ThaliaTourSnapshot> {
+        // HEALTHSHARE: the TestFlight step comes last (P9 removes it before the App Store).
+        let shared: [TourStep<ThaliaTourSnapshot>] = healthShare ? [healthShareStep] : []
+        return TourCatalog<ThaliaTourSnapshot>(
         version: version,
         welcome: TourStep(
             id: "welcome", symbol: "hand.wave", title: "Willkommen bei Thalia",
@@ -103,8 +113,8 @@ public enum ThaliaTour {
             ),
             TourStep(
                 id: "past-weeks", since: 8, symbol: "clock.arrow.circlepath", title: "Vergangene Wochen",
-                body: "Woche → … → „Vergangene Woche nachtragen…“, drei Wege: „Plan übernehmen“, dann selbst abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen.",
-                macBody: "Ablage → „Vergangene Woche nachtragen…“, drei Wege: „Plan übernehmen“, dann in der Tabelle abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen."
+                body: "Woche → … → „Vergangene Woche nachtragen…“, drei Wege: „Vom Plan“ – Punkte einer geplanten Woche übernehmen, dann selbst abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen.",
+                macBody: "Ablage → „Vergangene Woche nachtragen…“, drei Wege: „Vom Plan“ – Punkte einer geplanten Woche übernehmen, dann selbst abhaken und abschließen; „Mit ChatGPT“ – Prompt kopieren, Fotos, PDFs oder Tabellen auch vieler Wochen dazulegen, die CSV einfügen, Vorschau je Woche – die Wochen werden gleich abgeschlossen; oder „Nur Wertung“ für eine Zahl vom Papier. Abgeschlossene Wochen zählen im Rückblick und bei den Zielen."
             ),
             TourStep(
                 id: "archive", since: 9, symbol: "archivebox", title: "Archiv-Wochen",
@@ -116,9 +126,9 @@ public enum ThaliaTour {
                 body: "Im Ziel-Detail zeigt der Verlauf 12 Wochen, ein Halbjahr oder das ganze Zieljahr – mit Messwerten und Ziellinie. Drei Wochen vor der Zielüberprüfung hilft „Zielüberprüfung vorbereiten“, samt aller geparkten Ideen."
             ),
             TourStep(
-                id: "goal-results", since: 10, symbol: "flag.checkered", title: "Ergebnisse und Wochen über 8",
-                body: "Ziele → ein Ziel → „Ergebnisse“: abhaken, +1 oder einen Wert eintragen – etwa „10 Bücher“ oder „Website online“. Die Zeile zeigt Stand, Ziel und „auf Kurs“ oder „hinten“. Rückwirkend: zum Tag gehen, + → „Jahresziel eintragen“. Eine Kategorie mit einer Wochennote ab 8 ist gut dabei: Die Zielkarte zeigt „✓ über 8“ und „Wochen über 8“ der letzten zwölf Wochen, darunter die Messwerte, die im Ziel stecken.",
-                macBody: "Ziele → ein Ziel → „Ergebnisse“: abhaken, +1 oder einen Wert eintragen – etwa „10 Bücher“ oder „Website online“. Die Zeile zeigt Stand, Ziel und „auf Kurs“ oder „hinten“. Rückwirkend: zum Tag gehen, „Erfassen“ (⇧⌘N) → „Jahresziel eintragen“. Eine Kategorie mit einer Wochennote ab 8 ist gut dabei: Die Zielkarte zeigt „✓ über 8“ und „Wochen über 8“ der letzten zwölf Wochen, darunter die Messwerte, die im Ziel stecken."
+                id: "goal-results", since: 10, symbol: "trophy", title: "Ergebnisse und Wochen über 8",
+                body: "Ziele → ein Ziel → „Ergebnisse“: abhaken, +1 oder einen Wert eintragen – etwa „10 Bücher“ oder „Website online“. Die Zeile zeigt Stand, Ziel und „auf Kurs“ oder „im Rückstand“. Rückwirkend: zum Tag gehen, + → „Jahresziel eintragen“. Eine Kategorie mit einer Wochennote ab 8,00 ist gut dabei: Die Zielkarte zeigt „✓ über 8“ und „Wochen über 8“ der letzten zwölf Wochen, darunter die Messwerte, die im Ziel stecken.",
+                macBody: "Ziele → ein Ziel → „Ergebnisse“: abhaken, +1 oder einen Wert eintragen – etwa „10 Bücher“ oder „Website online“. Die Zeile zeigt Stand, Ziel und „auf Kurs“ oder „im Rückstand“. Rückwirkend: zum Tag gehen, „Erfassen“ (⇧⌘N) → „Jahresziel eintragen“. Eine Kategorie mit einer Wochennote ab 8,00 ist gut dabei: Die Zielkarte zeigt „✓ über 8“ und „Wochen über 8“ der letzten zwölf Wochen, darunter die Messwerte, die im Ziel stecken."
             ),
             TourStep(
                 id: "reading", since: 10, symbol: "books.vertical", title: "Leseliste",
@@ -145,7 +155,24 @@ public enum ThaliaTour {
                 body: "Einstellungen → „Verbundene Apps“: Theo, George, Nina oder Finn liefern Erledigtes und Werte auf demselben Gerät. Power-Hours stehen in Heute „aus Theo“ – „Übernehmen“ macht einen eigenen Eintrag daraus. Verknüpfte Punkte bekommen den Haken „⇄ George · Push“, solange kein eigener gesetzt ist; eigene Einträge gewinnen immer. Gruppen ohne Kategorie stehen unter „Ohne Zuordnung“. Werte aus anderen Apps erscheinen, sobald Thalia auf diesem Gerät geöffnet war. Werte aus Apple Health gehen nie in den Austausch.",
                 macBody: "Einstellungen (⌘,) → „Verbundene Apps“: Theo, George, Nina oder Finn liefern Erledigtes und Werte auf demselben Mac. Power-Hours stehen in Heute „aus Theo“ – „Übernehmen“ macht einen eigenen Eintrag daraus. Verknüpfte Punkte bekommen den Haken „⇄ George · Push“, solange kein eigener gesetzt ist; eigene Einträge gewinnen immer. Gruppen ohne Kategorie stehen unter „Ohne Zuordnung“. Werte aus anderen Apps erscheinen, sobald Thalia auf diesem Gerät geöffnet war. Werte aus Apple Health gehen nie in den Austausch."
             ),
-        ]
+            TourStep(
+                id: "backup", since: 11, symbol: "externaldrive", title: "Sicherung",
+                body: "Einstellungen → Deine Daten zeigt, wann und auf welchem Gerät zuletzt gesichert wurde, und hat „Sicherung erstellen…“. iPhone und Mac legen außerdem jede Woche selbst eine Sicherung an (Einstellungen → Deine Daten → Sicherungen).",
+                macBody: "Ablage → „Sicherung erstellen…“ legt eine Sicherung ab. Einstellungen (⌘,) → Deine Daten zeigt, wann und auf welchem Gerät zuletzt gesichert wurde. iPhone und Mac legen außerdem jede Woche selbst eine Sicherung an (Einstellungen → Deine Daten → Sicherungen)."
+            ),
+            TourStep(
+                id: "rules-11", since: 11, symbol: "function", title: "Genauer gerechnet",
+                body: "Eine verpasste Wochenquote zählt jetzt auch, wenn der letzte Tag leer bleibt. Zeitziele über Mitternacht stimmen. „10 Bücher“ zählt alle fertigen Bücher. Die letzten drei abgeschlossenen Wochen können sich dadurch einmal leicht ändern; eingefrorene bleiben."
+            ),
+        ] + shared
+    )
+    }
+
+    // HEALTHSHARE: the tour step for sharing Health values with Mac and watch (TestFlight only, §1.4).
+    static let healthShareStep = TourStep<ThaliaTourSnapshot>(
+        id: "health-share", since: 11, symbol: "heart.text.square", title: "Health am Mac und auf der Watch",
+        body: "Einstellungen → Apple Health → „Health-Werte mit Mac und Watch teilen“. Dann zählen Mac und Watch die übernommenen Health-Werte wie das iPhone. Nur in der TestFlight-Version.",
+        macBody: "Ist am iPhone „Health-Werte mit Mac und Watch teilen“ an, zeigt und zählt der Mac Gewicht, Schlaf und Co. vom iPhone."
     )
 }
 
@@ -470,24 +497,54 @@ public struct ReminderSettings: Codable, Equatable, Sendable {
         public let destination: String
     }
 
-    /// The repeating notifications to schedule: the mornings and the weekly review. The evening is
-    /// planned per day (`eveningRequests`), so a closed day gets none (R80).
-    public func requests() -> [Request] {
-        var result: [Request] = []
-        if morning {
-            for day in DayMask(rawValue: morningDays).days {
-                result.append(Request(id: "thalia.morning.\(day.rawValue)", gregorianWeekday: day.gregorianWeekday,
-                                      hour: morningMinutes / 60, minute: morningMinutes % 60,
-                                      title: "Guten Morgen", body: "Kurz in Thalia schauen: was heute ansteht – und ob gestern noch offen ist.",
-                                      destination: "today"))
-            }
+    /// The repeating notifications to schedule – none since v11 (P4.17): the mornings and the weekly review
+    /// are planned per day like the evening (`morningRequests`, `weeklyRequests`), so a sick day gets no
+    /// morning and a closed week no "Wochenabschluss". Like the evenings they end after about 7 days
+    /// without opening Thalia. Kept for callers of older code.
+    public func requests() -> [Request] { [] }
+
+    /// "thalia.morning.2026-11-16"
+    public static func morningID(_ day: DayKey) -> String { "thalia.morning.\(day.string)" }
+
+    /// "thalia.weekly.2026-W47" – the reminder of the week it is about (removed when that week is closed).
+    public static func weeklyID(_ week: WeekKey) -> String { "thalia.weekly.\(week.string)" }
+
+    /// The morning reminder as one notification per day from `start` for `count` days (v11 P4.17): only on
+    /// `morningDays`, days `isSkipped` (sick and holiday days) left out; empty when it is off.
+    public func morningRequests(from start: DayKey, count: Int = 7, isSkipped: (DayKey) -> Bool) -> [DatedRequest] {
+        guard morning, count > 0 else { return [] }
+        let mask = DayMask(rawValue: morningDays)
+        return (0..<count).map { start.adding(days: $0) }.filter { mask.contains($0.weekday) && !isSkipped($0) }.map { day in
+            DatedRequest(id: ReminderSettings.morningID(day), day: day, hour: morningMinutes / 60, minute: morningMinutes % 60,
+                         title: "Guten Morgen", body: "Kurz in Thalia schauen: was heute ansteht – und ob gestern noch offen ist.",
+                         destination: "today")
         }
-        if weekly, let day = Weekday(rawValue: weeklyDay) {
-            result.append(Request(id: "thalia.weekly", gregorianWeekday: day.gregorianWeekday, hour: weeklyMinutes / 60, minute: weeklyMinutes % 60,
-                                  title: "Wochenabschluss", body: "Woche abschließen und die nächste planen – wiederholen statt steigern.",
-                                  destination: "close-week"))
+    }
+
+    /// The weekly reminder on each `weeklyDay` from `start` for `count` days (v11 P4.17). It is about the
+    /// reminder day's week on Friday to Sunday, else the week before. Left out when that week is closed and
+    /// the next one has a plan; closed without a next plan → "Nächste Woche planen" (opens the import);
+    /// otherwise "Wochenabschluss" for that week (`close-week:<week>`). Empty when it is off.
+    public func weeklyRequests(from start: DayKey, count: Int = 7, isClosed: (WeekKey) -> Bool,
+                               hasPlan: (WeekKey) -> Bool) -> [DatedRequest] {
+        guard weekly, count > 0, let weekday = Weekday(rawValue: weeklyDay) else { return [] }
+        var result: [DatedRequest] = []
+        for day in (0..<count).map({ start.adding(days: $0) }) where day.weekday == weekday {
+            let week = day.weekday >= .friday ? day.week : day.week.adding(weeks: -1)
+            let next = week.adding(weeks: 1)
+            let hour = weeklyMinutes / 60
+            let minute = weeklyMinutes % 60
+            if isClosed(week) {
+                guard !hasPlan(next) else { continue }
+                result.append(DatedRequest(id: ReminderSettings.weeklyID(week), day: day, hour: hour, minute: minute,
+                                           title: "Nächste Woche planen", body: "Planungs-Prompt kopieren und den Plan importieren.",
+                                           destination: "import"))
+            } else {
+                result.append(DatedRequest(id: ReminderSettings.weeklyID(week), day: day, hour: hour, minute: minute,
+                                           title: "Wochenabschluss", body: "Woche abschließen und die nächste planen – wiederholen statt steigern.",
+                                           destination: "close-week:\(week.string)"))
+            }
         }
         return result
     }
-
 }

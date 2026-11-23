@@ -22,11 +22,33 @@ struct ReviewView: View {
                 } label: {
                     Label("PDF-Bericht", systemImage: "doc.richtext")
                 }
+                .reviewToolbarLabelStyle()
                 .help("Mehrere Wochen als PDF (⌥⌘P)")
             }
             MainToolbar()
         }
     }
+}
+
+private extension View {
+    /// v11 P6.15 (R62): the Mac's toolbar button with its text, like Today's and the week's.
+    @ViewBuilder
+    func reviewToolbarLabelStyle() -> some View {
+        #if os(macOS)
+        labelStyle(.titleAndIcon)
+        #else
+        self
+        #endif
+    }
+}
+
+/// v11 P6.3, P6.10: what the closed weeks need from a week of their own, read in one pass – the weeks scored
+/// without a score because they were all sick or holiday days, and how many goals counted where fewer were scored
+/// than there are goals.
+struct ClosedWeekFacts {
+    var excused: Set<String> = []
+    /// "2026-W45" → the goals that counted that week (`WeekScore.goalsTotal`).
+    var goalsTotal: [String: Int] = [:]
 }
 
 struct ReviewContent: View {
@@ -87,12 +109,13 @@ struct ReviewContent: View {
     }
 
     /// R70: weeks before this one with a plan that were never closed and have no paper score –
-    /// with their running score.
-    private var unclosed: [String: UnclosedWeek] {
+    /// with their running score. v11 P6.10: the weeks read once per body; each week without the goal year
+    /// (only its score and `isExcused` are read).
+    private func unclosed(_ weeks: [WeekPlan]) -> [String: UnclosedWeek] {
         var result: [String: UnclosedWeek] = [:]
         for plan in weeks {
             guard let week = plan.week, week < current.week, !plan.isClosed, plan.recordedScore == nil else { continue }
-            let context: WeekContext = app.store.weekContext(for: week, today: app.today)
+            let context: WeekContext = app.store.weekContext(for: week, today: app.today, goalYear: false)
             guard context.hasPlan else { continue }
             result[week.string] = UnclosedWeek(score: context.score.overall, isExcused: context.score.isExcused)
         }
@@ -100,17 +123,25 @@ struct ReviewContent: View {
     }
 
     /// v8: closed weeks without a score because every day with something planned was a sick or
-    /// holiday day – shown as "entschuldigt", not as a gap.
-    private var excusedClosed: Set<String> {
-        var result: Set<String> = []
+    /// holiday day – shown as "entschuldigt", not as a gap. v11 P6.3: closed weeks that scored fewer goals than
+    /// there are get the number that counted that week ("9/9" isn't a gap – a goal can be excused or new). Only
+    /// these few weeks are read, each once and without the goal year (P6.10).
+    private func closedFacts(_ weeks: [WeekPlan]) -> ClosedWeekFacts {
+        var facts = ClosedWeekFacts()
+        let goalCount: Int = current.goals.count
         for plan in weeks {
-            guard let week = plan.week, week < current.week, plan.isClosed, plan.historyScore == nil else { continue }
-            if app.store.weekContext(for: week, today: app.today).score.isExcused { result.insert(week.string) }
+            guard let week = plan.week, week < current.week, plan.isClosed else { continue }
+            let needsExcused: Bool = plan.historyScore == nil
+            let needsTotal: Bool = plan.finalGoalsScored > 0 && plan.finalGoalsScored < goalCount
+            guard needsExcused || needsTotal else { continue }
+            let score: WeekScore = app.store.weekContext(for: week, today: app.today, goalYear: false).score
+            if needsExcused && score.isExcused { facts.excused.insert(week.string) }
+            if needsTotal { facts.goalsTotal[week.string] = score.goalsTotal }
         }
-        return result
+        return facts
     }
 
-    private func chartPoints(_ open: [String: UnclosedWeek], excused: Set<String>) -> [ScorePoint] {
+    private func chartPoints(_ weeks: [WeekPlan], open: [String: UnclosedWeek], excused: Set<String>) -> [ScorePoint] {
         var result: [ScorePoint] = weeks.compactMap { plan -> ScorePoint? in
             guard let week = plan.week, week != current.week else { return nil }
             if let info = open[week.string] {
@@ -136,16 +167,19 @@ struct ReviewContent: View {
     }
 
     /// v9: weeks without items whose archive setting holds grades – their rows say "Archiv" (decision 9),
-    /// as in the PDF report (a week with items is scored by them). Read once per body.
+    /// as in the PDF report (a week with items is scored by them). Read once per body. v11 P6.10: the weeks
+    /// with items among them in one fetch, not one per week.
     private var archivedWeeks: Set<String> {
-        var result: Set<String> = []
+        var graded: Set<String> = []
         let stored = settings.filter { $0.key.hasPrefix(ArchiveWeek.settingPrefix) }.latest(by: \.key, modified: \.modifiedAt)
         for (key, setting) in stored {
             guard let week = ArchiveWeek.week(settingKey: key) else { continue }
-            guard ArchiveWeek(csv: setting.value, week: week).hasGrades, app.store.items(week).isEmpty else { continue }
-            result.insert(week.string)
+            if ArchiveWeek(csv: setting.value, week: week).hasGrades { graded.insert(week.string) }
         }
-        return result
+        guard !graded.isEmpty else { return [] }
+        let keys: [String] = Array(graded)
+        let planned = app.store.fetch(FetchDescriptor<PlanItem>(predicate: #Predicate<PlanItem> { keys.contains($0.weekKey) && $0.deletedAt == nil }))
+        return graded.subtracting(planned.map(\.weekKey))
     }
 
     /// v8: the week was all sick or holiday days.
@@ -156,10 +190,13 @@ struct ReviewContent: View {
     }
 
     var body: some View {
-        let open: [String: UnclosedWeek] = unclosed
-        let excused: Set<String> = excusedClosed
+        // v11 P6.10: the weeks once per body, handed to every helper.
+        let weeks: [WeekPlan] = self.weeks
+        let open: [String: UnclosedWeek] = unclosed(weeks)
+        let facts: ClosedWeekFacts = closedFacts(weeks)
+        let excused: Set<String> = facts.excused
         let archived: Set<String> = archivedWeeks
-        let points: [ScorePoint] = chartPoints(open, excused: excused)
+        let points: [ScorePoint] = chartPoints(weeks, open: open, excused: excused)
         let starts: [ReviewSegmentStart] = segmentStarts(points)
         List {
             if points.count > 0 {
@@ -227,7 +264,7 @@ struct ReviewContent: View {
                             WeekHistoryRow(plan: plan, week: week,
                                            liveScore: liveScore(week, unclosed: info),
                                            isCurrent: week == current.week, isUnclosed: info != nil, isExcused: weekExcused,
-                                           isArchive: archived.contains(week.string))
+                                           isArchive: archived.contains(week.string), goalsTotal: facts.goalsTotal[week.string])
                         }
                         .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
@@ -308,8 +345,18 @@ struct WeekHistoryRow: View {
     var isExcused = false
     /// v9: the week has archive grades – tagged "Archiv"; its ring shows the value laut Unterlagen.
     var isArchive = false
+    /// v11 P6.3: the goals that counted in this closed week (excused and new goals change it); nil when every
+    /// goal was scored or the week wasn't read.
+    var goalsTotal: Int? = nil
 
     private var ringScore: Double? { liveScore ?? plan.historyScore }
+
+    /// v11 P6.3: "3/9 Ziele bewertet" – only when fewer goals were scored than counted that week.
+    private var goalsLine: String? {
+        let scored: Int = plan.finalGoalsScored
+        guard scored > 0, let total = goalsTotal, scored < total else { return nil }
+        return "\(scored)/\(total) Ziele bewertet"
+    }
 
     /// v9 (decision 5): both scores where a week has both, clearly named; nil otherwise.
     private var scoresLine: String? {
@@ -317,7 +364,7 @@ struct WeekHistoryRow: View {
         return "Laut Unterlagen \(Format.score(recorded)) · \(ImportWeekSummary.recalculatedLabel) \(Format.score(computed))"
     }
 
-    /// "3/10 Ziele bewertet" – orange for a planned week; for an archive week a plain fact about its grades.
+    /// "3/9 Ziele bewertet" – orange for a planned week; for an archive week a plain fact about its grades.
     private var goalsColor: Color { isArchive ? Color.secondary : Color.orange }
 
     private var ringTint: Color { isUnclosed ? Color.orange : Brand.accent }
@@ -365,8 +412,8 @@ struct WeekHistoryRow: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
-                if plan.finalGoalsScored > 0, plan.finalGoalsScored < 10 {
-                    Text("\(plan.finalGoalsScored)/10 Ziele bewertet")
+                if let goalsLine {
+                    Text(goalsLine)
                         .font(.caption2)
                         .foregroundStyle(goalsColor)
                 }

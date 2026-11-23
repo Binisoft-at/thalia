@@ -91,7 +91,7 @@ Schlüssel-Präfixen – der TestFlight-Build braucht kein „Deploy Schema Chan
      Kategoriennoten aus `archive.<Woche>`. Einmaliges Nachtragen für abgeschlossene Wochen des Zieljahrs ohne
      `score.` (nur auf dem HealthDevice, schreibt nur `score.`, nie `finalScore`).
    - Eine Kategorie ist in einer Woche „gut dabei“, wenn ihre Note **gerundet auf zwei Stellen ≥ 8,00** ist
-     (Annahme, offene Frage an Bini: „über 8,0“ = ab 8,00 oder erst ab 8,01?). Entschuldigte Wochen zählen nicht.
+     (entschieden, Bini 23. Nov. 2026: ab 8,00, gerundet auf zwei Stellen). Entschuldigte Wochen zählen nicht.
    - Ein Ziel ist in der Woche „gut dabei“, wenn **jede** gewertete Kategorie des Ziels gut dabei ist.
    - Zielkarte: die Kategorie-Zeilen (GoalsView ~l.209) bekommen ein Abzeichen „✓ über 8“ für die laufende Woche
      (live) und eine Zeile „Wochen über 8: 1.1 9/12 · 1.2 7/12“ (letzte 12 gewertete Wochen **im aktuellen
@@ -310,7 +310,8 @@ dieser Abschnitt.
   zugeordnet sind; ohne Art gilt „buch“.
 - Bezeichnungen alter Wochen kommen aus dem Schnappschuss des nächsten Abschnitts (Stand am Ende des Abschnitts),
   sonst aus dem eigenen. Der stillschweigende „Abschnitt 1“ hat die feste id `first-<periodStart>`.
-- „Über 8,0“ ist umgesetzt als gerundet ≥ 8,00 (`GoalTrack.threshold`) – Annahme, siehe offene Fragen.
+- „Über 8,0“ ist umgesetzt als gerundet ≥ 8,00 (`GoalTrack.threshold`) – entschieden (Bini, 23. Nov. 2026; siehe
+  offene Fragen 1).
 - Lesefehler im Austausch haben deutsche Gründe (`ExchangeReadError.reason`, zusätzlich `wrongType` und
   `elementNotAnObject`).
 - Tour 10: `goal-results`, `reading` und `segments` stehen nach „review“, `connected-apps` nach „everywhere“. Zwei
@@ -400,11 +401,12 @@ dieser Abschnitt.
   eine leere Notiz wird aus einer älteren Kopie ergänzt.
 - **Notiz an einem abgeleiteten ✓ (bewusst so):** `setMarkNote(_:item:day:derived:)` legt die Markierung mit dem ✓
   an, sonst nähme die Notiz den Haken weg (eine eigene Markierung gewinnt, auch ohne Wert). Verschwindet die Tatsache
-  später in der Quelle, bleibt der ✓ als eigener stehen – wie jeder selbst gesetzte.
+  später in der Quelle, bleibt der ✓ als eigener stehen – wie jeder selbst gesetzte. Von Bini bestätigt
+  (23. Nov. 2026).
 - **Schonfrist beim Einfrieren:** in der ersten Woche eines Abschnitts (auch eines neuen Zieljahrs) ist die Woche
   direkt davor noch nicht eingefroren – sie wurde eben erst abgeschlossen (oft am Mac ohne Apple Health), und das
   iPhone bzw. späte Einträge am Montag geben ihr noch ihre Wertung. Ein rückwirkend begonnener Abschnitt friert sofort
-  ein (`Segments.isFrozen`).
+  ein (`Segments.isFrozen`). Von Bini bestätigt (23. Nov. 2026).
 - **Art eines Buchs geändert:** `saveListItem` wertet die abgeschlossenen Wochen seiner Seitenstände neu (der
   Schlüssel `list.item.` hat keinen Tag).
 - **Nachtragen der Kategorie-Noten:** statt eines einmaligen Merkers merkt sich jedes Gerät die schon angesehenen
@@ -463,7 +465,8 @@ dieser Abschnitt.
   Abschnitt-Assistent „Beginnt mit“, und „✓ über 8“ steht auch am Kategorie-Kopf der Woche.
 
 ### Offene Fragen an Bini
-1. „Über 8,0“: ab 8,00 (umgesetzt) oder erst ab 8,01?
-2. Finn – Vermögen „monatlich“ oder „bei Änderung“, Sparquote gewünscht?
+1. „Über 8,0“ – Entschieden (23. Nov. 2026): ab 8,00, gerundet auf zwei Stellen (nicht erst ab 8,01).
+2. Finn – Vermögen – entschieden (23. Nov. 2026): bei jeder Änderung, kein „monatlich“; in Finn ist jede Zeile einzeln
+   wählbar (Ausgaben-Gruppen, Vermögen, Sparquote, Kontostände) – TASKS-v11 §1.5, CONNECTED_APPS Auftrag 3.4.
 3. Darwin-Benachrichtigung zwischen zwei Mac-Apps in der Sandbox ist ungeprüft; Thalia liest ohnehin beim Start, im
    Vordergrund und alle 5 Minuten.

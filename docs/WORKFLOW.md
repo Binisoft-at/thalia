@@ -15,7 +15,7 @@ the daily record evidence, and your reflection meaning.
 | Exactly 10 scored items per category | Ten items per category and week; the preview warns when a category has more or fewer | Woche, Heute |
 | Measurements (weight, protein, PH, TEREA …) kept apart from the items | **Messwerte**: never scored, may *suggest* a mark | Heute → Messwerte |
 | ✓ / X / 0.5 / N/A / blank | ✓ ½ ✗ N/A and blank (= not recorded yet) – tap cycles, long-press shows all | everywhere |
-| Desk sheet: PH done, what I worked on | **Arbeit**: + PH, timer (50 min), block with result and next step | Heute → Arbeit |
+| Desk sheet: PH done, what I worked on | **Arbeit**: + PH (50 min) with Bereich and Wofür, block with result and next step | Heute → Arbeit |
 | Evening: transcribe the desk sheet into the tracker | **Tag abschließen**: check evidence → fill gaps → confirm categories (own score possible) → reflect | Heute → Tag abschließen, 21:45 reminder |
 | Weekly score by hand | Calculated: category → goal → week, every goal 10 % | Woche, Ziele |
 | Score + interpretation back to ChatGPT | **Woche abschließen** → Wochenbericht kopieren + Planungs-Prompt kopieren | Woche → Woche abschließen |
@@ -34,9 +34,9 @@ the daily record evidence, and your reflection meaning.
 3. **Import.** + → Wochenplan importieren → paste → preview ("KW46: 180 Punkte in 18 Kategorien ·
    20 Messwerte", warnings) → Importieren. Re-importing a revised plan updates; items the new plan
    no longer has go to *Zuletzt gelöscht*.
-4. **During the day – capture what happened.** + PH or the timer (Live Activity, "50 minutes are
-   up – stop deliberately"), measurements with +, marks on items, notes (trigger, success, contact,
-   parked idea). On the watch: +1 PH, timer, measurements, open items.
+4. **During the day – capture what happened.** + PH (50 min) with Bereich and Wofür, measurements
+   with +, marks on items, notes (trigger, success, contact, parked idea). On the watch: power-hours
+   with Bereich and Wofür, counters, measurements, open items.
 5. **At night – decide what it means.** *Tag abschließen*. Deliberate, never automatic.
 6. **Next Sunday** – the closed week (report + reflection) goes into the next planning conversation.
 

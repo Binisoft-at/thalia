@@ -195,6 +195,9 @@ public struct ExchangeMetric: Equatable, Sendable {
         ExchangeMetric(id: "net_worth", agg: .last, unit: "€", title: "Vermögen"),
         ExchangeMetric(id: "savings_rate", agg: .last, unit: "%", title: "Sparquote"),
         ExchangeMetric(id: "body_weight_kg", agg: .last, unit: "kg", title: "Gewicht"),
+        // Thalia 1.10: an account's (or account group's) balance at the end of the day; `ref` = the account id,
+        // `refTitle` its name (one fact per account and changed day). Older readers keep it as unknown.
+        ExchangeMetric(id: "account_balance", agg: .last, unit: "€", title: "Kontostand"),
     ]
 
     public static func named(_ id: String) -> ExchangeMetric? {
@@ -323,7 +326,7 @@ public struct ExchangeDayFile: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        v = Int(ExchangeRead.number(c, .v) ?? Double(BinisoftExchange.version))
+        v = ExchangeRead.version(c, .v)
         guard let source = ExchangeRead.text(c, .source) else { throw ExchangeRead.missing("source", decoder) }
         guard let day = ExchangeRead.text(c, .day) else { throw ExchangeRead.missing("day", decoder) }
         self.source = source
@@ -387,7 +390,7 @@ public struct ExchangeSourceInfo: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        v = Int(ExchangeRead.number(c, .v) ?? Double(BinisoftExchange.version))
+        v = ExchangeRead.version(c, .v)
         guard let source = ExchangeRead.text(c, .source) else { throw ExchangeRead.missing("source", decoder) }
         self.source = source
         app = ExchangeRead.text(c, .app)
@@ -465,12 +468,30 @@ public struct ExchangeCatalog: Codable, Equatable, Sendable {
         /// "check", "count", "value".
         public var kind: String
         public var goal: String
-        public init(id: String, title: String, kind: String, goal: String) {
+        /// Thalia 1.10: where the result's value comes from ("app:finn:net_worth", "app:finn:account_balance=acc-1",
+        /// "list:buch"); written only when not empty – a catalog without it comes from Thalia before 1.10.
+        public var source: String?
+
+        public init(id: String, title: String, kind: String, goal: String, source: String? = nil) {
             self.id = id
             self.title = title
             self.kind = kind
             self.goal = goal
+            let trimmed = source?.trimmingCharacters(in: .whitespaces) ?? ""
+            self.source = trimmed.isEmpty ? nil : trimmed
         }
+
+        /// As before for the four fields; `source` tolerant (missing, empty or of another type: nil).
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            title = try c.decode(String.self, forKey: .title)
+            kind = try c.decode(String.self, forKey: .kind)
+            goal = try c.decode(String.self, forKey: .goal)
+            source = ExchangeRead.text(c, .source)
+        }
+
+        enum CodingKeys: String, CodingKey { case id, title, kind, goal, source }
     }
 
     public var v: Int
@@ -500,7 +521,7 @@ public struct ExchangeCatalog: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        v = Int(ExchangeRead.number(c, .v) ?? Double(BinisoftExchange.version))
+        v = ExchangeRead.version(c, .v)
         source = ExchangeRead.text(c, .source) ?? "thalia"
         generatedAt = ExchangeRead.text(c, .generatedAt) ?? ""
         week = ExchangeRead.text(c, .week)
@@ -677,13 +698,21 @@ enum ExchangeRead {
         return nil
     }
 
-    /// A number field (also "1.5" or "1,5" as text); nil when missing or unreadable.
+    /// A number field (also "1.5" or "1,5" as text); nil when missing, unreadable, not finite or 10¹² and more
+    /// ("nan", "1e999" – no reader traps on it).
     static func number<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Double? {
-        if let number = (try? c.decodeIfPresent(Double.self, forKey: key)) ?? nil { return number.isFinite ? number : nil }
+        if let number = (try? c.decodeIfPresent(Double.self, forKey: key)) ?? nil { return usable(number) }
         if let text = (try? c.decodeIfPresent(String.self, forKey: key)) ?? nil {
-            return Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
+            return Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")).flatMap(usable)
         }
         return nil
+    }
+
+    static func usable(_ number: Double) -> Double? { number.isFinite && abs(number) < 1e12 ? number : nil }
+
+    /// The format version `v` – a whole number; missing or unreadable: the version of this file.
+    static func version<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Int {
+        number(c, key).flatMap { Int(exactly: $0.rounded()) } ?? BinisoftExchange.version
     }
 
     static func missing(_ name: String, _ decoder: Decoder) -> DecodingError {

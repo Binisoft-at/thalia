@@ -172,7 +172,7 @@ struct ExpensesContent: View {
                             tint: GoalPalette.color(goal: "8"))
                 SummaryTile(label: context.week.label, value: Format.euro(weekTotal), tint: Brand.accent)
                 if let goal {
-                    SummaryTile(label: goal.label, value: goal.value, tint: .orange, valueColor: goal.color)
+                    SummaryTile(label: goal.label, value: goal.value, tint: .orange, valueColor: goal.color, spoken: goal.spoken)
                 }
             }
             .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
@@ -343,11 +343,14 @@ private struct DayAmount: Identifiable {
 }
 
 /// R45: "Tagesziel < 50 €" with "noch 38 €" (green) or "+12 €" (red) against the day's or the
-/// week's sum.
+/// week's sum. v11 P5.15: compared in cents – exactly at a limit "< 50 €" says "nicht unter 50 €" (red), "≤ 50 €"
+/// "Limit ausgeschöpft" (orange), instead of a red "+0 €". The score keeps `Target.isMet`.
 private struct ExpenseGoal {
     let label: String
     let value: String
     let color: Color
+    /// VoiceOver at the limit: "genau 50 €, Ziel unter 50 €"; nil reads label and value.
+    var spoken: String? = nil
 
     init?(measure: MeasureDefinition, dayTotal: Double, weekTotal: Double) {
         guard let record = measure.record, let target = record.target else { return nil }
@@ -355,22 +358,39 @@ private struct ExpenseGoal {
         let kind: String = isDay ? "Tagesziel" : "Wochenziel"
         let total: Double = isDay ? dayTotal : weekTotal
         let limit: Double = target.scaleMax
+        let totalCents: Int = ExpenseGoal.cents(total)
+        let limitCents: Int = ExpenseGoal.cents(limit)
         label = "\(kind) \(ExpenseGoal.targetText(target))"
         if target.isLimit {
-            if target.isMet(total) {
-                value = "noch \(Format.euro(max(0, limit - total)))"
+            if totalCents == limitCents {
+                let below: Bool = target.comparison == .below
+                value = below ? "nicht unter \(Format.euro(limit))" : "Limit ausgeschöpft"
+                color = below ? .red : .orange
+                spoken = "genau \(Format.euro(limit)), Ziel \(below ? "unter" : "höchstens") \(Format.euro(limit))"
+            } else if totalCents < limitCents {
+                value = "noch \(ExpenseGoal.euro(cents: limitCents - totalCents))"
                 color = .green
             } else {
-                value = "+\(Format.euro(max(0, total - limit)))"
+                value = "+\(ExpenseGoal.euro(cents: totalCents - limitCents))"
                 color = .red
             }
         } else if target.isMet(total) {
             value = "erreicht"
             color = .green
         } else {
-            value = "noch \(Format.euro(max(0, limit - total)))"
+            value = "noch \(ExpenseGoal.euro(cents: max(0, limitCents - totalCents)))"
             color = .orange
         }
+    }
+
+    /// An amount in whole cents – 20,10 + 29,90 is exactly 50,00 here, not 49,999….
+    static func cents(_ value: Double) -> Int {
+        guard value.isFinite, abs(value) < 1e12 else { return 0 }
+        return Int((value * 100).rounded())
+    }
+
+    static func euro(cents: Int) -> String {
+        Format.euro(Double(cents) / 100)
     }
 
     /// "< 50 €", "≤ 12,50 €", "20–40 €" – amounts to the cent (R17).

@@ -6,7 +6,7 @@ import Foundation
 // written with the final score; archive weeks (v9) take them from their grades. Excused weeks don't count.
 
 public enum GoalTrack {
-    /// "über 8,0" – counted from 8,00 (open question to the owner: from 8,00 or only from 8,01?).
+    /// "über 8" – decided: counts from 8,00 (rounded to two places).
     public static let threshold = 8.0
     /// The badge on a category row and head.
     public static let badge = "✓ über 8"

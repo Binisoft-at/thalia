@@ -11,7 +11,10 @@ import HealthKit
 
 /// Local notifications from `ReminderSettings` (Core): morning start, the evening review (one per
 /// day for the next 7 days, closed days left out) and the weekly review. Tapping one opens the
-/// right screen; "In 30 Min." on the evening one brings it back later (R80).
+/// right screen; "In 30 Min." on the evening one brings it back later (R80). v11 P4.17: the mornings and
+/// the weekly review are planned per day like the evenings (no repeating notifications any more) – no
+/// morning on a sick or holiday day, no "Wochenabschluss" for a closed week; like the evenings they end
+/// after about 7 days without opening Thalia.
 enum ReminderScheduler {
     /// The stored settings; the Mac starts with every reminder off (the iPhone already reminds).
     static func load() -> ReminderSettings {
@@ -41,6 +44,11 @@ enum ReminderScheduler {
     /// (set by `AppModel`, so Settings skips them too).
     @MainActor static var skipsDay: ((DayKey) -> Bool)?
 
+    /// v11 P4.17: whether a week is closed and whether it has a plan – the weekly review is left out for a
+    /// closed week whose next one is planned (set by `AppModel`, so every caller of `apply` uses them).
+    @MainActor static var isWeekClosed: ((WeekKey) -> Bool)?
+    @MainActor static var weekHasPlan: ((WeekKey) -> Bool)?
+
     /// The "In 30 Min." action on the evening reminder.
     static func registerCategories() {
         let snooze = UNNotificationAction(identifier: ReminderSettings.snoozeActionID, title: "In 30 Min.", options: [])
@@ -56,13 +64,21 @@ enum ReminderScheduler {
     static func apply(_ settings: ReminderSettings, authorize: Bool,
                       isClosed: @escaping (DayKey) -> Bool = { _ in false }) async -> String {
         let center = UNUserNotificationCenter.current()
-        let requests = settings.requests()
         let skips: ((DayKey) -> Bool)? = skipsDay
-        let evenings = settings.eveningRequests(from: DayKey.today(), isClosed: { isClosed($0) || (skips?($0) ?? false) })
+        let weekClosed: ((WeekKey) -> Bool)? = isWeekClosed
+        let weekPlanned: ((WeekKey) -> Bool)? = weekHasPlan
+        let start: DayKey = DayKey.today()
+        let evenings = settings.eveningRequests(from: start, isClosed: { isClosed($0) || (skips?($0) ?? false) })
+        // v11 P4.17: mornings and the weekly review as dated notifications (no morning on a sick or holiday day).
+        let mornings = settings.morningRequests(from: start, isSkipped: { skips?($0) ?? false })
+        let weeklies = settings.weeklyRequests(from: start, isClosed: { weekClosed?($0) ?? false },
+                                               hasPlan: { weekPlanned?($0) ?? false })
+        // Every pending reminder of Thalia goes first – also the repeating ones of earlier versions.
         let old = await center.pendingNotificationRequests().map(\.identifier)
             .filter { $0.hasPrefix("thalia.") && !$0.hasSuffix(snoozeSuffix) }
         center.removePendingNotificationRequests(withIdentifiers: old)
-        guard !requests.isEmpty || !evenings.isEmpty else { return "Keine Erinnerungen geplant." }
+        let dated: [ReminderSettings.DatedRequest] = mornings + evenings + weeklies
+        guard !dated.isEmpty else { return "Keine Erinnerungen geplant." }
         let status = await center.notificationSettings().authorizationStatus
         if status != .authorized {
             guard authorize else { return "Mitteilungen sind für Thalia noch nicht erlaubt." }
@@ -77,38 +93,35 @@ enum ReminderScheduler {
         registerCategories()
         let now = Date()
         var planned = 0
-        for evening in evenings {
-            let fireDate = evening.day.date(minutes: Double(evening.hour * 60 + evening.minute))
+        let eveningIDs = Set(evenings.map(\.id))
+        for request in dated {
+            let fireDate = request.day.date(minutes: Double(request.hour * 60 + request.minute))
             guard fireDate > now else { continue }
-            let content = UNMutableNotificationContent()
-            content.title = evening.title
-            content.body = evening.body
-            content.sound = .default
-            content.categoryIdentifier = ReminderSettings.eveningCategoryID
-            content.userInfo = ["destination": evening.destination]
-            var components = Calendar.current.dateComponents([.year, .month, .day], from: evening.day.startDate())
-            components.hour = evening.hour
-            components.minute = evening.minute
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            try? await center.add(UNNotificationRequest(identifier: evening.id, content: content, trigger: trigger))
-            planned += 1
-        }
-        for request in requests {
             let content = UNMutableNotificationContent()
             content.title = request.title
             content.body = request.body
             content.sound = .default
+            // Only the evening review has "In 30 Min." (R80).
+            if eveningIDs.contains(request.id) { content.categoryIdentifier = ReminderSettings.eveningCategoryID }
             content.userInfo = ["destination": request.destination]
-            var components = DateComponents()
+            var components = Calendar.current.dateComponents([.year, .month, .day], from: request.day.startDate())
             components.hour = request.hour
             components.minute = request.minute
-            components.weekday = request.gregorianWeekday
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
             try? await center.add(UNNotificationRequest(identifier: request.id, content: content, trigger: trigger))
             planned += 1
         }
         AppLog.info("Reminders scheduled: \(planned)", category: "reminders")
         return "\(Format.count(planned, "Erinnerung", "Erinnerungen")) geplant."
+    }
+
+    /// v11 P4.17: the week is closed – its weekly review (pending or already shown) goes away. The next
+    /// `apply` plans "Nächste Woche planen" instead when the following week has no plan yet.
+    static func weekClosed(_ week: WeekKey) {
+        let ids = [ReminderSettings.weeklyID(week)]
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
     }
 
     /// The day is closed: its evening reminder (pending, shown or snoozed) goes away (R80).
@@ -243,6 +256,23 @@ final class HealthService {
         }
     }
 
+    // HEALTHSHARE: what Health has for `days` – each day with the measures of its week (`measures`) – for the sharing's `read`
+    // (§1.4.5, TestFlight only). Doesn't touch `values` (the screens' suggestions); asks the stored switch, so any instance
+    // can read. Empty without Apple Health or with the suggestions off.
+    func readValues(days: [DayKey], measures: [WeekKey: [MeasureRecord]]) async -> [DayKey: [String: Double]] {
+        guard UserDefaults.standard.bool(forKey: HealthService.enabledKey), isAvailable else { return [:] }
+        var result: [DayKey: [String: Double]] = [:]
+        for day in days {
+            var found: [String: Double] = [:]
+            for measure in measures[day.week] ?? [] {
+                guard case .health(let kind) = measure.source else { continue }
+                if let value = try? await read(kind, day: day), value.isFinite { found[measure.code] = value }
+            }
+            result[day] = found
+        }
+        return result
+    }
+
     private func read(_ kind: HealthKind, day: DayKey) async throws -> Double? {
         let start = day.startDate()
         let end = day.adding(days: 1).startDate()
@@ -301,5 +331,7 @@ final class HealthService {
     var isAvailable: Bool { false }
     func requestAccess() async { message = "Apple Health gibt es auf diesem Gerät nicht." }
     func load(day: DayKey, measures: [MeasureRecord]) async {}
+    // HEALTHSHARE: the Mac reads no Health values (it never writes the sharing).
+    func readValues(days: [DayKey], measures: [WeekKey: [MeasureRecord]]) async -> [DayKey: [String: Double]] { [:] }
     #endif
 }

@@ -11,7 +11,7 @@ Built on the [Binisoft handbook](https://github.com/Binisoft-at/binisoft-handboo
 
 ## What's in it
 
-- **Heute** – capture during the day: + Power-Hour (50 min) or a timer with Live Activity, real
+- **Heute** – capture during the day: + Power-Hour (50 min) with Bereich and Wofür, real
   tutoring hours, measurements with +/− and Apple Health suggestions, the items due today with
   ✓ ½ ✗ N/A, notes (trigger, success, contact, parked idea). **Tag abschließen** in the evening:
   check evidence, fill gaps, confirm categories (own score possible), reflect.
@@ -22,8 +22,9 @@ Built on the [Binisoft handbook](https://github.com/Binisoft-at/binisoft-handboo
 - **Rückblick** – every week's score (paper history before KW42 shown apart) and its report.
 - **Import & export** – the planning prompt → ChatGPT → CSV → preview → import; your own CSV; export
   and backup in the same format. Format: [docs/IMPORT.md](docs/IMPORT.md).
-- **Everywhere** – iPhone, iPad, Mac (menus, shortcuts), Apple Watch (+1 PH, timer, measurements,
-  open items), widgets, Shortcuts, reminders (morning start, evening review, Sunday, 50-minute stop).
+- **Everywhere** – iPhone, iPad, Mac (menus, shortcuts), Apple Watch (ring, open items, counters,
+  power-hours with Bereich and Wofür, measurements, complication), widgets and Control Center buttons,
+  Shortcuts, reminders (morning start, evening review, Sunday).
 - Tour, hints, in-app explainers (scoring, power-hours, marks), Settings with iCloud status,
   "Wo deine Daten liegen", app log. German throughout.
 
@@ -41,7 +42,7 @@ Your workflow mapped to the app, the scoring and the research behind it: [docs/W
 | `Packages/ThaliaCore` | All rules: weeks, scoring, CSV contract, reports, template, demo. Swift Testing, runs on Linux |
 | `Shared/` | SwiftData models, the store, week context, persistence, widget bridge |
 | `App/` | iOS + macOS app |
-| `Watch/`, `Widgets/` | Apple Watch app, widgets + Live Activity |
+| `Watch/`, `Widgets/`, `WatchWidgets/` | Apple Watch app, widgets and Control Center buttons, watch complication |
 | `Config/` | identifiers (`Base.xcconfig`), `ci.env`, Info.plists, entitlements |
 | `cloudkit/schema.ckdb` | CloudKit schema |
 | `docs/` | [WORKFLOW](docs/WORKFLOW.md), [IMPORT](docs/IMPORT.md), [TOUR](docs/TOUR.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [SETUP](docs/SETUP.md) |

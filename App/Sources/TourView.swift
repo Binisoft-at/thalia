@@ -102,7 +102,8 @@ private struct PracticePage: View {
         // "Heute im Blick": the sheet, on the Mac also the right column (v7).
         if case .dayOverview = app.sheet { snapshot.isGlanceOpen = true }
         #if os(macOS)
-        if app.showsGlanceInspector { snapshot.isGlanceOpen = true }
+        // v11 P4.1: the column only counts while it shows (it fits).
+        if app.showsGlanceColumn { snapshot.isGlanceOpen = true }
         #endif
         return snapshot
     }

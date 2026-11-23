@@ -33,50 +33,200 @@ extension TrackerStore {
                               estimate: entry.isEstimate)
                 }
             }
+            // v11 P3.9: a single value keeps its moment (`order`), so the backup writes its time of day.
+            let order: Double = sorted.count == 1 ? first.recordedAt.timeIntervalSince1970 : 0
             return EntryRecord(code: first.code, day: day, value: value, text: text, note: note,
-                               estimate: sorted.contains(where: \.isEstimate), parts: parts)
+                               estimate: sorted.contains(where: \.isEstimate), order: order, parts: parts)
         }
     }
 
     /// What the app has, keyed the way the import compares – always the newest version of a record
     /// that exists twice (R27), plus the closed days and weeks and (v9) the archive grades per week.
+    /// v11: also the stored final scores of closed weeks (P3.3) and the goal year and catalog switch (P3.7).
     func existingState() -> ExistingState {
+        readState(weeks: nil, includeRecords: true, work: .all).state
+    }
+
+    /// v11 P3.12: the state limited to what a file is about. Always whole: the goals, categories, week rows (closings,
+    /// final scores), the measurements of every week (a measure row keeps the source of the nearest earlier week) and
+    /// the archive grades. Only for `weeks` (nil: all): items, marks, days, values, own scores and reflections – each
+    /// through an IN predicate. `includeRecords`: the stored records (`record` rows – only a full backup or a file with
+    /// such rows needs them). `includeWork`: every work block and note (they are matched by id, on any day).
+    func existingState(weeks: Set<WeekKey>?, includeRecords: Bool, includeWork: Bool = true) -> ExistingState {
+        readState(weeks: weeks, includeRecords: includeRecords, work: includeWork ? .all : .without).state
+    }
+
+    /// v11 P3.12: the state a parsed file needs – a full backup (`sicherung` row) everything, any other file its
+    /// weeks (`referencedWeeks`), records only with `record` rows, work and notes only with such rows.
+    func existingState(for document: PlanCSV.Document, adding weeks: Set<WeekKey> = []) -> ExistingState {
+        if document.backupInfo != nil { return existingState() }
+        return existingState(weeks: document.referencedWeeks.union(weeks), includeRecords: !document.records.isEmpty,
+                             includeWork: !document.work.isEmpty || !document.notes.isEmpty)
+    }
+
+    /// Which work blocks and notes a state read takes.
+    enum StateWork {
+        /// None (a file without work and note rows).
+        case without
+        /// Those on the days of the weeks read (an export of some weeks).
+        case weekDays
+        /// All live ones (they are matched by id, P3.12).
+        case all
+    }
+
+    /// A state read with the creation order of the blocks and notes read (by record id) – the export writes them
+    /// in that order (P3.9).
+    struct StateRead {
         var state = ExistingState()
+        var workOrder: [String: Date] = [:]
+        var noteOrder: [String: Date] = [:]
+    }
+
+    /// The one reader behind `existingState`: whole or limited to `weeks` (P3.12).
+    func readState(weeks: Set<WeekKey>?, includeRecords: Bool, work: StateWork) -> StateRead {
+        var read = StateRead()
+        var state = ExistingState()
+        let weekKeys: [String]? = weeks.map { $0.map(\.string).sorted() }
+        let dayKeys: [String]? = weeks.map { set in set.flatMap { $0.days.map(\.string) }.sorted() }
         for (key, goal) in liveGoals().latest(by: \.key, modified: \.modifiedAt) { state.goals[key] = goal.record }
         for (key, category) in liveCategories().latest(by: \.key, modified: \.modifiedAt) { state.categories[key] = category.record }
         let plans = allPlans().filter { $0.deletedAt == nil }.latest(by: \.weekKey, modified: \.modifiedAt)
         for (key, plan) in plans {
             if let record = plan.record { state.weeks[key] = record }
-            if plan.isClosed, let week = plan.week { state.closedWeeks.insert(week) }
+            guard plan.isClosed, let week = plan.week else { continue }
+            state.closedWeeks.insert(week)
+            // v11 P3.3: what the closed week stored, exactly.
+            if let score = plan.finalScore {
+                state.finalScores[week] = PlanCSV.FinalScore(score: score, goalScores: plan.finalGoalScores, goalsScored: plan.finalGoalsScored)
+            }
         }
-        for (key, day) in all(PlanDay.self).latest(by: \.dayKey, modified: \.modifiedAt) {
+        for (key, day) in planDays(dayKeys).latest(by: \.dayKey, modified: \.modifiedAt) {
             if let record = day.record { state.days[key] = record }
             if day.isClosed, let date = day.day { state.closedDays.insert(date) }
         }
-        let items = all(PlanItem.self).filter { $0.deletedAt == nil }
-        for (key, item) in items.latest(by: \.key, modified: \.modifiedAt) { if let record = item.record { state.items[key] = record } }
+        for (key, item) in planItems(weekKeys).latest(by: \.key, modified: \.modifiedAt) { if let record = item.record { state.items[key] = record } }
         let measures = all(MeasureDefinition.self).filter { $0.deletedAt == nil }
         for (key, measure) in measures.latest(by: \.key, modified: \.modifiedAt) { if let record = measure.record { state.measures[key] = record } }
-        let marks = all(ItemMark.self).latest(by: { "\($0.weekKey)|\($0.itemCode)|\($0.dayKey)" }, modified: \.modifiedAt)
+        let marks = itemMarks(weekKeys).latest(by: { "\($0.weekKey)|\($0.itemCode)|\($0.dayKey)" }, modified: \.modifiedAt)
         for mark in marks.values { if let record = mark.record { state.marks[record.key] = record } }
-        for entry in Self.aggregate(all(MeasureEntry.self), measures: measures) { state.entries[entry.key] = entry }
-        let blocks = all(WorkBlock.self).filter { $0.deletedAt == nil }.latest(by: \.recordID, modified: \.modifiedAt)
-        for block in blocks.values { if let record = block.record { state.work[record.id] = record } }
-        let notes = all(DayNote.self).filter { $0.deletedAt == nil }.latest(by: \.recordID, modified: \.modifiedAt)
-        for note in notes.values { if let record = note.record { state.notes[record.id] = record } }
-        for reflection in all(Reflection.self).latest(by: \.key, modified: \.modifiedAt).values {
+        for entry in Self.aggregate(measureEntries(dayKeys), measures: measures) { state.entries[entry.key] = entry }
+        if work != .without {
+            let blockDays: [String]? = work == .all ? nil : dayKeys
+            let blocks = workBlocks(blockDays).latest(by: \.recordID, modified: \.modifiedAt)
+            for block in blocks.values {
+                guard let record = block.record else { continue }
+                state.work[record.id] = record
+                read.workOrder[record.id] = block.createdAt
+            }
+            let notes = dayNotes(blockDays).latest(by: \.recordID, modified: \.modifiedAt)
+            for note in notes.values {
+                guard let record = note.record else { continue }
+                state.notes[record.id] = record
+                read.noteOrder[record.id] = note.createdAt
+            }
+        }
+        let scopes: [String]? = weekKeys.map { $0 + (dayKeys ?? []) }
+        for reflection in reflections(scopes).latest(by: \.key, modified: \.modifiedAt).values {
             state.reviews[reflection.key] = reflection.record
         }
-        let scores = all(ScoreOverride.self).filter { $0.deletedAt == nil }.latest(by: \.key, modified: \.modifiedAt)
+        let scores = scoreOverrides(dayKeys).latest(by: \.key, modified: \.modifiedAt)
         for score in scores.values { if let record = score.record { state.scores[record.key] = record } }
         state.archiveGrades = storedArchives()
-        state.records = storedRecordRows()
-        return state
+        if includeRecords { state.records = storedRecordRows() }
+        read.state = state
+        return read
+    }
+
+    // MARK: Limited reads (v11 P3.12) – nil keys: all; an IN predicate that fails reads all and filters
+
+    private func planDays(_ keys: [String]?) -> [PlanDay] {
+        guard let keys else { return all(PlanDay.self) }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<PlanDay>(predicate: #Predicate<PlanDay> { keys.contains($0.dayKey) })))
+            ?? all(PlanDay.self).filter { wanted.contains($0.dayKey) }
+    }
+
+    /// Live items of the weeks.
+    private func planItems(_ keys: [String]?) -> [PlanItem] {
+        guard let keys else { return all(PlanItem.self).filter { $0.deletedAt == nil } }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<PlanItem>(predicate: #Predicate<PlanItem> { keys.contains($0.weekKey) && $0.deletedAt == nil })))
+            ?? all(PlanItem.self).filter { wanted.contains($0.weekKey) && $0.deletedAt == nil }
+    }
+
+    /// Live measurements of the weeks.
+    private func measureDefinitions(_ keys: [String]?) -> [MeasureDefinition] {
+        guard let keys else { return all(MeasureDefinition.self).filter { $0.deletedAt == nil } }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<MeasureDefinition>(predicate: #Predicate<MeasureDefinition> {
+            keys.contains($0.weekKey) && $0.deletedAt == nil
+        }))) ?? all(MeasureDefinition.self).filter { wanted.contains($0.weekKey) && $0.deletedAt == nil }
+    }
+
+    private func itemMarks(_ keys: [String]?) -> [ItemMark] {
+        guard let keys else { return all(ItemMark.self) }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<ItemMark>(predicate: #Predicate<ItemMark> { keys.contains($0.weekKey) })))
+            ?? all(ItemMark.self).filter { wanted.contains($0.weekKey) }
+    }
+
+    /// Live values of the days.
+    private func measureEntries(_ keys: [String]?) -> [MeasureEntry] {
+        guard let keys else { return all(MeasureEntry.self).filter { $0.deletedAt == nil } }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> {
+            keys.contains($0.dayKey) && $0.deletedAt == nil
+        }))) ?? all(MeasureEntry.self).filter { wanted.contains($0.dayKey) && $0.deletedAt == nil }
+    }
+
+    /// Live work blocks of the days.
+    private func workBlocks(_ keys: [String]?) -> [WorkBlock] {
+        guard let keys else { return all(WorkBlock.self).filter { $0.deletedAt == nil } }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<WorkBlock>(predicate: #Predicate<WorkBlock> { keys.contains($0.dayKey) && $0.deletedAt == nil })))
+            ?? all(WorkBlock.self).filter { wanted.contains($0.dayKey) && $0.deletedAt == nil }
+    }
+
+    /// Live notes of the days.
+    private func dayNotes(_ keys: [String]?) -> [DayNote] {
+        guard let keys else { return all(DayNote.self).filter { $0.deletedAt == nil } }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<DayNote>(predicate: #Predicate<DayNote> { keys.contains($0.dayKey) && $0.deletedAt == nil })))
+            ?? all(DayNote.self).filter { wanted.contains($0.dayKey) && $0.deletedAt == nil }
+    }
+
+    /// Reflections of days and weeks (`scope`).
+    private func reflections(_ keys: [String]?) -> [Reflection] {
+        guard let keys else { return all(Reflection.self) }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<Reflection>(predicate: #Predicate<Reflection> { keys.contains($0.scope) })))
+            ?? all(Reflection.self).filter { wanted.contains($0.scope) }
+    }
+
+    /// Live own scores of the days.
+    private func scoreOverrides(_ keys: [String]?) -> [ScoreOverride] {
+        guard let keys else { return all(ScoreOverride.self).filter { $0.deletedAt == nil } }
+        guard !keys.isEmpty else { return [] }
+        let wanted = Set(keys)
+        return (try? context.fetch(FetchDescriptor<ScoreOverride>(predicate: #Predicate<ScoreOverride> {
+            keys.contains($0.dayKey) && $0.deletedAt == nil
+        }))) ?? all(ScoreOverride.self).filter { wanted.contains($0.dayKey) && $0.deletedAt == nil }
     }
 
     /// v10 (§1.1.4): every stored v10 record – results, entries, segments, the reading list, mappings,
     /// the inbox (`x.`, Thalia never deletes it) and the category week scores – the newest copy of each
     /// key, as `record` rows of the backup. One prefix query per kind.
+    /// v11: a dated entry or reading moved to another day goes out once, its newest copy (P3.5 (2), the rule of
+    /// `SettingRecords.decode`); the goal year and the catalog switch come along as plain text (P3.7). Never
+    /// `rescore.`, `sync.build.`, `backup.last` or shared Health values (not in `SettingKeys.all`).
     func storedRecordRows() -> [String: SettingRow] {
         var settings: [StoredSetting] = []
         for prefix in SettingKeys.all { settings += self.settings(prefix: prefix).map(\.stored) }
@@ -94,13 +244,72 @@ extension TrackerStore {
         for file in ExchangeInbox.files(from: doubled) {
             guard let day = DayKey(file.day) else { continue }
             let key = ExchangeInbox.settingKey(source: file.source, day: day)
-            rows[key] = SettingRow(key: key, value: ExchangeInbox.value(ExchangeInbox.syncable(file)))
+            // v11 P1.1: a day that can't be written as JSON stays out (never "{}").
+            guard let value = ExchangeInbox.value(ExchangeInbox.syncable(file)) else { continue }
+            rows[key] = SettingRow(key: key, value: value)
+        }
+        for key in Self.olderDatedCopies(Array(rows.values)) { rows[key] = nil }
+        // v11 P3.7: the goal year and "Thalia-Katalog bereitstellen" – plain text, the newest copy each.
+        for (key, setting) in SettingRecords.newest(self.settings(keys: PlanCSV.plainSettings).map(\.stored)) {
+            guard !setting.value.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            rows[key] = SettingRow(key: key, value: setting.value)
         }
         return rows
     }
 
+    /// v11 P3.5 (2): keys of dated entries and readings (`goal.entry.`, `list.progress.`) whose id has a newer copy under
+    /// another key – the newest `modifiedAt` counts, a tie the greater key (as `SettingRecords.decode` reads them).
+    nonisolated static func olderDatedCopies(_ rows: [SettingRow]) -> [String] {
+        var best: [String: (stamp: Date, key: String)] = [:]
+        var keysByID: [String: [String]] = [:]
+        for row in rows {
+            guard let prefix = [SettingKeys.goalEntry, SettingKeys.listProgress].first(where: { row.key.hasPrefix($0) }),
+                  let id = JSONText.object(row.value)?["id"]?.stringValue, !id.isEmpty else { continue }
+            let group = prefix + id
+            keysByID[group, default: []].append(row.key)
+            let candidate = (stamp: row.stamp ?? .distantPast, key: row.key)
+            if let current = best[group], (current.stamp, current.key) >= (candidate.stamp, candidate.key) { continue }
+            best[group] = candidate
+        }
+        var older: [String] = []
+        for (group, keys) in keysByID where keys.count > 1 {
+            older += keys.filter { $0 != best[group]?.key }
+        }
+        return older.sorted()
+    }
+
     func preview(_ text: String) -> ImportPreview {
-        ImportPreview(text: text, existing: existingState())
+        // v11 P3.12: read the file against the structure first, then compare it with only what it is about.
+        let structure = existingState(weeks: [], includeRecords: false, includeWork: false)
+        let probe = Self.probe(text, structure: structure)
+        return Self.preview(text, probe: probe, existing: existingState(for: probe))
+    }
+
+    /// v11 P3.10, P3.12: `preview(_:)` with the reading and comparing off the main thread (`ImportPreview` is
+    /// `Sendable`) – a year's backup doesn't freeze the app. The app's state is read here, on the main context.
+    func backgroundPreview(_ text: String) async -> ImportPreview {
+        let structure = existingState(weeks: [], includeRecords: false, includeWork: false)
+        let probe: PlanCSV.Document = await Task.detached(priority: .userInitiated) {
+            TrackerStore.probe(text, structure: structure)
+        }.value
+        let existing = existingState(for: probe)
+        return await Task.detached(priority: .userInitiated) {
+            TrackerStore.preview(text, probe: probe, existing: existing)
+        }.value
+    }
+
+    /// The file read against the app's structure (categories, measurement ids, goals) – what `ImportPreview`
+    /// reads, without the app's items (only the warnings about marks need those).
+    nonisolated static func probe(_ text: String, structure: ExistingState) -> PlanCSV.Document {
+        PlanCSV.parse(text, knownCategories: structure.categoryTitles, knownMeasures: structure.measureCodes,
+                      knownGoals: Set(structure.goals.keys))
+    }
+
+    /// The preview from the first reading and the limited state: a file with marks is read again with the
+    /// items of its weeks (marks on unknown items get a warning), any other file is the first reading.
+    nonisolated static func preview(_ text: String, probe: PlanCSV.Document, existing: ExistingState) -> ImportPreview {
+        guard !probe.marks.isEmpty else { return ImportPreview(document: probe, existing: existing) }
+        return ImportPreview(text: text, existing: existing)
     }
 
     struct ImportResult {
@@ -119,6 +328,20 @@ extension TrackerStore {
         /// v10 (Grundregel 2): closed weeks the import changed but didn't score again – they lie before the
         /// current segment; "Neu berechnen" in the week does it.
         var frozenWeeks: Set<WeekKey> = []
+        /// v11 P3.4 (d): what "Widerrufen" takes back besides the archives – the work blocks, notes and reflections
+        /// the import added (their uuids) and the day types and day notes as they were before (one per day).
+        var insertedWork: [UUID] = []
+        var insertedNotes: [UUID] = []
+        var insertedReflections: [UUID] = []
+        var daysBefore: [DayRecord] = []
+        /// v11 P3.3: weeks whose stored score came from the file's `wertung` rows (not scored anew).
+        var keptScores: Set<WeekKey> = []
+
+        /// v11 P3.4 (d): the toast offers "Widerrufen" – a week went to the archive, or the import added work,
+        /// notes or reflections or changed a day.
+        var canUndo: Bool {
+            !archives.isEmpty || !insertedWork.isEmpty || !insertedNotes.isEmpty || !insertedReflections.isEmpty || !daysBefore.isEmpty
+        }
 
         /// "KW40, KW41: nicht neu gewertet – früherer Abschnitt („Neu berechnen“ in der Woche)"; nil without.
         var frozenHint: String? {
@@ -151,6 +374,12 @@ extension TrackerStore {
     /// archive completely (`archiveWeek(_:completely:)`) and comes from the file anew; Undo brings it back.
     /// The file's grades are stored per week (`preview.archiveUpdates`, updated by key).
     /// Unchanged rows are left alone.
+    /// v11: one save as maintenance (P2.1 – Mac, Watch and iPad never score here, they ask the iPhone); a week with a
+    /// `wertung` row keeps the file's score exactly and is neither scored nor asked for (P3.3); existing days and
+    /// weeks are written to the copy every device keeps (`ensureDay`/`ensurePlan`, P2.7); new blocks, notes and
+    /// reflections and the days as they were are noted for "Widerrufen" (P3.4 (d)); new values mark the restore
+    /// window (P3.2 (3)); stored records the file replaces under another key go (P3.5); only what the file is about
+    /// is read (P3.12).
     @discardableResult
     func apply(_ preview: ImportPreview, closedDays: [DayKey] = [], closedWeeks: [WeekKey] = []) -> ImportResult {
         guard preview.replacedWeeks.isEmpty else {
@@ -159,8 +388,9 @@ extension TrackerStore {
             for week in preview.replacedWeeks {
                 if let archive = archiveWeek(week, saving: false, completely: complete.contains(week)) { archives.append(archive) }
             }
-            try? context.save()
-            var result = apply(ImportPreview(document: preview.document, existing: existingState()),
+            saveQuietly()
+            let existing = existingState(for: preview.document, adding: Set(preview.replacedWeeks))
+            var result = apply(ImportPreview(document: preview.document, existing: existing),
                                closedDays: closedDays, closedWeeks: closedWeeks)
             result.archived = preview.replacedWeeks
             result.archives = archives
@@ -197,9 +427,17 @@ extension TrackerStore {
             }
         }
 
-        let plans = allPlans().filter { $0.deletedAt == nil }.latest(by: \.weekKey, modified: \.modifiedAt)
+        // v11 P2.7: an existing week or day is written to the copy every device keeps – `ensurePlan`/`ensureDay`
+        // fold two devices' copies first (only where there are several; one copy is that copy). Weeks and days made
+        // here are closed and scored on these objects later (`planToWrite`, `dayToWrite`).
+        var madePlans: [String: WeekPlan] = [:]
+        var madeDays: [String: PlanDay] = [:]
+        func planToWrite(_ week: WeekKey) -> WeekPlan { madePlans[week.string] ?? ensurePlan(week) }
+        func dayToWrite(_ day: DayKey) -> PlanDay { madeDays[day.string] ?? ensureDay(day) }
+        let planCopies = Dictionary(grouping: allPlans().filter { $0.deletedAt == nil }, by: \.weekKey)
         for entry in preview.weeks.entries where entry.action != .unchanged {
-            if let plan = plans[entry.key] {
+            if let copies = planCopies[entry.key], let first = copies.first {
+                let plan = copies.count > 1 ? ensurePlan(entry.record.week) : first
                 plan.update(from: entry.record)
                 plan.importedAt = now
                 plan.touch(now: now)
@@ -208,25 +446,34 @@ extension TrackerStore {
                 let plan = WeekPlan(entry.record)
                 plan.importedAt = now
                 context.insert(plan)
+                madePlans[entry.key] = plan
                 result.created += 1
             }
         }
 
-        let days = all(PlanDay.self).latest(by: \.dayKey, modified: \.modifiedAt)
-        for entry in preview.days.entries where entry.action != .unchanged {
-            let day = days[entry.key] ?? {
-                let created = PlanDay(dayKey: entry.key)
-                context.insert(created)
+        let changedDays = preview.days.entries.filter { $0.action != .unchanged }
+        let dayCopies = Dictionary(grouping: changedDays.isEmpty ? [] : planDays(changedDays.map(\.key)), by: \.dayKey)
+        for entry in changedDays {
+            let day: PlanDay
+            if let copies = dayCopies[entry.key], let first = copies.first {
+                day = copies.count > 1 ? ensureDay(entry.record.day) : first
+                result.updated += 1
+            } else {
+                day = PlanDay(dayKey: entry.key)
+                context.insert(day)
+                madeDays[entry.key] = day
                 result.created += 1
-                return created
-            }()
-            if days[entry.key] != nil { result.updated += 1 }
+            }
+            // v11 P3.4 (d): the day as it was, for "Widerrufen".
+            result.daysBefore.append(DayRecord(day: entry.record.day, dayType: day.dayType, note: day.note))
             day.dayType = entry.record.dayType
             day.note = entry.record.note
             day.modifiedAt = now
         }
 
-        let items = all(PlanItem.self).filter { $0.deletedAt == nil }.latest(by: \.key, modified: \.modifiedAt)
+        let itemWeeks = Set(preview.items.entries.filter { $0.action != .unchanged }.map { $0.record.week.string }
+            + preview.removedItems.map(Self.weekPart))
+        let items = (itemWeeks.isEmpty ? [] : planItems(itemWeeks.sorted())).latest(by: \.key, modified: \.modifiedAt)
         for entry in preview.items.entries where entry.action != .unchanged {
             if let item = items[entry.key] {
                 item.update(from: entry.record)
@@ -243,7 +490,9 @@ extension TrackerStore {
             result.removedItems.append(item)
         }
 
-        let measures = all(MeasureDefinition.self).filter { $0.deletedAt == nil }.latest(by: \.key, modified: \.modifiedAt)
+        let measureWeeks = Set(preview.measures.entries.filter { $0.action != .unchanged }.map { $0.record.week.string }
+            + preview.removedMeasures.map(Self.weekPart))
+        let measures = (measureWeeks.isEmpty ? [] : measureDefinitions(measureWeeks.sorted())).latest(by: \.key, modified: \.modifiedAt)
         for entry in preview.measures.entries where entry.action != .unchanged {
             if let measure = measures[entry.key] {
                 measure.update(from: entry.record)
@@ -257,7 +506,8 @@ extension TrackerStore {
         for key in preview.removedMeasures { measures[key]?.moveToTrash(now: now) }
 
         if preview.marks.hasChanges {
-            let marks = all(ItemMark.self).latest(by: { "\($0.weekKey)|\($0.itemCode)|\($0.dayKey)" }, modified: \.modifiedAt)
+            let markWeeks = Set(preview.marks.entries.filter { $0.action != .unchanged }.map { $0.record.week.string }).sorted()
+            let marks = itemMarks(markWeeks).latest(by: { "\($0.weekKey)|\($0.itemCode)|\($0.dayKey)" }, modified: \.modifiedAt)
             for entry in preview.marks.entries where entry.action != .unchanged {
                 let record = entry.record
                 let mark = marks[entry.key] ?? {
@@ -272,8 +522,11 @@ extension TrackerStore {
             }
         }
 
+        var restoredDays: Set<String> = []
         if preview.entries.hasChanges {
-            let entries = Dictionary(grouping: all(MeasureEntry.self).filter { $0.deletedAt == nil }) { "\($0.code)|\($0.dayKey)" }
+            let entryDays = Set(preview.entries.entries.filter { $0.action != .unchanged }.map { $0.record.day.string }).sorted()
+            let entries = Dictionary(grouping: measureEntries(entryDays)) { "\($0.code)|\($0.dayKey)" }
+            restoredDays = Set(entryDays)
             for entry in preview.entries.entries where entry.action != .unchanged {
                 for old in entries[entry.key] ?? [] { old.moveToTrash(now: now) }
                 let record = entry.record
@@ -298,15 +551,24 @@ extension TrackerStore {
             }
         }
 
+        // v11 P3.9: new blocks and notes are made one after the other in the file's order (1 ms apart), so the next
+        // backup writes them in the same order.
+        var sequence: Double = 0
+        func nextCreated() -> Date {
+            defer { sequence += 1 }
+            return now.addingTimeInterval(sequence / 1000)
+        }
         if preview.work.hasChanges {
-            let blocks = all(WorkBlock.self).filter { $0.deletedAt == nil }.latest(by: \.recordID, modified: \.modifiedAt)
+            let blocks = workBlocks(nil).latest(by: \.recordID, modified: \.modifiedAt)
             for entry in preview.work.entries where entry.action != .unchanged {
                 let record = entry.record
                 let block = blocks[entry.key] ?? {
                     let created = WorkBlock(dayKey: record.day.string, categoryKey: record.categoryKey, task: record.task,
                                             powerHours: record.powerHours)
                     created.importID = record.id
+                    created.createdAt = nextCreated()
                     context.insert(created)
+                    result.insertedWork.append(created.uuid)
                     return created
                 }()
                 if blocks[entry.key] == nil { result.created += 1 } else { result.updated += 1 }
@@ -323,13 +585,15 @@ extension TrackerStore {
         }
 
         if preview.notes.hasChanges {
-            let notes = all(DayNote.self).filter { $0.deletedAt == nil }.latest(by: \.recordID, modified: \.modifiedAt)
+            let notes = dayNotes(nil).latest(by: \.recordID, modified: \.modifiedAt)
             for entry in preview.notes.entries where entry.action != .unchanged {
                 let record = entry.record
                 let note = notes[entry.key] ?? {
                     let created = DayNote(dayKey: record.day.string, kind: record.kind, text: record.text)
                     created.importID = record.id
+                    created.createdAt = nextCreated()
                     context.insert(created)
+                    result.insertedNotes.append(created.uuid)
                     return created
                 }()
                 if notes[entry.key] == nil { result.created += 1 } else { result.updated += 1 }
@@ -341,12 +605,14 @@ extension TrackerStore {
         }
 
         if preview.reviews.hasChanges {
-            let reflections = all(Reflection.self).latest(by: \.key, modified: \.modifiedAt)
+            let scopes = Set(preview.reviews.entries.filter { $0.action != .unchanged }.map(\.record.scope)).sorted()
+            let reflections = self.reflections(scopes).latest(by: \.key, modified: \.modifiedAt)
             for entry in preview.reviews.entries where entry.action != .unchanged {
                 let record = entry.record
                 let reflection = reflections[entry.key] ?? {
                     let created = Reflection(scope: record.scope, field: record.field)
                     context.insert(created)
+                    result.insertedReflections.append(created.uuid)
                     return created
                 }()
                 if reflections[entry.key] == nil { result.created += 1 } else { result.updated += 1 }
@@ -356,7 +622,8 @@ extension TrackerStore {
         }
 
         if preview.scores.hasChanges {
-            let scores = all(ScoreOverride.self).filter { $0.deletedAt == nil }.latest(by: \.key, modified: \.modifiedAt)
+            let scoreDays = Set(preview.scores.entries.filter { $0.action != .unchanged }.map { $0.record.day.string }).sorted()
+            let scores = scoreOverrides(scoreDays).latest(by: \.key, modified: \.modifiedAt)
             for entry in preview.scores.entries where entry.action != .unchanged {
                 let record = entry.record
                 let score = scores[entry.key] ?? {
@@ -380,9 +647,15 @@ extension TrackerStore {
 
         // v10 (§1.1.4): stored records of a backup (`record` rows) by key – a stored copy with a newer
         // `modifiedAt` stays (the preview counts it as unchanged). The inbox comes back the same way.
-        if preview.records.hasChanges {
+        // v11 P3.7: the goal year and the catalog switch first (the preview fills them in only where the app has no
+        // value), then results, segments and the rest; P3.5: an entry or reading the file brings newer under another
+        // day's key loses its old key.
+        if preview.records.hasChanges || !preview.removedRecords.isEmpty {
             var change = RecordChange()
-            for entry in preview.records.entries where entry.action != .unchanged {
+            let changed = preview.records.entries.filter { $0.action != .unchanged }
+            let plainFirst = changed.filter { PlanCSV.plainSettings.contains($0.record.key) }
+                + changed.filter { !PlanCSV.plainSettings.contains($0.record.key) }
+            for entry in plainFirst {
                 var value: String = entry.record.value
                 // `x.sources` is merged, never replaced: a source connected after the backup stays known.
                 if entry.record.key == ExchangeInbox.sourcesKey {
@@ -391,49 +664,71 @@ extension TrackerStore {
                 writeSetting(entry.record.key, value, now: now, change: &change)
                 if entry.action == .create { result.created += 1 } else { result.updated += 1 }
             }
+            for key in preview.removedRecords { writeSetting(key, nil, now: now, change: &change) }
         }
 
-        // Closed days from the file (R27) and from the caller (demo, tour).
-        let daysToClose = Set(closedDays).union(preview.newClosedDays)
-        if !daysToClose.isEmpty || !closedWeeks.isEmpty {
-            try? context.save()
-            for day in daysToClose.sorted() {
-                let info = ensureDay(day)
-                guard info.closedAt == nil else { continue }
-                info.closedAt = now
-                info.modifiedAt = now
+        // v11 P3.3: a closed week's stored score from the file (`wertung`), exactly – the week is closed if it is open,
+        // keeps the file's `score.<week>` and is neither scored here nor asked for (`keeping`).
+        let kept: Set<WeekKey> = Set(preview.document.finalScores.keys)
+        result.keptScores = kept
+        for (week, final) in preview.document.finalScores.sorted(by: { $0.key < $1.key }) {
+            let plan = planToWrite(week)
+            var changed = false
+            if plan.closedAt == nil {
+                plan.closedAt = now
+                changed = true
             }
-            for week in closedWeeks { ensurePlan(week).closedAt = now }
+            if plan.finalScore != final.score || plan.finalGoalScores != final.goalScores || plan.finalGoalsScored != final.goalsScored {
+                plan.finalScore = final.score
+                plan.finalGoalScores = final.goalScores
+                plan.finalGoalsScored = final.goalsScored
+                changed = true
+            }
+            if changed { plan.touch(now: now) }
         }
+
+        // Closed days from the file (R27) and from the caller (demo, tour). v11 (P3.10): no save before – the
+        // import is one save; a day or week this import made is closed on that copy (never a second one).
+        let daysToClose = Set(closedDays).union(preview.newClosedDays)
+        for day in daysToClose.sorted() {
+            let info = dayToWrite(day)
+            guard info.closedAt == nil else { continue }
+            info.closedAt = now
+            info.modifiedAt = now
+        }
+        for week in closedWeeks { planToWrite(week).closedAt = now }
 
         result.week = preview.primaryWeek
-        AppLog.info("Import: \(result.created) new, \(result.updated) updated, \(result.removedItems.count) removed, \(preview.document.skipped.count) skipped", category: "import")
-        // v10 (Grundregel 2): closed weeks before the current segment keep their score.
-        result.frozenWeeks = commit(rescoring: [])
+        AppLog.info("Import: \(result.created) new, \(result.updated) updated, \(result.removedItems.count) removed, \(preview.document.skipped.count) skipped, \(kept.count) scores kept", category: "import")
+        // v10 (Grundregel 2): closed weeks before the current segment keep their score. v11 P2.1: maintenance – Mac,
+        // Watch and iPad ask the iPhone instead of scoring; P3.3: the weeks with a `wertung` row are kept.
+        result.frozenWeeks = commit(rescoring: [], origin: .maintenance, keeping: kept)
         // Closed weeks from the file get their score like any closed week (R27) – closing a week isn't
-        // scoring it again, so this happens in an earlier segment too.
+        // scoring it again, so this happens in an earlier segment too. Not a week whose score the file brings.
         var closedNow: Set<WeekKey> = []
-        for week in preview.newClosedWeeks where !(plan(week)?.isClosed ?? false) {
+        for week in preview.newClosedWeeks where !kept.contains(week) && !(plan(week)?.isClosed ?? false) {
             closeWeek(week)
             closedNow.insert(week)
         }
-        // v9: a closed week without items whose grades changed gets its recalculation again (the save
-        // before the closings doesn't see the change) – v10: not before the current segment.
-        var rescored = false
-        let isFrozen = freezeRule()
-        for week in preview.archiveUpdates.keys.sorted() {
-            guard let plan = plan(week), plan.isClosed, self.items(week).isEmpty else { continue }
-            if isFrozen(week) {
-                result.frozenWeeks.insert(week)
-                continue
-            }
-            if storeFinalScore(plan) { rescored = true }
-        }
-        if rescored { result.frozenWeeks.formUnion(commit(rescoring: [])) }
+        // v9: a closed week without items whose grades changed gets its recalculation – v11: the one save above sees
+        // the changed `archive.<week>` (no save before the closings any more, P3.10) and decides per device (P2.1):
+        // the iPhone scores it, Mac, Watch and iPad ask the iPhone; one before the current segment is in `frozenWeeks`.
         // A week closed just now got its score: it isn't left as it was.
         result.frozenWeeks.subtract(closedNow)
-        result.finishedAt = Date()
+        result.frozenWeeks.subtract(kept)
+        let finished = Date()
+        result.finishedAt = finished
+        // v11 P3.2 (3): the days whose values this import wrote, and when – `cleanRestoreDuplicates` compares them with
+        // copies that arrive from iCloud later.
+        if !restoredDays.isEmpty, !isInMemory {
+            RestoreWindow.note(from: now, through: finished, days: restoredDays)
+        }
         return result
+    }
+
+    /// "2026-W45" of an item or measurement key ("2026-W45|1.1-01").
+    nonisolated static func weekPart(_ key: String) -> String {
+        key.split(separator: "|", maxSplits: 1).first.map(String.init) ?? key
     }
 
     // MARK: Archive grades (v9, decision 7)
@@ -512,23 +807,21 @@ extension TrackerStore {
     /// notes of the week's days, its archive grades and the value "laut Unterlagen" – everything the
     /// file brings anew; it archives a week without items too. The week row (motto, context) stays.
     /// The snapshot always carries the week's grades, so restoring it brings them back.
+    /// v11: it carries the week's plan changes too (`change` rows, P3.7 – restoring it brings back "Auch in den
+    /// nächsten Wochen"); only the week is read, through predicates (P3.12).
     @discardableResult
     func archiveWeek(_ week: WeekKey, saving: Bool = true, completely: Bool = false) -> WeekArchive? {
         let key = week.string
-        let dayKeys = Set(week.days.map(\.string))
-        let items = all(PlanItem.self).filter { $0.weekKey == key && $0.deletedAt == nil }
-        let measures = all(MeasureDefinition.self).filter { $0.weekKey == key && $0.deletedAt == nil }
-        let state: ExistingState
-        if completely {
-            state = existingState()
-            guard state.hasArchiveContent(week) else { return nil }
-        } else {
-            guard !items.isEmpty || !measures.isEmpty else { return nil }
-            state = existingState()
-        }
-        let marks = all(ItemMark.self).filter { $0.weekKey == key }
-        let entries = all(MeasureEntry.self).filter { dayKeys.contains($0.dayKey) && $0.deletedAt == nil }
-        let scores = all(ScoreOverride.self).filter { dayKeys.contains($0.dayKey) && $0.deletedAt == nil }
+        let dayKeys: [String] = week.days.map(\.string)
+        let items = planItems([key])
+        let measures = measureDefinitions([key])
+        if !completely { guard !items.isEmpty || !measures.isEmpty else { return nil } }
+        let state: ExistingState = readState(weeks: [week], includeRecords: false, work: .without).state
+        if completely { guard state.hasArchiveContent(week) else { return nil } }
+        let marks = itemMarks([key])
+        let entries = measureEntries(dayKeys)
+        let scores = scoreOverrides(dayKeys)
+        let planChanges = changes(week)
 
         var snapshot = exportDocument(weeks: [week], state: state)
         snapshot.goals = []
@@ -536,6 +829,7 @@ extension TrackerStore {
         snapshot.work = []
         snapshot.notes = []
         snapshot.reviews = []
+        snapshot.changes = planChanges.compactMap(\.record)
         let archive = WeekArchive(weekKey: key, title: plan(week)?.title ?? "", csv: PlanCSV.export(snapshot),
                                   itemCount: items.count, markCount: snapshot.marks.count)
         context.insert(archive)
@@ -546,8 +840,8 @@ extension TrackerStore {
         for mark in marks { context.delete(mark) }
         for entry in entries { context.delete(entry) }
         for score in scores { context.delete(score) }
-        for change in all(PlanChange.self) where change.weekKey == key { context.delete(change) }
-        for day in all(PlanDay.self) where dayKeys.contains(day.dayKey) {
+        for change in planChanges { context.delete(change) }
+        for day in planDays(dayKeys) {
             let typed = completely && (!day.dayType.isEmpty || !day.note.isEmpty)
             guard day.closedAt != nil || typed else { continue }
             day.closedAt = nil
@@ -584,6 +878,8 @@ extension TrackerStore {
     /// and the snapshot alone counts – for a snapshot of "Archivdaten dieser Wochen ersetzen", so grades,
     /// day types and the value the file brought don't stay mixed in. nil decides from the snapshot and
     /// the week (`restoresCompletely`).
+    /// v11 P3.7: the snapshot's plan changes (`change` rows) come back too – a change the week has again since is
+    /// not doubled.
     @discardableResult
     func restore(_ archive: WeekArchive, completely: Bool? = nil) -> ImportResult {
         let csv = archive.csv
@@ -591,9 +887,28 @@ extension TrackerStore {
         let whole: Bool = completely ?? week.map { restoresCompletely(archive, week: $0) } ?? false
         if let week, !whole { archiveWeek(week, saving: false) }
         context.delete(archive)
-        try? context.save()
+        saveQuietly()
         let replacing: Set<WeekKey> = whole ? Set([week].compactMap { $0 }) : []
-        return apply(ImportPreview(text: csv, existing: existingState(), replacing: replacing))
+        let preview = ImportPreview(text: csv, existing: existingState(), replacing: replacing)
+        let result = apply(preview)
+        if restoreChanges(preview.document.changes) { saveQuietly() }
+        return result
+    }
+
+    /// v11 P3.7: plan changes of a snapshot back as `PlanChange` – none twice: a thing (week, Punkt/Messwert, code)
+    /// that has a change already keeps it. Returns whether one was added (no save).
+    @discardableResult
+    func restoreChanges(_ records: [PlanChangeRecord]) -> Bool {
+        var added = false
+        for (week, group) in Dictionary(grouping: records, by: \.week) {
+            var known = Set(changes(week).map { "\($0.targetRaw)|\($0.code)" })
+            for record in group where known.insert("\(record.target.rawValue)|\(record.code)").inserted {
+                context.insert(PlanChange(record))
+                added = true
+            }
+        }
+        if added { AppLog.info("Plan changes restored: \(records.count)", category: "import") }
+        return added
     }
 
     /// v9: whether restoring `archive` into `week` replaces everything the week has: the snapshot has
@@ -617,15 +932,23 @@ extension TrackerStore {
     /// Undo of an import that replaced weeks (R49): every archive comes back, and the archive that
     /// this creates of the imported week is deleted again – unless the week was edited after the
     /// import (v9): then that snapshot stays in Einstellungen → Archiv, so nothing typed since is lost.
+    /// v11 P3.4 (d): the work blocks, notes and reflections the import added go again, and changed days get their
+    /// type and note back – before the archives, so a complete restore ends with the snapshot's days. Whether a
+    /// week was edited after the import is read first, before this changes anything. The weeks whose days or work
+    /// blocks went back are scored again at the end like any closed week the user changes (a restore in between saves
+    /// them quietly, so the last save names them).
     func undoImport(_ result: ImportResult) {
-        for archive in result.archives {
+        let edited: [Bool] = result.archives.map { archive in
+            archive.week.flatMap { week in result.finishedAt.map { weekChanged(week, since: $0) } } ?? false
+        }
+        let undone: Set<WeekKey> = takeBackAdded(result)
+        for (index, archive) in result.archives.enumerated() {
             let weekKey = archive.weekKey
             let before = Set(archives().filter { $0.weekKey == weekKey }.map(\.uuid))
             // v9: a week that went to the archive completely is replaced completely again.
             let completely: Bool = archive.week.map { result.completeWeeks.contains($0) } ?? false
-            let edited: Bool = archive.week.flatMap { week in result.finishedAt.map { weekChanged(week, since: $0) } } ?? false
             restore(archive, completely: completely)
-            if edited {
+            if edited[index] {
                 AppLog.info("Undo kept the snapshot of \(weekKey): edited after the import", category: "import")
                 continue
             }
@@ -633,32 +956,103 @@ extension TrackerStore {
                 context.delete(created)
             }
         }
-        save()
+        commit(rescoring: undone)
+    }
+
+    /// v11 P3.4 (d): deletes the blocks, notes and reflections an import added (by uuid; one merged away since is
+    /// simply gone) and gives the days it changed their type and note back. No save. Returns the weeks of the blocks
+    /// and days it changed (their score can change).
+    private func takeBackAdded(_ result: ImportResult) -> Set<WeekKey> {
+        let now = Date()
+        var weeks: Set<WeekKey> = []
+        let blockIDs = result.insertedWork
+        if !blockIDs.isEmpty {
+            let wanted = Set(blockIDs)
+            let blocks: [WorkBlock] = (try? context.fetch(FetchDescriptor<WorkBlock>(predicate: #Predicate<WorkBlock> { blockIDs.contains($0.uuid) })))
+                ?? all(WorkBlock.self).filter { wanted.contains($0.uuid) }
+            for block in blocks {
+                if let day = DayKey(block.dayKey) { weeks.insert(day.week) }
+                context.delete(block)
+            }
+        }
+        let noteIDs = result.insertedNotes
+        if !noteIDs.isEmpty {
+            let wanted = Set(noteIDs)
+            let notes: [DayNote] = (try? context.fetch(FetchDescriptor<DayNote>(predicate: #Predicate<DayNote> { noteIDs.contains($0.uuid) })))
+                ?? all(DayNote.self).filter { wanted.contains($0.uuid) }
+            for note in notes { context.delete(note) }
+        }
+        let reflectionIDs = result.insertedReflections
+        if !reflectionIDs.isEmpty {
+            let wanted = Set(reflectionIDs)
+            let reflections: [Reflection] = (try? context.fetch(FetchDescriptor<Reflection>(predicate: #Predicate<Reflection> {
+                reflectionIDs.contains($0.uuid)
+            }))) ?? all(Reflection.self).filter { wanted.contains($0.uuid) }
+            for reflection in reflections { context.delete(reflection) }
+        }
+        var seen: Set<DayKey> = []
+        for before in result.daysBefore where seen.insert(before.day).inserted {
+            let day = ensureDay(before.day)
+            guard day.dayType != before.dayType || day.note != before.note else { continue }
+            day.dayType = before.dayType
+            day.note = before.note
+            day.modifiedAt = now
+            weeks.insert(before.day.week)
+        }
+        let count = blockIDs.count + noteIDs.count + reflectionIDs.count
+        if count + seen.count > 0 {
+            AppLog.info("Undo of an import: \(count) added record(s), \(seen.count) day(s)", category: "import")
+        }
+        return weeks
     }
 
     /// v9: whether anything of `week` was changed after `date` – its row, days, items, measurements,
-    /// marks, values, own scores or archive grades (deleted ones count too).
+    /// marks, values, own scores or archive grades (deleted ones count too). v11: through predicates (P3.12).
     private func weekChanged(_ week: WeekKey, since date: Date) -> Bool {
         let key = week.string
-        let dayKeys = Set(week.days.map(\.string))
+        let dayKeys: [String] = week.days.map(\.string)
         if allPlans().contains(where: { $0.weekKey == key && $0.modifiedAt > date }) { return true }
-        if all(PlanDay.self).contains(where: { dayKeys.contains($0.dayKey) && $0.modifiedAt > date }) { return true }
-        if all(PlanItem.self).contains(where: { $0.weekKey == key && $0.modifiedAt > date }) { return true }
-        if all(MeasureDefinition.self).contains(where: { $0.weekKey == key && $0.modifiedAt > date }) { return true }
-        if all(ItemMark.self).contains(where: { $0.weekKey == key && $0.modifiedAt > date }) { return true }
-        if all(MeasureEntry.self).contains(where: { dayKeys.contains($0.dayKey) && $0.modifiedAt > date }) { return true }
-        if all(ScoreOverride.self).contains(where: { dayKeys.contains($0.dayKey) && $0.modifiedAt > date }) { return true }
+        if planDays(dayKeys).contains(where: { $0.modifiedAt > date }) { return true }
+        let items: [PlanItem] = (try? context.fetch(FetchDescriptor<PlanItem>(predicate: #Predicate<PlanItem> { $0.weekKey == key })))
+            ?? all(PlanItem.self).filter { $0.weekKey == key }
+        if items.contains(where: { $0.modifiedAt > date }) { return true }
+        let measures: [MeasureDefinition] = (try? context.fetch(FetchDescriptor<MeasureDefinition>(predicate: #Predicate<MeasureDefinition> {
+            $0.weekKey == key
+        }))) ?? all(MeasureDefinition.self).filter { $0.weekKey == key }
+        if measures.contains(where: { $0.modifiedAt > date }) { return true }
+        if itemMarks([key]).contains(where: { $0.modifiedAt > date }) { return true }
+        let entries: [MeasureEntry] = (try? context.fetch(FetchDescriptor<MeasureEntry>(predicate: #Predicate<MeasureEntry> {
+            dayKeys.contains($0.dayKey)
+        }))) ?? all(MeasureEntry.self).filter { dayKeys.contains($0.dayKey) }
+        if entries.contains(where: { $0.modifiedAt > date }) { return true }
+        let scores: [ScoreOverride] = (try? context.fetch(FetchDescriptor<ScoreOverride>(predicate: #Predicate<ScoreOverride> {
+            dayKeys.contains($0.dayKey)
+        }))) ?? all(ScoreOverride.self).filter { dayKeys.contains($0.dayKey) }
+        if scores.contains(where: { $0.modifiedAt > date }) { return true }
         return settings(keys: [ArchiveWeek.settingKey(week)]).contains { $0.modifiedAt > date }
     }
 
     /// Everything (or some weeks) in the import format – backup, sharing with the planning AI, editing elsewhere.
     /// v9: with the archive grades of the weeks (`category_score` / `goal_score` rows, the week row's source).
+    /// v11: some weeks read only those weeks (P3.12, no records); everything (the backup, "Sicherung erstellen…")
+    /// starts with the `sicherung` row (P3.6) and carries the closed weeks' final scores (`wertung`, P3.3).
     func exportDocument(weeks: Set<WeekKey>? = nil) -> PlanCSV.Document {
-        exportDocument(weeks: weeks, state: existingState())
+        let read = readState(weeks: weeks, includeRecords: weeks == nil, work: weeks == nil ? .all : .weekDays)
+        return exportDocument(weeks: weeks, state: read.state, workOrder: read.workOrder, noteOrder: read.noteOrder)
     }
 
-    /// `exportDocument(weeks:)` from a state already read.
-    private func exportDocument(weeks: Set<WeekKey>?, state: ExistingState) -> PlanCSV.Document {
+    /// v11 P3.6: the `sicherung` row – when, which app and build, which kind of device (never its name).
+    static func backupInfo(now: Date = Date()) -> PlanCSV.BackupInfo {
+        let build: SyncBuild = TrackerStore.currentBuild
+        let app = PlanCSV.BackupInfo.appName(version: build.version.isEmpty ? "?" : build.version,
+                                             build: build.build > 0 ? String(build.build) : "")
+        return PlanCSV.BackupInfo(date: now, app: app, device: SyncDeviceKind.current)
+    }
+
+    /// `exportDocument(weeks:)` from a state already read. `workOrder`/`noteOrder`: when each block and note was made
+    /// (by record id) – they go out in that order (P3.9).
+    private func exportDocument(weeks: Set<WeekKey>?, state: ExistingState, workOrder: [String: Date] = [:],
+                                noteOrder: [String: Date] = [:]) -> PlanCSV.Document {
         func keep(_ week: WeekKey) -> Bool { weeks?.contains(week) ?? true }
         func keep(day: DayKey) -> Bool { weeks?.contains(day.week) ?? true }
         var doc = PlanCSV.Document()
@@ -671,9 +1065,19 @@ extension TrackerStore {
         // v10: a cleared mark that keeps a connected app's ✓ away (or holds a note) comes along, so a
         // restore or an Undo of an import brings the clear back (Grundregel 1).
         doc.marks = MarkRecord.exported(state.marks.values.filter { keep($0.week) }, items: doc.items, measures: doc.measures)
+        if weeks == nil {
+            // v11 P3.9 (3): the backup leaves out marks of items it doesn't have (an item deleted since) – never an
+            // archive snapshot or a week's CSV.
+            let itemKeys = Set(doc.items.map(\.key))
+            doc.marks = doc.marks.filter { itemKeys.contains(ItemRecord.key(week: $0.week, code: $0.itemCode)) }
+        }
         doc.entries = state.entries.values.filter { keep(day: $0.day) }
+        // v11 P3.9 (2): blocks and notes in the order they were made (the writer keeps it within a day).
+        func made(_ order: [String: Date], _ id: String) -> Date { order[id] ?? .distantPast }
         doc.work = state.work.values.filter { keep(day: $0.day) }
+            .sorted { (made(workOrder, $0.id), $0.id) < (made(workOrder, $1.id), $1.id) }
         doc.notes = state.notes.values.filter { keep(day: $0.day) }
+            .sorted { (made(noteOrder, $0.id), $0.id) < (made(noteOrder, $1.id), $1.id) }
         doc.reviews = state.reviews.values.filter { review in
             if let week = WeekKey(review.scope) { return keep(week) }
             if let day = DayKey(review.scope) { return keep(day: day) }
@@ -684,9 +1088,14 @@ extension TrackerStore {
         doc.closedDays = state.closedDays.filter { keep(day: $0) }
         doc.closedWeeks = state.closedWeeks.filter { keep($0) }
         doc.addArchives(state.archiveGrades.values.filter { keep($0.week) }.sorted { $0.week < $1.week })
-        // v10 (§1.1.4): the backup ("Alles als CSV") carries every v10 record, the inbox included; an
-        // export of some weeks (a week for ChatGPT, an archive snapshot) none.
-        if weeks == nil { doc.records = state.records.values.sorted { $0.key < $1.key } }
+        // v10 (§1.1.4): the backup ("Sicherung erstellen…") carries every v10 record, the inbox included; an
+        // export of some weeks (a week for ChatGPT, an archive snapshot) none. v11: and the goal year (P3.7), the
+        // `sicherung` row (P3.6) and the stored final scores (P3.3).
+        if weeks == nil {
+            doc.records = state.records.values.sorted { $0.key < $1.key }
+            doc.backupInfo = Self.backupInfo()
+            doc.finalScores = state.finalScores.filter { state.closedWeeks.contains($0.key) }
+        }
         return doc
     }
 
@@ -742,7 +1151,7 @@ extension TrackerStore {
         document.days = []
         if let current = plan(target)?.record { document.weeks = [current] }
         AppLog.info("Plan \(source.string) copied to \(target.string)", category: "import")
-        return apply(ImportPreview(document: document, existing: existingState()))
+        return apply(ImportPreview(document: document, existing: existingState(for: document)))
     }
 
     /// Path c: a past week's score from paper (`WeekPlan.recordedScore`, 0–10); nil removes it. A new
@@ -782,10 +1191,14 @@ extension TrackerStore {
     /// the app has something for goes to the archive completely when applied (`preview.replacingWeeks`);
     /// this week and later ones are never replaced. The logic lives in ThaliaCore
     /// (`ImportPreview.pastWeeks`, tested there).
+    /// v11 P3.12: the file is read against the structure first, then compared with only the weeks it is about.
     func pastPreview(_ text: String, blanksAsMissed: Bool, today: DayKey, replacingArchives: Bool = false) -> ImportPreview {
-        let existing = existingState()
-        let document = PlanCSV.parse(text, knownCategories: existing.categoryTitles, knownMeasures: existing.measureCodes,
-                                     knownItems: existing.itemKeys, knownGoals: Set(existing.goals.keys))
+        let structure = existingState(weeks: [], includeRecords: false, includeWork: false)
+        let probe = Self.probe(text, structure: structure)
+        let existing = existingState(for: probe)
+        let document: PlanCSV.Document = probe.marks.isEmpty ? probe
+            : PlanCSV.parse(text, knownCategories: existing.categoryTitles, knownMeasures: existing.measureCodes,
+                            knownItems: existing.itemKeys, knownGoals: Set(existing.goals.keys))
         return ImportPreview.pastWeeks(document, existing: existing, blanksAsMissed: blanksAsMissed,
                                        replacingArchives: replacingArchives, today: today)
     }
@@ -811,5 +1224,91 @@ extension TrackerStore {
         let planned = Set(document.items.map(\.week))
         let archiveWeeks = Set(document.grades.map(\.week)).filter { $0 < thisWeek && !planned.contains($0) }
         for week in Set(content.closedWeeks).union(archiveWeeks).sorted() { closeWeek(week) }
+    }
+}
+
+// MARK: Restored values and their originals (v11 P3.2 (3))
+
+extension TrackerStore {
+    /// v11 P3.2 (3): values have no id – a backup read in before iCloud brought the originals leaves them twice.
+    /// Per code and day of an import's window (`RestoreWindow`, 7 days): when the values made in the window are the
+    /// same as those made before it – value (to the CSV's four decimals), text, note, estimate; never the time – the
+    /// window's copies go to "Zuletzt gelöscht". Runs after every sync (`AppModel.afterSync`); maintenance without
+    /// Undo, saved as maintenance (Mac, Watch and iPad ask the iPhone to score). Returns how many values went.
+    @discardableResult
+    func cleanRestoreDuplicates(now: Date = Date()) -> Int {
+        guard !isInMemory else { return 0 }
+        let windows = RestoreWindow.current(now: now)
+        guard !windows.isEmpty else { return 0 }
+        return withoutUndo { () -> Int in
+            var trashed = 0
+            for window in windows {
+                let groups = Dictionary(grouping: measureEntries(window.days)) { "\($0.code)|\($0.dayKey)" }
+                for group in groups.values {
+                    let made = group.filter { $0.createdAt >= window.start && $0.createdAt <= window.end }
+                    let before = group.filter { $0.createdAt < window.start }
+                    guard !made.isEmpty, !before.isEmpty, Self.sameValues(made, before) else { continue }
+                    for entry in made { entry.moveToTrash(now: now) }
+                    trashed += made.count
+                }
+            }
+            guard trashed > 0 else { return 0 }
+            noteMaintenanceRemoval()
+            commit(rescoring: [], origin: .maintenance)
+            AppLog.info("Restored values that arrived twice: \(trashed) moved to the trash", category: "import")
+            return trashed
+        }
+    }
+
+    /// The same values, as a multiset: value to four decimals (what a backup writes), text, note, estimate.
+    nonisolated static func sameValues(_ a: [MeasureEntry], _ b: [MeasureEntry]) -> Bool {
+        func key(_ entry: MeasureEntry) -> String {
+            let value: String = entry.value.map { $0.isFinite && abs($0) < 1e12 ? String(Int64(($0 * 10_000).rounded())) : "x" } ?? "-"
+            return "\(value)|\(entry.text)|\(entry.note)|\(entry.isEstimate)"
+        }
+        return a.map(key).sorted() == b.map(key).sorted()
+    }
+}
+
+/// v11 P3.2 (3): when an import wrote values and on which days – UserDefaults `restore.window` (per device), each
+/// window kept 7 days. `TrackerStore.cleanRestoreDuplicates` compares the values made in a window with older copies.
+enum RestoreWindow {
+    static let key = "restore.window"
+    static let lifetime: TimeInterval = 7 * 86_400
+    /// At most this many windows are kept (the newest).
+    static let limit = 8
+
+    struct Window: Equatable {
+        let start: Date
+        let end: Date
+        /// "2026-11-20" …
+        let days: [String]
+    }
+
+    /// Notes an import that wrote values on `days` between `start` and `end`.
+    static func note(from start: Date, through end: Date, days: Set<String>, defaults: UserDefaults = .standard) {
+        var windows = current(now: end, defaults: defaults)
+        windows.append(Window(start: start, end: end, days: days.sorted()))
+        store(Array(windows.suffix(limit)), defaults: defaults)
+    }
+
+    /// The windows of the last 7 days, oldest first (older ones are forgotten).
+    static func current(now: Date = Date(), defaults: UserDefaults = .standard) -> [Window] {
+        let stored = defaults.array(forKey: key) as? [[String: Any]] ?? []
+        let windows: [Window] = stored.compactMap { item in
+            guard let start = item["start"] as? Date, let end = item["end"] as? Date else { return nil }
+            return Window(start: start, end: end, days: item["days"] as? [String] ?? [])
+        }
+        let fresh = windows.filter { now.timeIntervalSince($0.end) < lifetime && !$0.days.isEmpty }
+        if fresh.count != stored.count { store(fresh, defaults: defaults) }
+        return fresh
+    }
+
+    private static func store(_ windows: [Window], defaults: UserDefaults) {
+        guard !windows.isEmpty else {
+            defaults.removeObject(forKey: key)
+            return
+        }
+        defaults.set(windows.map { ["start": $0.start, "end": $0.end, "days": $0.days] as [String: Any] }, forKey: key)
     }
 }

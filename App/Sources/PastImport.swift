@@ -242,7 +242,7 @@ struct PastWeekImportView: View {
         } header: {
             Text("Woche")
         } footer: {
-            Text("Kopiert Punkte und Messwerte mit ihren ids – ohne Markierungen, Werte und Tagestypen. Danach öffnet sich die Woche: abhaken, Krank- und Urlaubstage setzen und die Woche abschließen. Erst dann zählt sie im Rückblick und bei den Zielen.")
+            Text("Kopiert Punkte und Messwerte mit ihren IDs – ohne Markierungen, Werte und Tagestypen. Danach öffnet sich die Woche: abhaken, Krank- und Urlaubstage setzen und die Woche abschließen. Erst dann zählt sie im Rückblick und bei den Zielen.")
         }
     }
 
@@ -329,7 +329,7 @@ struct PastWeekImportView: View {
     }
 
     private var promptFooter: String {
-        var parts = ["Der Prompt enthält Ziele, Kategorien und Messwerte mit ihren ids, das CSV-Format mit Kategorien- und Zielnoten und die Punkte der Vorlage – nur für wirklich abgehakte Einzelpunkte."]
+        var parts = ["Der Prompt enthält Ziele, Kategorien und Messwerte mit ihren IDs, das CSV-Format mit Kategorien- und Zielnoten und die Punkte der Vorlage – nur für wirklich abgehakte Einzelpunkte."]
         if fixedRange {
             parts.append("Zeitraum: genau \(rangeText).")
         } else {
@@ -388,6 +388,12 @@ struct PastWeekImportView: View {
             }
             ForEach(preview.replacements, id: \.week) { replacement in
                 Label(replacement.text, systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+            }
+            // v11 P3.4 (b): a set "Krank"/"Urlaub" stays against the file ("Fr 27.11.: bleibt „Urlaub“ – …").
+            ForEach(preview.notices, id: \.self) { notice in
+                Label(notice, systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline)
                     .foregroundStyle(.orange)
             }
@@ -492,10 +498,16 @@ struct PastWeekImportView: View {
         refreshWeek()
     }
 
+    /// v11 P5.8: with "Widerrufen" – the score from paper comes back.
     private func removeScore() {
         let week = target
-        app.store.setPaperScore(nil, week: week)
-        app.toasts.show("\(week.label): Wertung entfernt", symbol: "trash")
+        let store: TrackerStore = app.store
+        let previous: Double? = store.plan(week)?.recordedScore
+        store.setPaperScore(nil, week: week)
+        app.toasts.show("\(week.label): Wertung entfernt", symbol: "trash") {
+            store.setPaperScore(previous, week: week)
+            refreshWeek()
+        }
         refreshWeek()
     }
 

@@ -66,6 +66,18 @@ public enum SyncGerman {
         return "iCloud meldet: \(raw)"
     }
 
+    /// A state worth a line on the main screen (v11 P4.18): only lasting ones – the store couldn't be opened
+    /// (`.memory`), iCloud is off (`.local`), no iCloud account, iCloud storage full. Never the demo, a short
+    /// network error or an account still being checked at launch (`.unknown`, `.temporarilyUnavailable`,
+    /// `.couldNotDetermine`).
+    public static func isPersistentProblem(mode: StorageMode, account: ICloudAccount, quotaExceeded: Bool) -> Bool {
+        switch mode {
+        case .demo: return false
+        case .memory, .local: return true
+        case .iCloud: return account == .noAccount || quotaExceeded
+        }
+    }
+
     /// Why the data stays on this device, in German (the kit's reason is English); nil for iCloud and demo.
     public static func reason(_ mode: StorageMode) -> String? {
         switch mode {

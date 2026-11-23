@@ -100,12 +100,14 @@ enum WidgetText {
         return summary.openCount == 0 ? "Alles erfasst" : "\(summary.openCount) offen"
     }
 
-    /// Medium widget: the heading over the open rows.
+    /// Medium widget: the heading over the open rows. v11 P8.11: without a plan "Kein Plan – tippen" (the widget
+    /// opens "Heute im Blick" with the import).
     static func openHeading(_ summary: TodaySummary) -> String {
         if isNewDay(summary) { return newDayText }
-        if hasNoPlan(summary) { return "Kein Plan" }
+        if hasNoPlan(summary) { return "Kein Plan – tippen" }
         if summary.isExcusedDay { return "\(summary.excusedName) – nichts fällig" }
         if summary.isClosed { return "Tag abgeschlossen" }
+        if let weekly = weeklyStillOpenText(summary) { return weekly }
         return summary.openCount == 0 ? "Alles Wichtige erfasst" : "Noch zu tun · \(summary.openCount)"
     }
 
@@ -115,7 +117,16 @@ enum WidgetText {
         if hasNoPlan(summary) { return "Kein Plan" }
         if summary.isExcusedDay { return summary.excusedText }
         if summary.isClosed { return "Abgeschlossen" }
+        if let weekly = weeklyStillOpenText(summary) { return weekly }
         return "\(summary.fillText) erfasst · \(summary.openCount) offen"
+    }
+
+    /// v11 P8.12: nothing required is open today, but n×-per-week items still are – "Alles Wichtige erfasst · diese
+    /// Woche noch 2"; nil otherwise.
+    static func weeklyStillOpenText(_ summary: TodaySummary) -> String? {
+        let weekly: Int = summary.weeklyOpenCount ?? 0
+        guard summary.openCount == 0, weekly > 0 else { return nil }
+        return "Alles Wichtige erfasst · diese Woche noch \(weekly)"
     }
 
     static let newDayText = "Neuer Tag – Thalia öffnen"
@@ -135,12 +146,39 @@ enum WidgetText {
     /// R17: amounts to the cent.
     static func money(_ value: Double) -> String { Format.euro(value) }
 
-    /// A weekly target's "value / target": "12,50 € / 50 €" for euros (R17), else "6 / 8 PH".
+    /// A weekly target's "value / target": "12,50 € / 50 €" for euros (R17), else "6 / 8 PH". v11 P1.7: rounded as
+    /// the app shows them – the value by the unit's decimals, the (scaled) target in the direction of "at least"
+    /// ("150 / 86 Stk.", never "85,71"); the snapshot carries only the number, so it counts as a "≥" target.
     static func targetAmount(_ line: TodaySummary.GoalLine) -> String {
         if Units.normalized(line.unit) == "€" {
             return "\(Format.euro(line.value)) / \(Format.euro(line.target))"
         }
-        return "\(Format.number(line.value)) / \(Format.number(line.target)) \(line.unit)"
+        let value: String = Format.amount(line.value, unit: line.unit)
+        let target: String = Format.amount(target: Target(.atLeast, line.target), unit: line.unit)
+        let unit: String = Units.display(line.unit)
+        return unit.isEmpty ? "\(value) / \(target)" : "\(value) / \(target) \(unit)"
+    }
+
+    /// v11 P2.15: the large widget's weekly targets with an id per row (category + place) – two targets may have
+    /// the same title.
+    static func weeklyRows(_ summary: TodaySummary, limit: Int) -> [WidgetWeeklyRow] {
+        summary.weekly.prefix(limit).enumerated().map { index, line in
+            WidgetWeeklyRow(index: index, line: line)
+        }
+    }
+
+    /// v11 P8.12: the large widget's measure chips – up to three of the day's measures with a target (the
+    /// snapshot lists counters without Apple Health first); none for a new day, without a plan or once closed.
+    static func measureChips(_ summary: TodaySummary) -> [WidgetMeasureChip] {
+        guard !isNewDay(summary), !hasNoPlan(summary), !summary.isClosed else { return [] }
+        return summary.measures.prefix(3).enumerated().map { index, line in
+            WidgetMeasureChip(index: index, line: line)
+        }
+    }
+
+    /// Large widget: four open rows, three when the measure chips take a line (v11 P8.12).
+    static func largeRowLimit(_ summary: TodaySummary) -> Int {
+        measureChips(summary).isEmpty ? 4 : 3
     }
 
     /// R83: "14/28 Woche" next to the power-hour bar.
@@ -180,6 +218,35 @@ struct WidgetOpenRow: Identifiable {
 
     /// "1.1 Protein" → "1.1" (for the goal colour).
     var categoryKey: String { String(text.split(separator: " ").first ?? "") }
+}
+
+/// A weekly target on the large widget, identified by category and place (v11 P2.15).
+struct WidgetWeeklyRow: Identifiable {
+    let index: Int
+    let line: TodaySummary.GoalLine
+    var id: String { "\(line.categoryKey)|\(index)" }
+}
+
+/// A day measure as a chip on the large widget (v11 P8.12): "Zähler 3 / ≤ 6".
+struct WidgetMeasureChip: Identifiable {
+    let index: Int
+    let line: TodaySummary.MeasureLine
+    var id: String { "\(index)|\(line.title)" }
+
+    /// "Wasser 1,5 l / ≥ 2"; without a target just "Wasser 1,5 l".
+    var text: String {
+        line.target.isEmpty ? "\(line.title) \(line.value)" : "\(line.title) \(line.value) / \(line.target)"
+    }
+
+    /// A limit ("≤ 6", "< 50"): only a missed limit turns red.
+    var isLimit: Bool { line.target.hasPrefix("≤") || line.target.hasPrefix("<") }
+
+    /// Green when met, red only for a missed limit, else neutral (no value or a target not reached yet).
+    var tint: Color {
+        if line.met == true { return Color.green }
+        if line.met == false && isLimit { return Color.red }
+        return Color.secondary
+    }
 }
 
 /// How much of today is filled in; once the day is closed, its score. Empty for a new day (R4).
@@ -358,9 +425,11 @@ struct TodayWidgetView: View {
                     .lineLimit(2)
             }
             VStack(alignment: .leading, spacing: 5) {
+                // v11 P8.12: "Alles Wichtige erfasst · diese Woche noch 2" needs a second line (no open rows then).
                 Text(WidgetText.openHeading(summary))
                     .font(.caption.weight(.bold))
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
                 if let note {
                     NoteLine(text: note)
                 }
@@ -389,7 +458,9 @@ struct TodayWidgetView: View {
 
     private var large: some View {
         let note = WidgetText.note(summary)
-        let rows = WidgetText.openRows(summary, limit: 4)
+        let chips = WidgetText.measureChips(summary)
+        let rows = WidgetText.openRows(summary, limit: WidgetText.largeRowLimit(summary))
+        let weekly = WidgetText.weeklyRows(summary, limit: 3)
         let showsNext = !summary.isClosed && !WidgetText.isNewDay(summary)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
@@ -421,12 +492,20 @@ struct TodayWidgetView: View {
                     }
                 }
             }
-            if !summary.weekly.isEmpty {
+            if !chips.isEmpty {
+                // v11 P8.12: the day's counters at a glance ("Zähler 3 / ≤ 6").
+                HStack(spacing: 6) {
+                    ForEach(chips) { chip in
+                        MeasureChipView(chip: chip)
+                    }
+                }
+            }
+            if !weekly.isEmpty {
                 Divider()
                 Text("Wochenziele · \(summary.weekLabel)")
                     .font(.caption.weight(.bold))
-                ForEach(summary.weekly.prefix(3), id: \.title) { line in
-                    WeeklyLine(line: line)
+                ForEach(weekly) { row in
+                    WeeklyLine(line: row.line)
                 }
             }
             Spacer(minLength: 0)
@@ -548,6 +627,24 @@ private struct WeeklyLine: View {
     }
 }
 
+/// v11 P8.12: one day measure on the large widget – green when met, red only for a missed limit, else neutral.
+private struct MeasureChipView: View {
+    let chip: WidgetMeasureChip
+
+    var body: some View {
+        let tint: Color = chip.tint
+        Text(chip.text)
+            .font(.caption2.weight(.semibold))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .foregroundStyle(tint)
+            .background(tint.opacity(0.12), in: Capsule())
+    }
+}
+
 /// A thin bar in a goal's colour (power-hours of the week, R83).
 private struct WidgetBar: View {
     let fraction: Double
@@ -637,7 +734,8 @@ struct WeekWidget: Widget {
                 .widgetURL(URL(string: "thalia://week"))
         }
         .configurationDisplayName("Woche")
-        .description("Wochenwertung und die zehn Jahresziele – jedes 10 %.")
+        // v11 P6.3: no fixed number of goals or share per goal – a goal can be excused or new.
+        .description("Wochenwertung und deine Jahresziele")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -654,7 +752,7 @@ struct WeekWidgetView: View {
                     .frame(width: 54, height: 54)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Woche \(summary.weekLabel)").font(.headline)
-                    Text("Jedes Jahresziel 10 %").font(.caption).foregroundStyle(.secondary)
+                    Text("Alle Jahresziele gleich gewichtet").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }

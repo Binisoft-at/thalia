@@ -9,10 +9,32 @@ import ThaliaCore
 struct WeekTable: View {
     let context: WeekContext
     @Environment(AppModel.self) private var app
-    @AppStorage("week.summary") private var showsSummary = true
+    /// v11 P4.1: "Wochenübersicht" as a sheet while the window is too narrow for the column.
+    @State private var showsSummarySheet = false
 
     private var closeTitle: String { context.isClosed ? "Abgeschlossen" : "Woche abschließen" }
     private var closeSymbol: String { context.isClosed ? "checkmark.seal.fill" : "flag.checkered" }
+
+    /// v11 P4.1, P4.6: the column follows the stored choice (`AppModel.showsWeekSummary`, key "week.summary") while
+    /// it fits; closing it by hand changes the choice.
+    private var summaryColumn: Binding<Bool> {
+        let model: AppModel = app
+        return Binding(get: { model.showsWeekSummaryColumn }, set: { model.showsWeekSummary = $0 })
+    }
+
+    private var summaryHelp: String {
+        guard app.fitsWeekSummary else { return "Fenster breiter ziehen, um die Spalte zu zeigen" }
+        return "Wochenwertung, Ziele und Wochenziele ein- oder ausblenden (⌥⌘0)"
+    }
+
+    /// v11 P4.1: the column while it fits, else the overview as a sheet.
+    private func toggleSummary() {
+        if app.fitsWeekSummary {
+            app.showsWeekSummary.toggle()
+        } else {
+            showsSummarySheet = true
+        }
+    }
 
     /// R65: the day the titles and "Details…" open.
     private var detailDay: DayKey {
@@ -71,10 +93,24 @@ struct WeekTable: View {
             .padding(.bottom, 20)
         }
         .weekTableWindowMinWidth(WeekTableColumns.minWidth + 40)
-        .navigationTitle("\(context.week.label) · \(context.week.rangeLabel)")
-        .inspector(isPresented: $showsSummary) {
+        .diagWidth("week table scroll")
+        .weekTableTitle(context.week)
+        .inspector(isPresented: summaryColumn) {
             WeekSummaryPanel(context: context)
+                .diagWidth("week inspector")
                 .inspectorColumnWidth(min: 240, ideal: 270, max: 360)
+        }
+        .sheet(isPresented: $showsSummarySheet) {
+            WeekSummarySheet(context: context) { showsSummarySheet = false }
+                .thaliaLocalSheet(app)
+        }
+        // v11 P4.1, P4.6: ⌥⌘0 switches the choice on afresh while the column doesn't fit – the sheet shows then.
+        .onChange(of: app.showsWeekSummary) { _, shown in
+            if shown && !app.fitsWeekSummary { showsSummarySheet = true }
+        }
+        // An action in the sheet opens another one from the main window: this one goes first.
+        .onChange(of: app.sheet?.id) { _, id in
+            if id != nil { showsSummarySheet = false }
         }
         .toolbar {
             // R62: buttons with text; the tooltips name the shortcuts (the arrows' live in "Gehe zu").
@@ -86,13 +122,13 @@ struct WeekTable: View {
                 }
                 .labelStyle(.titleAndIcon)
                 .help("Vorige Woche (⇧⌘[)")
+                // v11 P6.15: ⌘T is Gehe zu → "Zu heute" (on Woche the running week) – no second shortcut here.
                 Button {
                     app.selectedWeek = app.today.week
                 } label: {
                     Label("Diese Woche", systemImage: "calendar")
                 }
                 .labelStyle(.titleAndIcon)
-                .keyboardShortcut("t", modifiers: .command)
                 .disabled(context.week == app.today.week)
                 .help("Zur aktuellen Woche (⌘T)")
                 Button {
@@ -112,15 +148,13 @@ struct WeekTable: View {
                 .labelStyle(.titleAndIcon)
                 .help("Woche abschließen (⇧⌘↩)")
             }
+            // v11 P4.6: ⌥⌘0 lives in Gehe zu → "Wochenübersicht" (it also works with the button in the overflow).
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showsSummary.toggle()
-                } label: {
+                Button(action: toggleSummary) {
                     Label("Wochenübersicht", systemImage: "sidebar.trailing")
                 }
                 .labelStyle(.titleAndIcon)
-                .keyboardShortcut("0", modifiers: [.command, .option])
-                .help("Wochenwertung, Ziele und Wochenziele ein- oder ausblenden (⌥⌘0)")
+                .help(summaryHelp)
             }
             MainToolbar()
         }
@@ -133,9 +167,29 @@ extension WeekTable {
     var archiveCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider()
-            ArchiveCard(context: context, wide: true, showsScores: !showsSummary)
+            ArchiveCard(context: context, wide: true, showsScores: !app.showsWeekSummaryColumn)
                 .padding(.vertical, 14)
         }
+    }
+}
+
+/// v11 P4.1: "Wochenübersicht" as a sheet while the window is too narrow for its column.
+private struct WeekSummarySheet: View {
+    let context: WeekContext
+    let onClose: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            WeekSummaryPanel(context: context)
+                .navigationTitle("Wochenübersicht")
+                .inlineNavigationTitle()
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        SheetCloseButton(action: onClose)
+                    }
+                }
+        }
+        .thaliaSheetFrame(width: 420, height: 640)
     }
 }
 
@@ -161,6 +215,18 @@ private extension View {
         frame(minWidth: width)
         #else
         self
+        #endif
+    }
+
+    /// v11 P6.15: Mac – "KW47" as the title and the dates below it, like Today (the toolbar keeps room for its
+    /// buttons with text); the wide iPad keeps "KW47 · 16.–22. Nov.".
+    @ViewBuilder
+    func weekTableTitle(_ week: WeekKey) -> some View {
+        #if os(macOS)
+        navigationTitle(week.label)
+            .navigationSubtitle(week.rangeLabel)
+        #else
+        navigationTitle("\(week.label) · \(week.rangeLabel)")
         #endif
     }
 }
@@ -321,20 +387,37 @@ private struct WeekTableValueRow: View {
     let context: WeekContext
     let measure: MeasureDefinition
 
+    /// v11 P6.14 (1): a Health value only the iPhone has on some day of the week (Mac; P9 turns it off for shared days).
+    private var isHealthElsewhere: Bool {
+        context.week.days.contains { context.isHealthElsewhere(measure, on: $0) }
+    }
+
+    /// The title; where the caption takes the target's place, the target and the hint.
+    private var titleHelp: String {
+        guard isHealthElsewhere else { return measure.title }
+        let target: String = measure.record?.target.map { " · Ziel \($0.label)" } ?? ""
+        return "\(measure.title)\(target)\n\(WeekContext.healthElsewhereHint)"
+    }
+
     var body: some View {
         WeekTableGrid(days: context.week.days, shaded: context.data.excusedDays) {
             HStack(spacing: 6) {
                 Text(measure.title)
                     .font(.callout)
                     .lineLimit(1)
-                if let target = measure.record?.target {
+                if isHealthElsewhere {
+                    Text("aus Health am iPhone")
+                        .font(.caption2)
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                } else if let target = measure.record?.target {
                     Text("Ziel \(target.label)")
                         .font(.caption2)
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
                 }
             }
-            .help(measure.title)
+            .help(titleHelp)
         } cell: { day in
             WeekValueCell(context: context, measure: measure, day: day, width: WeekTableColumns.day - 4)
         } total: {
@@ -390,6 +473,9 @@ private struct WeekTableRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
             .onTapGesture { app.sheet = .item(item, detailDay) }
+            // v11 P5.6: VoiceOver reads the title as a button that opens the details.
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Öffnet die Details")
         } cell: { day in
             WeekMarkCell(context: context, item: item, day: day)
                 .frame(width: WeekTableColumns.day - 6, height: 28)
@@ -467,10 +553,17 @@ private struct WeekSummaryPanel: View {
                         Text(context.archiveCoverageLine)
                             .font(.caption)
                             .foregroundStyle(coverageColor)
+                        if lacksHealthValues {
+                            // v11 P6.14 (3): the running week reads Apple Health, which only the iPhone has.
+                            Label(WeekContext.lacksHealthHint, systemImage: "heart.text.square")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         Button {
                             app.sheet = .explainer(.scoring)
                         } label: {
-                            Label("Je Ziel 10 %", systemImage: "questionmark.circle")
+                            Label("Ziele gleich gewichtet", systemImage: "questionmark.circle")
                                 .font(.caption)
                         }
                         .buttonStyle(.borderless)
@@ -497,7 +590,7 @@ private struct WeekSummaryPanel: View {
             // R68: one coloured list – each goal with its bar and score.
             Section {
                 ForEach(context.goals) { goal in
-                    GoalScoreLine(goal: goal, week: context.score.goalWeek[goal.key], isExcused: context.isGoalExcused(goal),
+                    GoalScoreLine(goal: goal, week: liveGoalWeek(goal), isExcused: context.isGoalExcused(goal),
                                   fallback: archiveGoalScore(goal), title: context.title(of: goal))
                 }
             } header: {
@@ -591,8 +684,20 @@ private struct WeekSummaryPanel: View {
         context.isArchiveWeek ? "Jahresziele · " + ImportWeekSummary.recalculatedLabel : "Jahresziele"
     }
 
+    /// v11 P6.1: a frozen closed week shows the goal scores it stored (`fallback`), every other week the live ones.
+    private func liveGoalWeek(_ goal: AnnualGoal) -> GoalWeek? {
+        context.storedGoalScores == nil ? context.score.goalWeek[goal.key] : nil
+    }
+
+    /// The goal's score where the live one doesn't show: a week without items (archive), a frozen closed week (stored).
     private func archiveGoalScore(_ goal: AnnualGoal) -> Double? {
-        context.hasPlan ? nil : context.shownGoalScore(goal.key)
+        guard !context.hasPlan || context.storedGoalScores != nil else { return nil }
+        return context.shownGoalScore(goal.key)
+    }
+
+    /// v11 P6.14 (3): Mac, Watch, iPad – the running week reads Apple Health that this device doesn't have.
+    private var lacksHealthValues: Bool {
+        !HealthDevice.scoresHealth && context.lacksHealthValues
     }
 
     private var nextWeek: WeekKey { context.week.adding(weeks: 1) }
