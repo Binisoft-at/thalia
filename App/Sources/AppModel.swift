@@ -342,6 +342,8 @@ final class AppModel {
     /// v11 P4.18: `-FakeSyncProblem local|memory|quota` (debug builds): shows that line without the real state.
     private let fakeSyncProblem: String? = UserDefaults.standard.string(forKey: "FakeSyncProblem")
     #endif
+    /// v11 P4.1 (Mac): the width of the "Heute im Blick" column while it shows (it can be dragged, 260–380 pt).
+    var glanceColumnWidth: CGFloat = 300
     /// v11 P4.1 (Mac): Today's category list beside the page, and the page's least width.
     static let todayListWidth: CGFloat = 250
     static let todayPageMinWidth: CGFloat = 400

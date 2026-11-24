@@ -334,9 +334,21 @@ private struct TodaySplit: View {
             .inspector(isPresented: inspectorShown) {
                 GlanceList(context: context, day: day, onOpen: { page = $0 })
                     .diagWidth("today inspector")
+                    .modifier(GlanceColumnWidth(app: app))
                     .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
             }
     }
+
+    #if os(macOS)
+    /// v11 P4.1 (Mac): the page's width, worked out from the window – never from the page's content. CI runs
+    /// 38–44: whatever the content asked for, AppKit made the columns that wide, past a 1024 pt window
+    /// (detail 889–1117 pt where 786 pt were free). 12 pt spare for the sidebar's divider and insets.
+    private var macPageWidth: CGFloat {
+        let column: CGFloat = app.showsGlanceColumn ? app.glanceColumnWidth + 1 : 0
+        let free: CGFloat = app.roomWidth - AppModel.todayListWidth - 1 - column - 12
+        return max(AppModel.todayPageMinWidth, free)
+    }
+    #endif
 
     @ViewBuilder
     private var split: some View {
@@ -350,14 +362,11 @@ private struct TodaySplit: View {
                 .frame(width: AppModel.todayListWidth)
                 .diagWidth("today list")
             Divider()
-            // An ideal width of its own: AppKit sizes the column to the content's ideal ("fitting") width –
-            // CI run 43: list 250 + page 638 = 889 pt held the detail wider than the window.
             detail
-                .frame(minWidth: AppModel.todayPageMinWidth, idealWidth: AppModel.todayPageMinWidth, maxWidth: .infinity)
+                .frame(width: macPageWidth)
                 .diagWidth("today page")
         }
-        .frame(minWidth: AppModel.todayListWidth + 1 + AppModel.todayPageMinWidth,
-               idealWidth: AppModel.todayListWidth + 1 + AppModel.todayPageMinWidth, maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         #else
         HStack(spacing: 0) {
             list
@@ -3464,6 +3473,24 @@ struct MainToolbar: ToolbarContent {
                 }
             }
         }
+        #endif
+    }
+}
+
+/// v11 P4.1 (Mac): measures the "Heute im Blick" column, so the page beside it gets the rest of the window.
+private struct GlanceColumnWidth: ViewModifier {
+    let app: AppModel
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                if abs(app.glanceColumnWidth - width) >= 1 { app.glanceColumnWidth = width }
+            }
+        #else
+        content
         #endif
     }
 }
