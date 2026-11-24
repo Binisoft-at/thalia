@@ -208,11 +208,13 @@ enum WeekTableColumns {
 }
 
 private extension View {
-    /// R10 (Mac): the window can't get narrower than the table. The iPad keeps its split layout.
+    /// R10 (Mac): the window can't get narrower than the table. The iPad keeps its split layout. v11 P4.1: the
+    /// same ideal width, so long titles don't make the table ask for more than its columns and push the
+    /// "Wochenübersicht" column out of the window (CI run 38: table 748 + column 270 in 793 pt).
     @ViewBuilder
     func weekTableWindowMinWidth(_ width: CGFloat) -> some View {
         #if os(macOS)
-        frame(minWidth: width)
+        frame(minWidth: width, idealWidth: width)
         #else
         self
         #endif

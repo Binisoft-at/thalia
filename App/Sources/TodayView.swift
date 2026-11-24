@@ -345,8 +345,10 @@ private struct TodaySplit: View {
             list
                 .frame(minWidth: 220, idealWidth: 270, maxWidth: 340)
                 .diagWidth("today list")
+            // v11 P4.1: an ideal width of its own – otherwise the page reports the width of its widest row
+            // (the marks beside the title need 640 pt) and the split view grows past the window (CI run 38).
             detail
-                .frame(minWidth: 420, maxWidth: .infinity)
+                .frame(minWidth: 420, idealWidth: 420, maxWidth: .infinity)
                 .diagWidth("today page")
         }
         #else

@@ -265,12 +265,17 @@ final class AppModel {
     private var showsSidebarStorage = true
 
     /// v11 P4.1: the room next to the sidebar for the page and an inspector together – the window without the
-    /// sidebar, at least the measured detail. It is the same whether an inspector sits inside the detail column
-    /// or in a column of its own next to it, so an inspector coming or going never changes whether it fits.
+    /// sidebar. It is the same whether an inspector sits inside the detail column or in a column of its own next
+    /// to it, so an inspector coming or going never changes whether it fits. The measured detail only counts
+    /// before the sidebar is measured, and never wider than the window: content wider than its column makes the
+    /// detail overflow the window (CI run 38: detail 1117 in a 1024 window), and that width must not make an
+    /// inspector "fit".
     var roomWidth: CGFloat {
-        guard sidebarWidthStorage > 0 || !showsSidebarStorage else { return detailWidthStorage }
+        guard sidebarWidthStorage > 0 || !showsSidebarStorage else {
+            return min(detailWidthStorage, mainWindowWidthStorage)
+        }
         let sidebar: CGFloat = showsSidebarStorage ? sidebarWidthStorage + 1 : 0
-        return max(detailWidthStorage, mainWindowWidthStorage - sidebar)
+        return mainWindowWidthStorage - sidebar
     }
     /// v11 P4.1: "Heute im Blick" fits as the right column next to Today's list and page – the detail is at least
     /// `glanceInspectorWidth` wide (on from 20 pt above, off from 20 pt below: no flicker while dragging). The
