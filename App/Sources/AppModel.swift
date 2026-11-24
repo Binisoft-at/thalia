@@ -342,15 +342,15 @@ final class AppModel {
     /// v11 P4.18: `-FakeSyncProblem local|memory|quota` (debug builds): shows that line without the real state.
     private let fakeSyncProblem: String? = UserDefaults.standard.string(forKey: "FakeSyncProblem")
     #endif
-    /// v11 P4.1 (Mac): the width of the "Heute im Blick" column while it shows (it can be dragged, 260–380 pt).
-    var glanceColumnWidth: CGFloat = 300
     /// v11 P4.1 (Mac): Today's category list beside the page, and the page's least width.
     static let todayListWidth: CGFloat = 250
     static let todayPageMinWidth: CGFloat = 400
-    /// v11 P4.1: the detail width each inspector needs – Today: list 250 + page 400 + column 260; week: the table
-    /// as the Mac lays it out (CI runs 38/39: 748 pt with the demo week, more than `WeekTableColumns.minWidth` +
-    /// 40) + column 240 – and the margin on either side of it. Below that the column opens as a sheet.
-    static let glanceInspectorWidth: CGFloat = 910
+    /// v11 P4.1: the detail width each inspector needs – Today: list 250 + page 400 + column 260 = 910, but the
+    /// Mac lays Today out wider (CI runs 41–45: 889 pt and more without the column), so from 1000 pt; week: the
+    /// table as the Mac lays it out (CI runs 38/39: 748 pt with the demo week, more than
+    /// `WeekTableColumns.minWidth` + 40) + column 240 – and the margin on either side of it. Below that the
+    /// column opens as a sheet.
+    static let glanceInspectorWidth: CGFloat = 1000
     static let weekSummaryWidth: CGFloat = 1000
     static let inspectorMargin: CGFloat = 20
     /// When an inspector last came or went (P4.1): a jump of the width right after it doesn't switch it back.

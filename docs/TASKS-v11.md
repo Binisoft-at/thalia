@@ -2246,9 +2246,8 @@ C10, C11, C14, C16; Szenarien und Typprüfung im Prüf-Ordner der Sitzung):
 - `ItemMarkRow` wählt am Mac „Knöpfe neben dem Titel“ ab 640 pt nach der gemessenen Zeilenbreite (kein `ViewThatFits`
   mit Mindestbreite mehr); darunter stehen am Mac die flachen 300-pt-Knöpfe unter dem Titel (die großen brauchten
   nebeneinander 580 pt, Lauf 41: Seite 638 pt bei 542 pt Platz); iPhone/iPad unverändert.
-- Lauf 43/44 (AppKit-Protokoll „layout at 8 s“): die Spalte richtete sich nach dem, was der Inhalt verlangte (Liste 250 +
-  Seite 638 = 889 pt), eine Wunschbreite half nicht. Die Heute-Seite am Mac bekommt ihre Breite jetzt aus dem Fenster
-  (`roomWidth` − Liste − „Heute im Blick“, falls offen, − 12 pt; mindestens 400 pt); die Spalte „Heute im Blick“ wird
-  dafür gemessen (`AppModel.glanceColumnWidth`).
+- Lauf 43–45 (AppKit-Protokoll „layout at 8 s“): eine Wunschbreite und eine aus dem Fenster gerechnete Seitenbreite
+  änderten nichts; das Fenster startet in CI mit 1180 pt (Spalte „Heute im Blick“ offen) und wird dann auf 1024 pt
+  verkleinert. Versuch in Lauf 46: `glanceInspectorWidth` = 1000, die Spalte öffnet sich bei 1180 pt nicht (Blatt).
 - `weekSummaryWidth` = 1000: die Wochentabelle belegt am Mac rund 750 pt (Lauf 39/40: Inhalt 729 pt), bei 1024 pt
   öffnet die „Wochenübersicht“ als Blatt (Lauf 40: Woche passt).
