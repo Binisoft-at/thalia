@@ -1,0 +1,778 @@
+Building for debugging...
+[0/16] Write sources
+[3/16] Copying Fixtures
+[4/16] Write swift-version-24593BA9C3E375BF.txt
+[6/22] Compiling BinisoftKitCore SyncStatus.swift
+[7/22] Compiling BinisoftKitCore Import.swift
+[8/22] Compiling BinisoftKitCore Records.swift
+[9/22] Emitting module BinisoftKitCore
+[10/22] Compiling BinisoftKitCore AppEnvironment.swift
+[11/22] Compiling BinisoftKitCore AppLog.swift
+[12/23] Compiling BinisoftKitCore Tour.swift
+[13/24] Wrapping AST for BinisoftKitCore for debugging
+[15/45] Emitting module ThaliaCore
+[16/51] Compiling ThaliaCore SyncDevices.swift
+[17/51] Compiling ThaliaCore SyncGerman.swift
+[18/51] Compiling ThaliaCore Template.swift
+[19/51] Compiling ThaliaCore ThaliaTour.swift
+[20/51] Compiling ThaliaCore Vocabulary.swift
+[21/51] Compiling ThaliaCore WeekExtras.swift
+[22/51] Compiling ThaliaCore PlanCSV.swift
+[23/51] Compiling ThaliaCore Records.swift
+[24/51] Compiling ThaliaCore Reports.swift
+[25/51] Compiling ThaliaCore Scoring.swift
+[26/51] Compiling ThaliaCore Segments.swift
+[27/51] Compiling ThaliaCore SettingRecord.swift
+[28/51] Compiling ThaliaCore Archive.swift
+[29/51] Compiling ThaliaCore Calendar.swift
+[30/51] Compiling ThaliaCore Demo.swift
+[31/51] Compiling ThaliaCore DemoV10.swift
+[32/51] Compiling ThaliaCore Exchange.swift
+[33/51] Compiling ThaliaCore ExchangeFormat.swift
+[34/51] Compiling ThaliaCore Format.swift
+[35/51] Compiling ThaliaCore GoalResults.swift
+[36/51] Compiling ThaliaCore GoalTrack.swift
+[37/51] Compiling ThaliaCore HealthShare.swift
+[38/51] Compiling ThaliaCore ImportPreview.swift
+[39/51] Compiling ThaliaCore Lists.swift
+[40/51] Compiling ThaliaCore Measures.swift
+[41/51] Compiling ThaliaCore Merge.swift
+[42/52] Wrapping AST for ThaliaCore for debugging
+[44/63] Emitting module ThaliaCoreTests
+[45/66] Compiling ThaliaCoreTests V9GapTests.swift
+[46/66] Compiling ThaliaCoreTests V9Tests.swift
+[47/66] Compiling ThaliaCoreTests resource_bundle_accessor.swift
+[48/66] Compiling ThaliaCoreTests V11Tests.swift
+[49/66] Compiling ThaliaCoreTests V7Tests.swift
+[50/66] Compiling ThaliaCoreTests V8Tests.swift
+[51/66] Compiling ThaliaCoreTests V10GapFixTests.swift
+[52/66] Compiling ThaliaCoreTests V10Tests.swift
+[53/66] Compiling ThaliaCoreTests V11BackupTests.swift
+[54/66] Compiling ThaliaCoreTests CSVTests.swift
+[55/66] Compiling ThaliaCoreTests CalendarTests.swift
+[56/66] Compiling ThaliaCoreTests ScoringTests.swift
+[57/66] Compiling ThaliaCoreTests SyncDeviceTests.swift
+[58/67] /__w/thalia/thalia/Packages/ThaliaCore/.build/x86_64-unknown-linux-gnu/debug/ThaliaCorePackageDiscoveredTests.derived/all-discovered-tests.swift
+[59/67] Write sources
+[60/67] Wrapping AST for ThaliaCoreTests for debugging
+[62/70] Emitting module ThaliaCorePackageDiscoveredTests
+[63/70] Compiling ThaliaCorePackageDiscoveredTests all-discovered-tests.swift
+[64/70] Compiling ThaliaCorePackageDiscoveredTests ThaliaCoreTests.swift
+[65/71] /__w/thalia/thalia/Packages/ThaliaCore/.build/x86_64-unknown-linux-gnu/debug/ThaliaCorePackageTests.derived/runner.swift
+[66/71] Write sources
+[67/71] Wrapping AST for ThaliaCorePackageDiscoveredTests for debugging
+[69/73] Emitting module ThaliaCorePackageTests
+[70/73] Compiling ThaliaCorePackageTests runner.swift
+[71/74] Wrapping AST for ThaliaCorePackageTests for debugging
+[72/74] Write Objects.LinkFileList
+[73/74] Linking ThaliaCorePackageTests.xctest
+Build complete! (75.59s)
+Test Suite 'All tests' started at 2026-11-24 07:26:06.175
+Test Suite 'debug.xctest' started at 2026-11-24 07:26:06.177
+Test Suite 'debug.xctest' passed at 2026-11-24 07:26:06.177
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.0 (0.0) seconds
+Test Suite 'All tests' passed at 2026-11-24 07:26:06.177
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.0 (0.0) seconds
+◇ Test run started.
+↳ Testing Library Version: 6.2.4 (5ee435b15ad40ec)
+↳ Target Platform: x86_64-unknown-linux-gnu
+◇ Suite "v11 P1.3 and the records a backup carries" started.
+◇ Suite "v7 scoring and summary" started.
+◇ Suite "v10 B8 MeasureSource" started.
+◇ Suite "v10 tour and demo" started.
+◇ Suite "v9 archive weeks in the import" started.
+◇ Suite "v11 C4 power-hours in minutes" started.
+◇ Suite "v11 C2 times around midnight" started.
+◇ Suite "v11 C3 target words" started.
+◇ Suite "v9 gaps: reading" started.
+◇ Suite "v11 P3.8 and P3.9 model, times, order" started.
+◇ Suite "v9 means and recalculation" started.
+◇ Suite "v11 P3.1 numbers" started.
+◇ Suite "v11 C8 missed weekly quota" started.
+◇ Suite "v11 C14 Health sharing" started.
+◇ Suite "Scoring v2" started.
+◇ Suite "v10 B5 Segments" started.
+◇ Suite "v11 C10 reports" started.
+◇ Suite "v7 merges and sync texts" started.
+◇ Suite "v11 C11 pace" started.
+◇ Suite "v11 P3.4 and P3.5 preview" started.
+◇ Suite "v10 B1 SettingRecord" started.
+◇ Suite "v8 past weeks against the app" started.
+◇ Suite "v8 Krank und Urlaub" started.
+◇ Suite "v9 gaps: past-week import" started.
+◇ Suite "v11 C18 device builds" started.
+◇ Suite "v11 C9 results" started.
+◇ Suite "v8 report over several weeks" started.
+◇ Suite "Measurements and work" started.
+◇ Suite "v8 CSV for past weeks" started.
+◇ Suite "v9 grades in the CSV" started.
+◇ Suite "v10 gap fixes – segments" started.
+◇ Suite "v11 P3.6 backup row" started.
+◇ Suite "v7 days and numbers" started.
+◇ Suite "Devices in sync" started.
+◇ Suite "v11 C5 keys" started.
+◇ Suite "v11 C13 records" started.
+◇ Suite "v7 backup, import, plan" started.
+◇ Suite "v10 gap fixes – inbox sync and backup" started.
+◇ Suite "v10 gap fixes – cleared ticks in exports" started.
+◇ Suite "v11 C1 numbers" started.
+◇ Suite "v11 C17 snapshot and sync line" started.
+◇ Suite "v11 C6 units and rounding" started.
+◇ Suite "Days and ISO weeks" started.
+◇ Suite "v10 B9 Measures.merged" started.
+◇ Suite "Plan CSV" started.
+◇ Suite "v11 C7 calendar" started.
+◇ Suite "v9 prompt, two scores, demo" started.
+◇ Suite "v11 P3.3 final scores" started.
+◇ Suite "Scoring" started.
+◇ Suite "v10 CSV, prompt and import" started.
+◇ Suite "v11 C15 Finn" started.
+◇ Suite "Demo, prompt, report, reminders, tour" started.
+◇ Suite "v7 vocabulary" started.
+◇ Suite "Scoring v3" started.
+◇ Suite "Vocabulary and formatting" started.
+◇ Suite "v10 B4 ListMath" started.
+◇ Suite "v11 P3.7 goal year and plan changes" started.
+◇ Suite "v10 B7 ExchangeDerivation" started.
+◇ Suite "v11 C12 reminders" started.
+◇ Suite "v11 C16 tour 11" started.
+◇ Suite "v10 B2 ResultProgress" started.
+◇ Suite "v10 B3 GoalTrack" started.
+◇ Suite "v11 P3.10 and P3.12 reading" started.
+◇ Suite "v9 gaps: prompt" started.
+◇ Suite "v10 B6 ExchangeFormat" started.
+◇ Test summaryResolvesAfterMidnight() started.
+◇ Test eveningRemindersPerDay() started.
+◇ Test oldSummaryFileStaysReadable() started.
+◇ Test openMatchesBlank() started.
+◇ Test journalFromItem() started.
+◇ Test markingDoneUpdatesSummary() started.
+◇ Test targetsReadStrictly() started.
+◇ Test appAndListRoundTrip() started.
+◇ Test deviceAndHealthRecordsNeverComeIn() started.
+◇ Test demoInboxIsTheFixture() started.
+◇ Test resultTargetsStoredPlain() started.
+◇ Test planNoteMakesNoArchive() started.
+◇ Test sameFileTwiceChangesNothing() started.
+◇ Test demoHasSegmentsResultsBooksAndAnInbox() started.
+◇ Test archiveWeekWithItemsInTheAppGetsAWarning() started.
+◇ Test weekOnlyFileIsAnArchiveWeek() started.
+◇ Test tourCardsNameTheNewThings() started.
+◇ Test replacingArchivesReplacesOnlyPastWeeks() started.
+◇ Test dayWindowsAndOthersAsBefore() started.
+◇ Test rowsStayInTheirBlock() started.
+◇ Test unquotedDecimalCommaIsCaught() started.
+◇ Test rowsBeforeTheFirstWeekRowSayWhy() started.
+◇ Test twoLabelsOnOneIdGetAPlainWarning() started.
+◇ Test weekdayColumnsOfCategoryScoreAreDayGrades() started.
+◇ Test weekValueIsWrittenExactly() started.
+◇ Test wordsMeanTheirComparison() started.
+◇ Test severalCSVBlocksGetAWarning() started.
+◇ Test germanSourceColumn() started.
+◇ Test unitsWithADotAtTheEnd() started.
+◇ Test strictForEditorsLooseForStored() started.
+◇ Test newModelBeforeKW42StaysNew() started.
+◇ Test singleValueKeepsItsTime() started.
+◇ Test notesAndWorkKeepTheirOrderWithinADay() started.
+◇ Test recalculationLeavesOutHolidaysAndUnmappedGrades() started.
+◇ Test meanCountsRealZerosAndOnlyTheDisplayRounds() started.
+◇ Test excusedShareStillCountsHalf() started.
+◇ Test shortfallCountsOnABlankLastDay() started.
+◇ Test closedOnSundayWithGaps() started.
+◇ Test oneReader() started.
+◇ Test valuesRoundTrip() started.
+◇ Test hugeAndOddNumbersNeverTrap() started.
+◇ Test thousandsDotReadsAsDecimalWithAHint() started.
+◇ Test threeDecimalsGetAFourth() started.
+◇ Test readersWindowNotOlderThanTheirOwn() started.
+◇ Test windowAndKeys() started.
+◇ Test textsNameTheWriter() started.
+◇ Test windowBoundariesAndWeekKeys() started.
+◇ Test onlyTheWritersDaysInTheWindow() started.
+◇ Test recordsRoundTripTolerantly() started.
+◇ Test progressItemsWaitForTheWeekAndResolveBackwards() started.
+◇ Test goalNeedsAllItsCategoriesComplete() started.
+◇ Test notApplicableOnlyWhileEnoughDaysAreLeft() started.
+◇ Test neverWorkedOnAMissedTargetCountsOnceAtTheEnd() started.
+◇ Test progressRatioFromWork() started.
+◇ Test weekAverageAroundMidnight() started.
+◇ Test retroactivePerYearNewestAndLabels() started.
+◇ Test nightTargets() started.
+◇ Test minutesBecomePowerHours() started.
+◇ Test noneGivesOneForTheWholeYear() started.
+◇ Test syncStatusInGerman() started.
+◇ Test closedDaysWithoutSickDays() started.
+◇ Test mergeDays() started.
+◇ Test mergeWeeks() started.
+◇ Test trendWindowsWithoutOverlap() started.
+◇ Test promptsNameSetDaysAndTheNumberRule() started.
+◇ Test reportTexts() started.
+◇ Test datedKeysCarryTheDay() started.
+◇ Test newestCopyAndTrash() started.
+◇ Test unknownFieldSurvivesSaving() started.
+◇ Test roundTripsAndKeepsDefaults() started.
+◇ Test previewRunsOffTheMainThread() started.
+◇ Test emptyNotesKeepTheAppsAndHolidaysStay() started.
+◇ Test movedEntryCountsOnce() started.
+◇ Test blanksAsMissedSkipAKeptHoliday() started.
+◇ Test headlineCountsInTheSingular() started.
+◇ Test statusShortAndLong() started.
+◇ Test rangesAndEqualTargetsLikeTheReport() started.
+◇ Test reportSaysTheSame() started.
+◇ Test closingKnownDaysClosesWhatTheAppHasMarkedOrTyped() started.
+◇ Test closingKnownDaysLeavesReplacedMarksAndFileRowsToTheFile() started.
+◇ Test warningsNameMarksAndItems() started.
+◇ Test fillingPastBlanksKeepsTheAppsMarksAndSkipsSickDays() started.
+◇ Test runningWeekGetsNoValue() started.
+◇ Test reportScoresLikeTheWeek() started.
+◇ Test twoAreGapless() started.
+◇ Test replacingTheSameFileTwiceChangesNothing() started.
+◇ Test syncErrorsInGerman() started.
+◇ Test mottoAndValueAreKept() started.
+◇ Test strayRowsNeverReplaceOrCloseALiveWeek() started.
+◇ Test weeklyTargetWithOnlySickDaysIsNotScored() started.
+◇ Test allDevicesCurrent() started.
+◇ Test t5QuotaMetMeansNoDeduction() started.
+◇ Test archiveWeekGetsNoMeasurements() started.
+◇ Test t1QuotaShareOfSickDaysCountsHalf() started.
+◇ Test progressInAWorkCategoryScalesLikeItsPace() started.
+◇ Test t3OnlyTheSickShareCountsHalf() started.
+◇ Test marksBeforeTheSickNoteStayButDontCount() started.
+◇ Test openMatchesBlankWithSickDays() started.
+◇ Test t4WholeWeekOnHolidayHasNoScore() started.
+◇ Test paceLeavesHolidaysOut() started.
+◇ Test limitsAndTimesAreNeverScaled() started.
+◇ Test t6NotApplicableLeavesTheSickShareOut() started.
+◇ Test t7ProgressTargetShrinksWithSickDays() started.
+◇ Test t8DailyItemOnHolidayWeekend() started.
+◇ Test t2BookedOnTheLastDayThatStillCounts() started.
+◇ Test t9OverridesAndGoalsOnSickDaysDontCount() started.
+◇ Test limitsKeptExceededTooFast() started.
+◇ Test booksCountFinishedOfTheKindAndAssigned() started.
+◇ Test resultLineCarriesItsStatus() started.
+◇ Test dayTypes() started.
+◇ Test averageAndTrend() started.
+◇ Test weekLineFromAReportInput() started.
+◇ Test entriesAggregate() started.
+◇ Test startAtPage() started.
+◇ Test suggestionsNeverInventFailures() started.
+◇ Test everythingIsPowerHoursTutoringToo() started.
+◇ Test workMeasureInPowerHours() started.
+◇ Test pastWeekPromptForTheWeeksOfTheAttachments() started.
+◇ Test pastWeekPromptForManyWeeks() started.
+◇ Test fillingBlanksCountsOnlyWhatWasDue() started.
+◇ Test bedtimesAverageAcrossMidnight() started.
+◇ Test marksOnUnknownItemsGetAWarning() started.
+◇ Test pastWeekPromptCarriesIdsAndFormat() started.
+◇ Test reportSaysWhatDoesntCount() started.
+◇ Test closingPastClosesWeeksBeforeToday() started.
+◇ Test matrixColumnsBecomeMarks() started.
+◇ Test gradesAreUpdatedByKey() started.
+◇ Test weekBeforeANewSegmentDuringItsFirstWeek() started.
+◇ Test unknownIdsStayWithoutMapping() started.
+◇ Test previewPerWeek() started.
+◇ Test gradesAreReadWithTheirChecks() started.
+◇ Test snapshotKeepsNewerFields() started.
+◇ Test plannedSegmentAndASecondStart() started.
+◇ Test lettersAndRelativeDays() started.
+◇ Test paceSkipsFreeDays() started.
+◇ Test weekValueKeepsItsDecimals() started.
+◇ Test writingAndReadingGivesTheSame() started.
+◇ Test closingDayUsesFourOClock() started.
+◇ Test clockTimesOnDaysTheClocksChange() started.
+◇ Test euroToTheCent() started.
+◇ Test ageNoticeOnlyWithChanges() started.
+◇ Test keysAsBefore() started.
+◇ Test labelsNumberSameKinds() started.
+◇ Test seenTexts() started.
+◇ Test roundTrip() started.
+◇ Test periodReport() started.
+◇ Test promptCarriesPlan() started.
+◇ Test firstRowRoundTrip() started.
+◇ Test olderBackupNotice() started.
+◇ Test repeatPlan() started.
+◇ Test backupRoundTrip() started.
+◇ Test newKeysStayOutOfBackupsAndWeeks() started.
+◇ Test newestCopyPerID() started.
+◇ Test requestsBuildsAndBackupStamps() started.
+◇ Test olderBackupKeepsNewerSources() started.
+◇ Test oldBackupStillImports() started.
+◇ Test sourcesFromEveryCopy() started.
+◇ Test replacementText() started.
+◇ Test copiesPickedTheSameWayEverywhere() started.
+◇ Test fileWithoutReadableDateStillArrives() started.
+◇ Test sourceNamesFromSourceJSON() started.
+◇ Test onlyAppFactsReachTheSyncedInbox() started.
+◇ Test laterFileWithoutChoiceEndsIt() started.
+◇ Test clearedTickTravels() started.
+◇ Test parseIsStrict() started.
+◇ Test exchangeNumbersAreBounded() started.
+◇ Test persistentSyncProblems() started.
+◇ Test dativeAndSingular() started.
+◇ Test appleWeekdayNumbers() started.
+◇ Test targetsRoundedTowardsTheComparison() started.
+◇ Test parsesAndPrintsDays() started.
+◇ Test dayFromDateUsesTheTimeZone() started.
+◇ Test hugeNumbersShowADash() started.
+◇ Test metricsOfferNoRefs() started.
+◇ Test demoWeekNotesAsBefore() started.
+◇ Test newWeekWithoutASnapshotAhead() started.
+◇ Test decimalsPerUnit() started.
+◇ Test week53AndYearBoundaries() started.
+◇ Test parsesWeekSpellings() started.
+◇ Test dayMasks() started.
+◇ Test knownWeekdays() started.
+◇ Test healthBeforeAppsOwnBeforeBoth() started.
+◇ Test ownReplacesStepperBaseAndClearing() started.
+◇ Test resultsOnlyFileRemovesNothing() started.
+◇ Test goalYearWeeks() started.
+◇ Test historyWeeksBeforeKW42UseTheOldModel() started.
+◇ Test templateRoundTripsThroughTheCSV() started.
+◇ Test slugs() started.
+◇ Test missingTypeColumn() started.
+◇ Test revisedPlanUpdatesAndRemoves() started.
+◇ Test templateHasTenGoalsEighteenCategoriesAndOnlyTheItemsNeeded() started.
+◇ Test problemsAreExplained() started.
+◇ Test pastedChatGPTAnswerAndGermanHeaders() started.
+◇ Test weekToClose() started.
+◇ Test recordedScoreWinsOverTheRecalculation() started.
+◇ Test resultsRoundTrip() started.
+◇ Test rangeWithYear() started.
+◇ Test reimportingTheSameFileChangesNothing() started.
+◇ Test olderFilesAndOddRows() started.
+◇ Test promptExampleReadsBack() started.
+◇ Test promptHasTheArchiveRules() started.
+◇ Test previewComparesWithTheStoredScore() started.
+◇ Test demoHasAnArchiveWeek() started.
+◇ Test exactToTheBit() started.
+◇ Test knockoutRuleZeroesTheCategoryButKeepsTheMarks() started.
+◇ Test partialCountsHalf() started.
+◇ Test paceAgainstAnEvenWeek() started.
+◇ Test notScheduledIsNotMissed() started.
+◇ Test missingGoalCoverageIsVisible() started.
+◇ Test weeklyQuotaShortfallCountsOnlyOnceTheWeekIsOver() started.
+◇ Test handoverExampleNutrition8Training6IsFitBody7() started.
+◇ Test goalsWeighEquallyRegardlessOfCategoryCount() started.
+◇ Test notApplicableAndBlankDontCountButBlankStaysVisible() started.
+◇ Test missedMarkUsesAQuotaSlot() started.
+◇ Test weekCompleteness() started.
+◇ Test optionalItemsAreNeverScored() started.
+◇ Test weeklyAverageUsesOnlyValidDays() started.
+◇ Test ownScoreOverridesTheCalculation() started.
+◇ Test importKeepsTheNewerRecord() started.
+◇ Test promptAndReportCarryTheResultsOnlyWhenGiven() started.
+◇ Test catalogWithAndWithoutSource() started.
+◇ Test linksStayOverTheWeeks() started.
+◇ Test recordRowsRoundTripOnlyWhenThere() started.
+◇ Test fixturesAreWhatTheWritersBuild() started.
+◇ Test accountBalanceAndResultSources() started.
+◇ Test tourGlanceTicksOff() started.
+◇ Test demoIsDeterministicAndConsistent() started.
+◇ Test remindersUseApplesWeekdays() started.
+◇ Test tourStepsTickOff() started.
+◇ Test promptListsManualChanges() started.
+➜ Test realFileImports() skipped.
+◇ Test weekReportShowsScoreAndReality() started.
+◇ Test todaySummaryComparesContent() started.
+◇ Test demoWeekScoresSensibly() started.
+◇ Test tourCatalogIsValid() started.
+◇ Test promptDefinesTheFormatAndCarriesTheStructure() started.
+◇ Test measureKinds() started.
+◇ Test targetSentencesAndChoices() started.
+◇ Test workTotalsInHoursAndMinutes() started.
+◇ Test markWords() started.
+◇ Test progressItemsFollowTheirMeasurement() started.
+◇ Test secondaryItemsCountOnlyWhenFilled() started.
+◇ Test freeDaysLeaveWorkOut() started.
+◇ Test weeklyItemsLeaveTheDayOnceTheQuotaIsMet() started.
+◇ Test germanNumbers() started.
+◇ Test bedtimeAfterMidnightIsLate() started.
+◇ Test sources() started.
+◇ Test dayTypes() started.
+◇ Test targets() started.
+◇ Test marksFollowTheSheet() started.
+◇ Test demoHasASickFriday() started.
+◇ Test amountsPerDayRetroactiveNeverNegative() started.
+◇ Test finishedInTheSpanAndStatus() started.
+◇ Test planChangesRoundTrip() started.
+◇ Test rowsRoundTripBeforeTheRecords() started.
+◇ Test importFillsInOnly() started.
+◇ Test powerHoursByTheAppsChoiceBeforeTheMapping() started.
+◇ Test flagsRoundTripThroughTheCSV() started.
+◇ Test schedules() started.
+◇ Test ticksOnlyWithoutOwnMarksOnDaysThatCount() started.
+◇ Test weekExtrasInOneCall() started.
+◇ Test fixturesInboxAndOverview() started.
+◇ Test editorChoicesFromSourceJSON() started.
+◇ Test goneFactsAndDuplicateFiles() started.
+◇ Test aFactIdCountsOnceEverywhere() started.
+◇ Test ownEntriesWinAndSpendingAddsUp() started.
+◇ Test tourElevenWithAndWithoutSharing() started.
+◇ Test checkWithItsDate() started.
+◇ Test weeklyPerWeek() started.
+◇ Test countFromAMeasure() started.
+◇ Test countFromEntriesWithPaceAndSegments() started.
+◇ Test valueTowardsLessAndMore() started.
+◇ Test morningsPerDay() started.
+◇ Test textRoundTrip() started.
+◇ Test roundedLikeTheDisplay() started.
+◇ Test measuresOfAGoal() started.
+◇ Test excusedWeeksAndEveryCategory() started.
+◇ Test countFromTheListAssignedBeforeKind() started.
+◇ Test aYearReadsFast() started.
+◇ Test lastRowWinsInTheOrderAsBefore() started.
+◇ Test referencedWeeksPerRowKind() started.
+◇ Test promptHasTheNewRules() started.
+◇ Test refusesWithAReason() started.
+◇ Test readsTheFixtures() started.
+◇ Test hashDatesAndFiles() started.
+✔ Test eveningRemindersPerDay() passed after 0.436 seconds.
+✔ Test openMatchesBlank() passed after 0.436 seconds.
+✔ Test summaryResolvesAfterMidnight() passed after 0.444 seconds.
+✔ Test markingDoneUpdatesSummary() passed after 0.444 seconds.
+✔ Test journalFromItem() passed after 0.444 seconds.
+✔ Test deviceAndHealthRecordsNeverComeIn() passed after 0.444 seconds.
+✔ Test targetsReadStrictly() passed after 0.449 seconds.
+✔ Test oldSummaryFileStaysReadable() passed after 0.450 seconds.
+✔ Test appAndListRoundTrip() passed after 0.450 seconds.
+✔ Test resultTargetsStoredPlain() passed after 0.450 seconds.
+✔ Test planNoteMakesNoArchive() passed after 0.450 seconds.
+✔ Test sameFileTwiceChangesNothing() passed after 0.450 seconds.
+✔ Test archiveWeekWithItemsInTheAppGetsAWarning() passed after 0.450 seconds.
+✔ Test weekOnlyFileIsAnArchiveWeek() passed after 0.450 seconds.
+✔ Test tourCardsNameTheNewThings() passed after 0.450 seconds.
+✔ Test dayWindowsAndOthersAsBefore() passed after 0.450 seconds.
+✔ Test replacingArchivesReplacesOnlyPastWeeks() passed after 0.450 seconds.
+✔ Test rowsStayInTheirBlock() passed after 0.450 seconds.
+✔ Test rowsBeforeTheFirstWeekRowSayWhy() passed after 0.449 seconds.
+✔ Test twoLabelsOnOneIdGetAPlainWarning() passed after 0.449 seconds.
+✔ Test unquotedDecimalCommaIsCaught() passed after 0.450 seconds.
+✔ Test weekValueIsWrittenExactly() passed after 0.448 seconds.
+✔ Test weekdayColumnsOfCategoryScoreAreDayGrades() passed after 0.449 seconds.
+✔ Test severalCSVBlocksGetAWarning() passed after 0.448 seconds.
+✔ Test wordsMeanTheirComparison() passed after 0.449 seconds.
+✔ Test germanSourceColumn() passed after 0.448 seconds.
+✔ Test strictForEditorsLooseForStored() passed after 0.448 seconds.
+✔ Test unitsWithADotAtTheEnd() passed after 0.448 seconds.
+✔ Test newModelBeforeKW42StaysNew() passed after 0.448 seconds.
+✔ Test singleValueKeepsItsTime() passed after 0.448 seconds.
+✔ Test notesAndWorkKeepTheirOrderWithinADay() passed after 0.448 seconds.
+✔ Test meanCountsRealZerosAndOnlyTheDisplayRounds() passed after 0.448 seconds.
+✔ Test excusedShareStillCountsHalf() passed after 0.448 seconds.
+✔ Test shortfallCountsOnABlankLastDay() passed after 0.448 seconds.
+✔ Test recalculationLeavesOutHolidaysAndUnmappedGrades() passed after 0.448 seconds.
+✔ Test closedOnSundayWithGaps() passed after 0.448 seconds.
+✔ Test oneReader() passed after 0.448 seconds.
+✔ Test hugeAndOddNumbersNeverTrap() passed after 0.448 seconds.
+✔ Test thousandsDotReadsAsDecimalWithAHint() passed after 0.448 seconds.
+✔ Test threeDecimalsGetAFourth() passed after 0.448 seconds.
+✔ Test valuesRoundTrip() passed after 0.448 seconds.
+✔ Test readersWindowNotOlderThanTheirOwn() passed after 0.448 seconds.
+✔ Test windowAndKeys() passed after 0.448 seconds.
+✔ Test windowBoundariesAndWeekKeys() passed after 0.448 seconds.
+✔ Test onlyTheWritersDaysInTheWindow() passed after 0.448 seconds.
+✔ Test textsNameTheWriter() passed after 0.448 seconds.
+✔ Test progressItemsWaitForTheWeekAndResolveBackwards() passed after 0.448 seconds.
+✔ Test goalNeedsAllItsCategoriesComplete() passed after 0.448 seconds.
+✔ Test notApplicableOnlyWhileEnoughDaysAreLeft() passed after 0.448 seconds.
+✔ Test recordsRoundTripTolerantly() passed after 0.448 seconds.
+✔ Test progressRatioFromWork() passed after 0.448 seconds.
+✔ Test neverWorkedOnAMissedTargetCountsOnceAtTheEnd() passed after 0.448 seconds.
+✔ Test weekAverageAroundMidnight() passed after 0.451 seconds.
+✔ Test nightTargets() passed after 0.448 seconds.
+✔ Test minutesBecomePowerHours() passed after 0.448 seconds.
+✔ Test noneGivesOneForTheWholeYear() passed after 0.448 seconds.
+✔ Test syncStatusInGerman() passed after 0.448 seconds.
+✔ Test retroactivePerYearNewestAndLabels() passed after 0.448 seconds.
+✔ Test closedDaysWithoutSickDays() passed after 0.448 seconds.
+✔ Test mergeDays() passed after 0.448 seconds.
+✔ Test mergeWeeks() passed after 0.448 seconds.
+✔ Test demoInboxIsTheFixture() passed after 0.452 seconds.
+✔ Test reportTexts() passed after 0.448 seconds.
+✔ Test trendWindowsWithoutOverlap() passed after 0.448 seconds.
+✔ Test datedKeysCarryTheDay() passed after 0.448 seconds.
+✔ Test unknownFieldSurvivesSaving() passed after 0.447 seconds.
+✔ Test newestCopyAndTrash() passed after 0.448 seconds.
+✔ Test roundTripsAndKeepsDefaults() passed after 0.447 seconds.
+✔ Test emptyNotesKeepTheAppsAndHolidaysStay() passed after 0.447 seconds.
+✔ Test promptsNameSetDaysAndTheNumberRule() passed after 0.448 seconds.
+✔ Test blanksAsMissedSkipAKeptHoliday() passed after 0.448 seconds.
+✔ Test movedEntryCountsOnce() passed after 0.448 seconds.
+✔ Test headlineCountsInTheSingular() passed after 0.448 seconds.
+✔ Test statusShortAndLong() passed after 0.448 seconds.
+✔ Test rangesAndEqualTargetsLikeTheReport() passed after 0.448 seconds.
+✔ Test closingKnownDaysClosesWhatTheAppHasMarkedOrTyped() passed after 0.448 seconds.
+✔ Test closingKnownDaysLeavesReplacedMarksAndFileRowsToTheFile() passed after 0.481 seconds.
+✔ Test reportSaysTheSame() passed after 0.481 seconds.
+✔ Test runningWeekGetsNoValue() passed after 0.481 seconds.
+✔ Test warningsNameMarksAndItems() passed after 0.481 seconds.
+✔ Test fillingPastBlanksKeepsTheAppsMarksAndSkipsSickDays() passed after 0.481 seconds.
+✔ Test twoAreGapless() passed after 0.481 seconds.
+✔ Test syncErrorsInGerman() passed after 0.481 seconds.
+✔ Test reportScoresLikeTheWeek() passed after 0.482 seconds.
+✔ Test replacingTheSameFileTwiceChangesNothing() passed after 0.481 seconds.
+✔ Test mottoAndValueAreKept() passed after 0.481 seconds.
+✔ Test weeklyTargetWithOnlySickDaysIsNotScored() passed after 0.481 seconds.
+✔ Test allDevicesCurrent() passed after 0.481 seconds.
+✔ Test t5QuotaMetMeansNoDeduction() passed after 0.481 seconds.
+✔ Test strayRowsNeverReplaceOrCloseALiveWeek() passed after 0.481 seconds.
+✔ Test t1QuotaShareOfSickDaysCountsHalf() passed after 0.481 seconds.
+✔ Test progressInAWorkCategoryScalesLikeItsPace() passed after 0.481 seconds.
+✔ Test marksBeforeTheSickNoteStayButDontCount() passed after 0.481 seconds.
+✔ Test t3OnlyTheSickShareCountsHalf() passed after 0.481 seconds.
+✔ Test t4WholeWeekOnHolidayHasNoScore() passed after 0.481 seconds.
+✔ Test openMatchesBlankWithSickDays() passed after 0.481 seconds.
+✔ Test paceLeavesHolidaysOut() passed after 0.481 seconds.
+✔ Test limitsAndTimesAreNeverScaled() passed after 0.481 seconds.
+✔ Test archiveWeekGetsNoMeasurements() passed after 0.481 seconds.
+✔ Test t6NotApplicableLeavesTheSickShareOut() passed after 0.481 seconds.
+✔ Test t8DailyItemOnHolidayWeekend() passed after 0.481 seconds.
+✔ Test t2BookedOnTheLastDayThatStillCounts() passed after 0.481 seconds.
+✔ Test t7ProgressTargetShrinksWithSickDays() passed after 0.481 seconds.
+✔ Test t9OverridesAndGoalsOnSickDaysDontCount() passed after 0.481 seconds.
+✔ Test booksCountFinishedOfTheKindAndAssigned() passed after 0.481 seconds.
+✔ Test dayTypes() passed after 0.481 seconds.
+✔ Test limitsKeptExceededTooFast() passed after 0.481 seconds.
+✔ Test resultLineCarriesItsStatus() passed after 0.481 seconds.
+✔ Test averageAndTrend() passed after 0.481 seconds.
+✔ Test entriesAggregate() passed after 0.481 seconds.
+✔ Test suggestionsNeverInventFailures() passed after 0.481 seconds.
+✔ Test everythingIsPowerHoursTutoringToo() passed after 0.481 seconds.
+✔ Test workMeasureInPowerHours() passed after 0.481 seconds.
+✔ Test weekLineFromAReportInput() passed after 0.481 seconds.
+✔ Test startAtPage() passed after 0.481 seconds.
+✔ Test fillingBlanksCountsOnlyWhatWasDue() passed after 0.481 seconds.
+✔ Test bedtimesAverageAcrossMidnight() passed after 0.481 seconds.
+✔ Test marksOnUnknownItemsGetAWarning() passed after 0.481 seconds.
+✔ Test pastWeekPromptForManyWeeks() passed after 0.481 seconds.
+✔ Test reportSaysWhatDoesntCount() passed after 0.482 seconds.
+✔ Test closingPastClosesWeeksBeforeToday() passed after 0.481 seconds.
+✔ Test matrixColumnsBecomeMarks() passed after 0.481 seconds.
+✔ Test gradesAreUpdatedByKey() passed after 0.481 seconds.
+✔ Test weekBeforeANewSegmentDuringItsFirstWeek() passed after 0.482 seconds.
+✔ Test pastWeekPromptCarriesIdsAndFormat() passed after 0.482 seconds.
+✔ Test pastWeekPromptForTheWeeksOfTheAttachments() passed after 0.482 seconds.
+✔ Test previewPerWeek() passed after 0.482 seconds.
+✔ Test unknownIdsStayWithoutMapping() passed after 0.482 seconds.
+✔ Test plannedSegmentAndASecondStart() passed after 0.482 seconds.
+✔ Test lettersAndRelativeDays() passed after 0.482 seconds.
+✔ Test paceSkipsFreeDays() passed after 0.482 seconds.
+✔ Test weekValueKeepsItsDecimals() passed after 0.482 seconds.
+✔ Test gradesAreReadWithTheirChecks() passed after 0.482 seconds.
+✔ Test closingDayUsesFourOClock() passed after 0.482 seconds.
+✔ Test clockTimesOnDaysTheClocksChange() passed after 0.482 seconds.
+✔ Test euroToTheCent() passed after 0.482 seconds.
+✔ Test ageNoticeOnlyWithChanges() passed after 0.482 seconds.
+✔ Test snapshotKeepsNewerFields() passed after 0.482 seconds.
+✔ Test labelsNumberSameKinds() passed after 0.482 seconds.
+✔ Test seenTexts() passed after 0.482 seconds.
+✔ Test roundTrip() passed after 0.482 seconds.
+✔ Test periodReport() passed after 0.482 seconds.
+✔ Test writingAndReadingGivesTheSame() passed after 0.482 seconds.
+✔ Test promptCarriesPlan() passed after 0.482 seconds.
+✔ Test firstRowRoundTrip() passed after 0.482 seconds.
+✔ Test repeatPlan() passed after 0.482 seconds.
+✔ Test newKeysStayOutOfBackupsAndWeeks() passed after 0.481 seconds.
+✔ Test backupRoundTrip() passed after 0.482 seconds.
+✔ Test olderBackupNotice() passed after 0.482 seconds.
+✔ Test requestsBuildsAndBackupStamps() passed after 0.481 seconds.
+✔ Test newestCopyPerID() passed after 0.482 seconds.
+✔ Test oldBackupStillImports() passed after 0.481 seconds.
+✔ Test olderBackupKeepsNewerSources() passed after 0.482 seconds.
+✔ Test replacementText() passed after 0.481 seconds.
+✔ Test sourcesFromEveryCopy() passed after 0.481 seconds.
+✔ Test fileWithoutReadableDateStillArrives() passed after 0.481 seconds.
+✔ Test sourceNamesFromSourceJSON() passed after 0.481 seconds.
+✔ Test copiesPickedTheSameWayEverywhere() passed after 0.481 seconds.
+✔ Test clearedTickTravels() passed after 0.481 seconds.
+✔ Test laterFileWithoutChoiceEndsIt() passed after 0.481 seconds.
+✔ Test parseIsStrict() passed after 0.481 seconds.
+✔ Test onlyAppFactsReachTheSyncedInbox() passed after 0.482 seconds.
+✔ Test persistentSyncProblems() passed after 0.482 seconds.
+✔ Test exchangeNumbersAreBounded() passed after 0.483 seconds.
+✔ Test appleWeekdayNumbers() passed after 0.482 seconds.
+✔ Test dativeAndSingular() passed after 0.483 seconds.
+✔ Test targetsRoundedTowardsTheComparison() passed after 0.482 seconds.
+✔ Test dayFromDateUsesTheTimeZone() passed after 0.482 seconds.
+✔ Test parsesAndPrintsDays() passed after 0.482 seconds.
+✔ Test hugeNumbersShowADash() passed after 0.483 seconds.
+✔ Test metricsOfferNoRefs() passed after 0.483 seconds.
+✔ Test newWeekWithoutASnapshotAhead() passed after 0.482 seconds.
+✔ Test decimalsPerUnit() passed after 0.482 seconds.
+✔ Test week53AndYearBoundaries() passed after 0.482 seconds.
+✔ Test parsesWeekSpellings() passed after 0.482 seconds.
+✔ Test dayMasks() passed after 0.482 seconds.
+✔ Test knownWeekdays() passed after 0.483 seconds.
+✔ Test healthBeforeAppsOwnBeforeBoth() passed after 0.482 seconds.
+✔ Test ownReplacesStepperBaseAndClearing() passed after 0.482 seconds.
+✔ Test resultsOnlyFileRemovesNothing() passed after 0.482 seconds.
+✔ Test goalYearWeeks() passed after 0.482 seconds.
+✔ Test historyWeeksBeforeKW42UseTheOldModel() passed after 0.482 seconds.
+✔ Test keysAsBefore() passed after 0.485 seconds.
+✔ Test templateRoundTripsThroughTheCSV() passed after 0.482 seconds.
+✔ Test slugs() passed after 0.482 seconds.
+✔ Test missingTypeColumn() passed after 0.482 seconds.
+✔ Test templateHasTenGoalsEighteenCategoriesAndOnlyTheItemsNeeded() passed after 0.482 seconds.
+✔ Test problemsAreExplained() passed after 0.482 seconds.
+✔ Test pastedChatGPTAnswerAndGermanHeaders() passed after 0.482 seconds.
+✔ Test weekToClose() passed after 0.482 seconds.
+✔ Test recordedScoreWinsOverTheRecalculation() passed after 0.482 seconds.
+✔ Test resultsRoundTrip() passed after 0.482 seconds.
+✔ Test rangeWithYear() passed after 0.482 seconds.
+✔ Test revisedPlanUpdatesAndRemoves() passed after 0.483 seconds.
+✔ Test olderFilesAndOddRows() passed after 0.482 seconds.
+✔ Test promptExampleReadsBack() passed after 0.482 seconds.
+✔ Test previewComparesWithTheStoredScore() passed after 0.482 seconds.
+✔ Test promptHasTheArchiveRules() passed after 0.482 seconds.
+✔ Test reimportingTheSameFileChangesNothing() passed after 0.482 seconds.
+✔ Test exactToTheBit() passed after 0.482 seconds.
+✔ Test knockoutRuleZeroesTheCategoryButKeepsTheMarks() passed after 0.482 seconds.
+✔ Test partialCountsHalf() passed after 0.482 seconds.
+✔ Test paceAgainstAnEvenWeek() passed after 0.482 seconds.
+✔ Test notScheduledIsNotMissed() passed after 0.482 seconds.
+✔ Test missingGoalCoverageIsVisible() passed after 0.482 seconds.
+✔ Test weeklyQuotaShortfallCountsOnlyOnceTheWeekIsOver() passed after 0.482 seconds.
+✔ Test handoverExampleNutrition8Training6IsFitBody7() passed after 0.482 seconds.
+✔ Test goalsWeighEquallyRegardlessOfCategoryCount() passed after 0.482 seconds.
+✔ Test notApplicableAndBlankDontCountButBlankStaysVisible() passed after 0.482 seconds.
+✔ Test missedMarkUsesAQuotaSlot() passed after 0.482 seconds.
+✔ Test weekCompleteness() passed after 0.482 seconds.
+✔ Test optionalItemsAreNeverScored() passed after 0.482 seconds.
+✔ Test weeklyAverageUsesOnlyValidDays() passed after 0.482 seconds.
+✔ Test ownScoreOverridesTheCalculation() passed after 0.482 seconds.
+✔ Test demoHasSegmentsResultsBooksAndAnInbox() passed after 0.495 seconds.
+✔ Test importKeepsTheNewerRecord() passed after 0.482 seconds.
+✔ Test catalogWithAndWithoutSource() passed after 0.481 seconds.
+✔ Test promptAndReportCarryTheResultsOnlyWhenGiven() passed after 0.482 seconds.
+✔ Test fixturesAreWhatTheWritersBuild() passed after 0.481 seconds.
+✔ Test accountBalanceAndResultSources() passed after 0.481 seconds.
+✔ Test tourGlanceTicksOff() passed after 0.481 seconds.
+✔ Test linksStayOverTheWeeks() passed after 0.482 seconds.
+✔ Test recordRowsRoundTripOnlyWhenThere() passed after 0.482 seconds.
+✔ Test tourStepsTickOff() passed after 0.481 seconds.
+✔ Test promptListsManualChanges() passed after 0.481 seconds.
+✔ Test remindersUseApplesWeekdays() passed after 0.482 seconds.
+✔ Test demoWeekNotesAsBefore() passed after 0.485 seconds.
+✔ Test todaySummaryComparesContent() passed after 0.481 seconds.
+✔ Test demoWeekScoresSensibly() passed after 0.481 seconds.
+✔ Test tourCatalogIsValid() passed after 0.481 seconds.
+✔ Test weekReportShowsScoreAndReality() passed after 0.482 seconds.
+✔ Test measureKinds() passed after 0.481 seconds.
+✔ Test promptDefinesTheFormatAndCarriesTheStructure() passed after 0.482 seconds.
+✔ Test workTotalsInHoursAndMinutes() passed after 0.481 seconds.
+✔ Test markWords() passed after 0.481 seconds.
+✔ Test targetSentencesAndChoices() passed after 0.481 seconds.
+✔ Test progressItemsFollowTheirMeasurement() passed after 0.481 seconds.
+✔ Test secondaryItemsCountOnlyWhenFilled() passed after 0.481 seconds.
+✔ Test weeklyItemsLeaveTheDayOnceTheQuotaIsMet() passed after 0.481 seconds.
+✔ Test freeDaysLeaveWorkOut() passed after 0.481 seconds.
+✔ Test germanNumbers() passed after 0.481 seconds.
+✔ Test bedtimeAfterMidnightIsLate() passed after 0.481 seconds.
+✔ Test dayTypes() passed after 0.481 seconds.
+✔ Test sources() passed after 0.482 seconds.
+✔ Test marksFollowTheSheet() passed after 0.481 seconds.
+✔ Test targets() passed after 0.482 seconds.
+✔ Test amountsPerDayRetroactiveNeverNegative() passed after 0.481 seconds.
+✔ Test finishedInTheSpanAndStatus() passed after 0.481 seconds.
+✔ Test planChangesRoundTrip() passed after 0.481 seconds.
+✔ Test rowsRoundTripBeforeTheRecords() passed after 0.481 seconds.
+✔ Test importFillsInOnly() passed after 0.481 seconds.
+✔ Test powerHoursByTheAppsChoiceBeforeTheMapping() passed after 0.481 seconds.
+✔ Test flagsRoundTripThroughTheCSV() passed after 0.482 seconds.
+✔ Test schedules() passed after 0.482 seconds.
+✔ Test ticksOnlyWithoutOwnMarksOnDaysThatCount() passed after 0.481 seconds.
+✔ Test weekExtrasInOneCall() passed after 0.481 seconds.
+✔ Test fixturesInboxAndOverview() passed after 0.482 seconds.
+✔ Test editorChoicesFromSourceJSON() passed after 0.481 seconds.
+✔ Test goneFactsAndDuplicateFiles() passed after 0.482 seconds.
+✔ Test aFactIdCountsOnceEverywhere() passed after 0.481 seconds.
+✔ Test ownEntriesWinAndSpendingAddsUp() passed after 0.481 seconds.
+✔ Test tourElevenWithAndWithoutSharing() passed after 0.481 seconds.
+✔ Test checkWithItsDate() passed after 0.481 seconds.
+✔ Test weeklyPerWeek() passed after 0.482 seconds.
+✔ Test countFromAMeasure() passed after 0.481 seconds.
+✔ Test countFromEntriesWithPaceAndSegments() passed after 0.481 seconds.
+✔ Test valueTowardsLessAndMore() passed after 0.481 seconds.
+✔ Test morningsPerDay() passed after 0.481 seconds.
+✔ Test textRoundTrip() passed after 0.481 seconds.
+✔ Test roundedLikeTheDisplay() passed after 0.482 seconds.
+✔ Test measuresOfAGoal() passed after 0.482 seconds.
+✔ Test excusedWeeksAndEveryCategory() passed after 0.482 seconds.
+✔ Test countFromTheListAssignedBeforeKind() passed after 0.482 seconds.
+✔ Test demoHasAnArchiveWeek() passed after 0.486 seconds.
+✔ Test lastRowWinsInTheOrderAsBefore() passed after 0.482 seconds.
+✔ Test referencedWeeksPerRowKind() passed after 0.482 seconds.
+✔ Test promptHasTheNewRules() passed after 0.480 seconds.
+✔ Test refusesWithAReason() passed after 0.477 seconds.
+✔ Test readsTheFixtures() passed after 0.477 seconds.
+✔ Test hashDatesAndFiles() passed after 0.477 seconds.
+✔ Suite "v7 scoring and summary" passed after 0.505 seconds.
+✔ Suite "v11 P1.3 and the records a backup carries" passed after 0.506 seconds.
+✔ Suite "v10 B8 MeasureSource" passed after 0.506 seconds.
+✔ Suite "v9 archive weeks in the import" passed after 0.506 seconds.
+✔ Suite "v10 tour and demo" passed after 0.506 seconds.
+✔ Suite "v11 C2 times around midnight" passed after 0.506 seconds.
+✔ Suite "v9 gaps: reading" passed after 0.506 seconds.
+✔ Suite "v11 C3 target words" passed after 0.506 seconds.
+✔ Suite "v11 P3.8 and P3.9 model, times, order" passed after 0.506 seconds.
+✔ Suite "v9 means and recalculation" passed after 0.506 seconds.
+✔ Suite "v11 C8 missed weekly quota" passed after 0.506 seconds.
+✔ Suite "v11 P3.1 numbers" passed after 0.506 seconds.
+✔ Suite "v11 C14 Health sharing" passed after 0.507 seconds.
+✔ Suite "Scoring v2" passed after 0.507 seconds.
+✔ Suite "v11 C4 power-hours in minutes" passed after 0.507 seconds.
+✔ Suite "v10 B5 Segments" passed after 0.507 seconds.
+✔ Suite "v7 merges and sync texts" passed after 0.507 seconds.
+✔ Suite "v11 C10 reports" passed after 0.507 seconds.
+✔ Suite "v10 B1 SettingRecord" passed after 0.507 seconds.
+✔ Suite "v11 C11 pace" passed after 0.507 seconds.
+✔ Suite "v8 past weeks against the app" passed after 0.507 seconds.
+✔ Test previewRunsOffTheMainThread() passed after 0.498 seconds.
+✔ Suite "v9 gaps: past-week import" passed after 0.507 seconds.
+✔ Suite "v8 Krank und Urlaub" passed after 0.507 seconds.
+✔ Suite "v11 C18 device builds" passed after 0.508 seconds.
+✔ Suite "v11 C9 results" passed after 0.508 seconds.
+✔ Suite "v8 report over several weeks" passed after 0.508 seconds.
+✔ Suite "Measurements and work" passed after 0.509 seconds.
+✔ Suite "v8 CSV for past weeks" passed after 0.509 seconds.
+✔ Suite "v9 grades in the CSV" passed after 0.509 seconds.
+✔ Suite "v10 gap fixes – segments" passed after 0.508 seconds.
+✔ Suite "v7 days and numbers" passed after 0.509 seconds.
+✔ Suite "v11 P3.6 backup row" passed after 0.509 seconds.
+✔ Suite "Devices in sync" passed after 0.509 seconds.
+✔ Suite "v7 backup, import, plan" passed after 0.509 seconds.
+✔ Suite "v11 C13 records" passed after 0.509 seconds.
+✔ Suite "v10 gap fixes – inbox sync and backup" passed after 0.509 seconds.
+✔ Suite "v10 gap fixes – cleared ticks in exports" passed after 0.509 seconds.
+✔ Suite "v11 C1 numbers" passed after 0.509 seconds.
+✔ Suite "v11 C17 snapshot and sync line" passed after 0.509 seconds.
+✔ Suite "Days and ISO weeks" passed after 0.509 seconds.
+✔ Suite "v11 C6 units and rounding" passed after 0.510 seconds.
+✔ Suite "v10 B9 Measures.merged" passed after 0.510 seconds.
+✔ Suite "Plan CSV" passed after 0.512 seconds.
+✔ Suite "v11 C5 keys" passed after 0.513 seconds.
+✔ Suite "v11 C7 calendar" passed after 0.512 seconds.
+✔ Suite "v9 prompt, two scores, demo" passed after 0.512 seconds.
+✔ Suite "v11 P3.3 final scores" passed after 0.512 seconds.
+✔ Suite "Scoring" passed after 0.513 seconds.
+✔ Suite "v10 CSV, prompt and import" passed after 0.512 seconds.
+✔ Suite "v11 C15 Finn" passed after 0.512 seconds.
+✔ Suite "v7 vocabulary" passed after 0.512 seconds.
+✔ Suite "Scoring v3" passed after 0.512 seconds.
+✔ Suite "Vocabulary and formatting" passed after 0.512 seconds.
+✔ Suite "v10 B4 ListMath" passed after 0.512 seconds.
+✔ Suite "v11 P3.7 goal year and plan changes" passed after 0.512 seconds.
+✔ Suite "v10 B7 ExchangeDerivation" passed after 0.512 seconds.
+✔ Suite "v11 C16 tour 11" passed after 0.512 seconds.
+✔ Suite "v10 B2 ResultProgress" passed after 0.512 seconds.
+✔ Suite "v11 C12 reminders" passed after 0.512 seconds.
+✔ Suite "v10 B3 GoalTrack" passed after 0.512 seconds.
+✔ Suite "v9 gaps: prompt" passed after 0.512 seconds.
+✔ Suite "v10 B6 ExchangeFormat" passed after 0.513 seconds.
+✔ Suite "v11 P3.4 and P3.5 preview" passed after 0.515 seconds.
+✔ Test demoIsDeterministicAndConsistent() passed after 0.517 seconds.
+✔ Test demoHasASickFriday() passed after 0.579 seconds.
+✔ Suite "Demo, prompt, report, reminders, tour" passed after 0.597 seconds.
+✔ Test aYearReadsFast() passed after 2.118 seconds.
+✔ Suite "v11 P3.10 and P3.12 reading" passed after 2.137 seconds.
+✔ Test run with 285 tests in 65 suites passed after 2.140 seconds.
