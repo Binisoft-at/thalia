@@ -164,9 +164,15 @@ Letzte Aktualisierung: 2026-11-24 · Arbeitsliste: [TASKS-v11.md](TASKS-v11.md) 
   nachgebildet – das echte SDK prüft erst CI am Mac, das Verhalten das Gerät (TESTING v11).
 - Noch offen in v11 (Einzelheiten TASKS-v11 „Nachträge“): ein ✓-Tipp auf iPhone und Mac im TestFlight-Build mit
   `os_signpost` um `WeekContext.init` messen – einen Wochen-Speicher erst, wenn ein Tipp dann noch > 30 ms kostet (P5.1);
-  §1.4.12 vor dem App Store; nach dem nächsten CI-Lauf prüfen, ob `mac-goal-detail` und `mac-reading` die Unterseiten
-  zeigen (P7.12) und ob `diag: detail check` R ≈ 0 meldet (P4.1).
-- CI, Screenshots und TestFlight für 1.10.0: stehen noch aus. Nächste Build-Nr.: 58 (= `SyncDevice.firstV11Build`).
+  §1.4.12 vor dem App Store; Mac-Heute bei 1024 pt noch rund 95 pt zu breit (P4.1, siehe „Mac-Layout“, offen für v12).
+- CI-Läufe 38–47 grün (macOS + iOS + watchOS gebaut, 285 Core-Tests). Lauf 38 war der erste Bau gegen das echte SDK und
+  ging ohne Fehler durch; die Läufe 39–47 galten der Mac-Breite (P4.1). Screenshots angesehen: neu `goals`, `review`,
+  `close-week`, `settings`, `backup`, `health` (iPhone) und `review`, `settings` (Mac); `mac-goal-detail` und
+  `mac-reading` zeigen jetzt die Unterseiten (P7.12). `iphone-focus-light` war in Lauf 38 einmal leer (Aufnahme zu früh,
+  dunkel passt; siehe P1.21). Kein CloudKit-Schema-Lauf nötig (`schema.ckdb` und `Shared/Models.swift` unverändert).
+  TestFlight: **1.10.0 (58)** hochgeladen (iOS + watchOS + macOS, `testflight-diagnose.yml` Lauf 8, Commit `7a5f56c`);
+  laut `asc-probe` am 24. Nov. 2026 07:49 UTC iOS und macOS verarbeitet und `IN_BETA_TESTING`. Nächste Build-Nr.: 59.
+  Der Build enthält das Health-Teilen (HEALTHSHARE) – nur an interne Tester, vor dem App Store §1.4.12.
 
 ## Stand v10 (Version 1.9.0, Tour-Version 10)
 - Anlass: „Thalia Korrekturen v8“ vom 22. Nov. 2026 ([TASKS-v10.md](TASKS-v10.md), vor der Umsetzung von drei

@@ -562,7 +562,7 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   docs/HANDBOOK_PROPOSALS.md neuer Vorschlag „screenshots.sh: fast einfarbiges Bild (z. B. < 100 KB bei 1206 × 2622)
   nach 3 s einmal neu aufnehmen, sonst melden“ (scripts/ci bleibt). Ist `iphone-week-light` wieder leer: als möglichen
   Start-Hänger in den Startprotokollen ansehen. Abnahme: Lauf nach Runde 3 und nach Runde 4 ohne leeres Bild.
-- [ ] **P1.22 Abschluss und Release** (kein Befund): `MARKETING_VERSION = 1.10.0`; die Build-Nummer von 1.10.0 als
+- [x] **P1.22 Abschluss und Release** (kein Befund): `MARKETING_VERSION = 1.10.0`; die Build-Nummer von 1.10.0 als
   `SyncDevice.firstV11Build` prüfen (P2.1); TOUR.md Tour 11 (drei Schritte); TESTING.md „v11 (ab Version 1.10.0)“ aus
   den Berichten aller Pakete (§3.4) samt Checkliste „Vor App-Store entfernen“ (§1.4.12) als Pflichtschritt vor jedem
   App-Store-Einreichen; STATUS „Stand v11“ (einmaliges Neuwerten, „Was 1.9.0 anders rechnet“ aus §0.2, Mac-Layout,
