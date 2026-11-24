@@ -350,10 +350,14 @@ private struct TodaySplit: View {
                 .frame(width: AppModel.todayListWidth)
                 .diagWidth("today list")
             Divider()
+            // An ideal width of its own: AppKit sizes the column to the content's ideal ("fitting") width –
+            // CI run 43: list 250 + page 638 = 889 pt held the detail wider than the window.
             detail
-                .frame(minWidth: AppModel.todayPageMinWidth, maxWidth: .infinity)
+                .frame(minWidth: AppModel.todayPageMinWidth, idealWidth: AppModel.todayPageMinWidth, maxWidth: .infinity)
                 .diagWidth("today page")
         }
+        .frame(minWidth: AppModel.todayListWidth + 1 + AppModel.todayPageMinWidth,
+               idealWidth: AppModel.todayListWidth + 1 + AppModel.todayPageMinWidth, maxWidth: .infinity)
         #else
         HStack(spacing: 0) {
             list
