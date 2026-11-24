@@ -341,14 +341,17 @@ private struct TodaySplit: View {
     @ViewBuilder
     private var split: some View {
         #if os(macOS)
-        HSplitView {
+        // v11 P4.1: a plain stack instead of HSplitView. The split view made the detail 1117 pt wide in a 1024 pt
+        // window (CI runs 38–40, already since run 27) – it grew while the page's own rows were only 451 pt –
+        // and pushed the sidebar and the marks out of the window. The list keeps a fixed width; it can't be
+        // dragged any more.
+        HStack(spacing: 0) {
             list
-                .frame(minWidth: 220, idealWidth: 270, maxWidth: 340)
+                .frame(width: AppModel.todayListWidth)
                 .diagWidth("today list")
-            // v11 P4.1: an ideal width of its own – otherwise the page reports the width of its widest row
-            // (the marks beside the title need 640 pt) and the split view grows past the window (CI run 38).
+            Divider()
             detail
-                .frame(minWidth: 420, idealWidth: 420, maxWidth: .infinity)
+                .frame(minWidth: AppModel.todayPageMinWidth, maxWidth: .infinity)
                 .diagWidth("today page")
         }
         #else

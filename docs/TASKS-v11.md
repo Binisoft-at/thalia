@@ -2236,3 +2236,14 @@ C10, C11, C14, C16; Szenarien und Typprüfung im Prüf-Ordner der Sitzung):
   (läuft die App-Prüfung in der Sandbox?).
 - Freiwillig: `ExistingState.entries`-Kommentar in ImportPreview.swift („(`order` 0)“) an P3.9 anpassen;
   `storeFinalScore` mit `String(value)` für bitgenaue Zielnoten in `wertung` (nicht verlangt).
+
+### Nach den CI-Läufen 38–40 (Mac-Breite, P4.1)
+- `AppModel.roomWidth` = Fenster minus Seitenleiste; die gemessene Detailspalte zählt nur, solange die Seitenleiste
+  noch nicht gemessen ist (Lauf 38: Detail 1117 pt im 1024-pt-Fenster ließ „Heute im Blick“ „passen“).
+- Abweichung von P4.1 (2) „HSplitView bleibt“: am Mac stehen Heute-Liste (`AppModel.todayListWidth` = 250 pt, nicht
+  mehr ziehbar) und Seite (`todayPageMinWidth` = 400 pt) in einem `HStack`; die `HSplitView` wuchs über das Fenster,
+  auch als die Zeilen schmal genug waren (Lauf 40: Zeile 451 pt, Detail 1117 pt). `glanceInspectorWidth` = 910.
+- `ItemMarkRow` wählt am Mac „Knöpfe neben dem Titel“ ab 640 pt nach der gemessenen Zeilenbreite (kein `ViewThatFits`
+  mit Mindestbreite mehr); iPhone/iPad unverändert.
+- `weekSummaryWidth` = 1000: die Wochentabelle belegt am Mac rund 750 pt (Lauf 39/40: Inhalt 729 pt), bei 1024 pt
+  öffnet die „Wochenübersicht“ als Blatt (Lauf 40: Woche passt).
