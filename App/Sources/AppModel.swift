@@ -346,11 +346,11 @@ final class AppModel {
     static let todayListWidth: CGFloat = 250
     static let todayPageMinWidth: CGFloat = 400
     /// v11 P4.1: the detail width each inspector needs – Today: list 250 + page 400 + column 260 = 910, but the
-    /// Mac lays Today out wider (CI runs 41–45: 889 pt and more without the column), so from 1000 pt; week: the
+    /// Mac lays Today out wider (CI runs 41–46: 889 pt without the column, the column 260 pt more); week: the
     /// table as the Mac lays it out (CI runs 38/39: 748 pt with the demo week, more than
     /// `WeekTableColumns.minWidth` + 40) + column 240 – and the margin on either side of it. Below that the
     /// column opens as a sheet.
-    static let glanceInspectorWidth: CGFloat = 1000
+    static let glanceInspectorWidth: CGFloat = 1150
     static let weekSummaryWidth: CGFloat = 1000
     static let inspectorMargin: CGFloat = 20
     /// When an inspector last came or went (P4.1): a jump of the width right after it doesn't switch it back.

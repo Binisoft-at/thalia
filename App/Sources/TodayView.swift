@@ -1492,7 +1492,7 @@ struct ItemMarkRow: View {
             // v11 P4.1 (Mac): the flat 300-pt buttons below the title – the large ones need 580 pt side by side
             // and kept the page wider than a 1024 pt window leaves it (CI run 41).
             marks(mark: mark, options: options, compact: true)
-                .frame(width: 300)
+                .frame(maxWidth: 420, alignment: .leading)
             #else
             marks(mark: mark, options: options, compact: false)
             #endif

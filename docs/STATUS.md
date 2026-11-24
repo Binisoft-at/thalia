@@ -75,13 +75,15 @@ Letzte Aktualisierung: 2026-11-24 · Arbeitsliste: [TASKS-v11.md](TASKS-v11.md) 
 - **Mac-Layout** (P4.1, löst die Notiz aus v7 unten): „Heute im Blick“ und „Wochenübersicht“ zeigen sich als Spalte nur,
   solange sie passen – gemessen wird der Platz neben der sichtbaren Seitenleiste (`AppModel.roomWidth` = Fenster minus
   Seitenleiste, nie die gemessene Detailspalte: die war in CI-Lauf 38 mit 1117 pt breiter als das 1024-pt-Fenster),
-  Heute braucht 1000 pt, Woche 1000 pt (die Wochentabelle belegt am Mac rund 750 pt), je ±20 pt; die gespeicherte Wahl
-  bleibt. Passt die Spalte nicht, öffnen ⌘0, Symbolleistenknopf, Tagesring, Seitenleisten-Karte und ⌥⌘0 sie als Blatt.
-  Das Mindestfenster bleibt 900 pt. Ursache der zu breiten Heute-Seite (seit mindestens CI-Lauf 27): die geteilte
-  Ansicht (`HSplitView`) aus Liste und Seite wurde breiter als das Fenster, auch als die Zeilen schmal genug waren
-  (CI-Läufe 38–40). Am Mac stehen Liste (250 pt, nicht mehr ziehbar – Abweichung von P4.1 (2) „HSplitView bleibt“) und
-  Seite (ab 400 pt) jetzt nebeneinander, und eine Punktzeile wählt „Knöpfe neben dem Titel“ ab 640 pt nach der Breite,
-  die sie bekommt. Prüfen in `mac-log.txt`: „diag: detail check at 8 s: window W − sidebar S − detail D = R“, R ≈ 0. Dazu: Menübefehle, Erinnerungen
+  Heute braucht 1150 pt, Woche 1000 pt (Heute belegt am Mac ohne Spalte rund 890 pt, die Wochentabelle rund 750 pt),
+  je ±20 pt; die gespeicherte Wahl bleibt. Passt die Spalte nicht, öffnen ⌘0, Symbolleistenknopf, Tagesring,
+  Seitenleisten-Karte und ⌥⌘0 sie als Blatt. Das Mindestfenster bleibt 900 pt. Am Mac stehen Heute-Liste (250 pt, nicht
+  mehr ziehbar – Abweichung von P4.1 (2) „HSplitView bleibt“) und Seite nebeneinander; eine Punktzeile zeigt die Knöpfe
+  ab 640 pt neben dem Titel, sonst flach darunter. Ergebnis der CI-Läufe 38–46 bei 1024 pt: Woche, Ziele, Rückblick und
+  Einstellungen passen; **Heute ist noch rund 95 pt zu breit** (vorher 323 pt) – Seitenleiste und Kopf der Kategorie
+  sind am Rand angeschnitten, alle vier Markierungsknöpfe sichtbar. Die Ursache steckt in AppKit (die Spalte hält rund
+  890 pt, auch wenn der Inhalt schmaler sein könnte); ab etwa 1130 pt Fensterbreite passt Heute ganz. Offen für v12.
+  Prüfen in `mac-log.txt`: „diag: detail check at 8 s: window W − sidebar S − detail D = R“, R ≈ 0. Dazu: Menübefehle, Erinnerungen
   und Kurzbefehle holen das Hauptfenster (auch wenn nur Einstellungen offen sind), ein „Zu heute“ ⌘T (⇧⌘T entfällt),
   ⌥⌘J, ⌥⌘L, ⌥⌘0, Darstellung → „Seitenleiste ausblenden“, Ablage → „Sicherung erstellen…“, Tasten 1–4 ohne Klick.
 - **Erinnerungen** (P4.17): Morgen, Abend und Woche sind datierte Mitteilungen für die nächsten 7 Tage; die
