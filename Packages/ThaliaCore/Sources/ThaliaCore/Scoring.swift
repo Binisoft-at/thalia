@@ -486,8 +486,20 @@ public enum PaceStatus: String, CaseIterable, Sendable {
     /// A limit exceeded.
     case overLimit
 
-    /// The status of a limit ("TEREA ≤ 6"): "im Rahmen" or "überschritten".
+    /// The status of a limit ("≤ 6 Stück"): "im Rahmen" or "überschritten".
     public static func limit(isMet: Bool) -> PaceStatus { isMet ? .withinLimit : .overLimit }
+
+    /// A weekly target's status – one rule for the app, the week's PDF and the report (v11 P1.16): a limit "im
+    /// Rahmen" / "überschritten"; a met target "erreicht" (from the exact value – a range or "= 3" compares both
+    /// ways); a value the pace counts as reached that doesn't meet the target (above a range's upper end, "= 3"
+    /// with 4) "nicht erreicht" once the week is over, else "im Plan"; otherwise the pace's status.
+    public static func of(target: Target, value: Double, pace: Pace) -> PaceStatus {
+        if target.isLimit { return limit(isMet: target.isMet(value)) }
+        if target.isMet(value) { return .reached }
+        let status = pace.status
+        guard status == .reached else { return status }
+        return pace.weekOver ? .missed : .onPlan
+    }
 
     /// The short word for rows that already show "x von y" (KR2-12): "erreicht", "im Plan",
     /// "hinter dem Plan", "noch offen", "nicht erreicht", "im Rahmen", "überschritten".

@@ -85,6 +85,21 @@ public enum HealthShare {
         state?.covers(day) ?? false
     }
 
+    /// The same as a reader sees it on `today` (`HealthShareState.readable(today:)`): never a day older than the window.
+    public static func covers(_ day: DayKey, state: HealthShareState?, today: DayKey) -> Bool {
+        state?.readable(today: today).covers(day) ?? false
+    }
+
+    /// "aus Health am iPhone" (or "am iPad") – the caption of a shared value on the other devices (§1.4.8).
+    public static func sharedCaption(_ state: HealthShareState?) -> String {
+        "aus Health am \(state?.writerKind ?? "iPhone")"
+    }
+
+    /// "Health am iPhone: 72,6 kg – dort übernehmen" – read there, taken over nowhere (§1.4.8). `shown`: the value as text.
+    public static func suggestionText(_ shown: String, state: HealthShareState?) -> String {
+        "Health am \(state?.writerKind ?? "iPhone"): \(shown) – dort übernehmen"
+    }
+
     /// The day records among `keys` older than the window by `today` (more than 34 days before it) – to
     /// delete, at most once a day, on every device with the gate open.
     public static func expired(keys: [String], today: DayKey) -> [String] {
@@ -181,17 +196,21 @@ public struct HealthShareState: Codable, Equatable, Sendable {
     public var from: DayKey?
     public var through: DayKey?
     public var modifiedAt: Date
+    /// The kind of the writing device ("iPhone", "iPad" – never its name); nil in a state written without it.
+    public var device: String?
 
-    public init(v: Int = 1, on: Bool, by: String, from: DayKey? = nil, through: DayKey? = nil, modifiedAt: Date = Date()) {
+    public init(v: Int = 1, on: Bool, by: String, from: DayKey? = nil, through: DayKey? = nil, modifiedAt: Date = Date(),
+                device: String? = nil) {
         self.v = v
         self.on = on
         self.by = by
         self.from = from
         self.through = through
         self.modifiedAt = modifiedAt
+        self.device = device
     }
 
-    enum CodingKeys: String, CodingKey { case v, on, by, from, through, modifiedAt }
+    enum CodingKeys: String, CodingKey { case v, on, by, from, through, modifiedAt, device }
 
     /// Tolerant: missing or odd fields read as defaults (off).
     public init(from decoder: Decoder) throws {
@@ -202,6 +221,7 @@ public struct HealthShareState: Codable, Equatable, Sendable {
         from = SettingJSON.text(c, .from).flatMap { DayKey($0) }
         through = SettingJSON.text(c, .through).flatMap { DayKey($0) }
         modifiedAt = SettingJSON.date(c, .modifiedAt) ?? Date(timeIntervalSince1970: 0)
+        device = SettingJSON.text(c, .device)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -212,12 +232,32 @@ public struct HealthShareState: Codable, Equatable, Sendable {
         try c.encodeIfPresent(from?.string, forKey: .from)
         try c.encodeIfPresent(through?.string, forKey: .through)
         try c.encode(JSONText.timestamp(modifiedAt), forKey: .modifiedAt)
+        try c.encodeIfPresent(device, forKey: .device)
     }
 
-    // HEALTHSHARE: on for today's window (`HealthShare.window` days up to `today`) by `by`.
-    public static func sharing(by: String, today: DayKey, now: Date = Date()) -> HealthShareState {
+    // HEALTHSHARE: on for today's window (`HealthShare.window` days up to `today`) by `by`; `device` its kind ("iPad").
+    public static func sharing(by: String, today: DayKey, now: Date = Date(), device: String? = nil) -> HealthShareState {
         // HEALTHSHARE
-        HealthShareState(on: true, by: by, from: today.adding(days: -(HealthShare.window - 1)), through: today, modifiedAt: now)
+        HealthShareState(on: true, by: by, from: today.adding(days: -(HealthShare.window - 1)), through: today, modifiedAt: now,
+                         device: device)
+    }
+
+    /// The writing device's kind for the texts on the other devices: "iPhone" when the state doesn't say ("aus Health
+    /// am iPad" after an iPad took the sharing over, §3.4.2).
+    public var writerKind: String {
+        guard let device, !device.isEmpty else { return "iPhone" }
+        return device
+    }
+
+    // HEALTHSHARE: as a reader sees it on `today` (§1.4.6): every device deletes the day records older than the window by
+    // its own clock (`HealthShare.expired`), so `from` is at most `HealthShare.window` days back – a writer that wasn't
+    // active for a few days never makes days count as covered that may be gone already.
+    public func readable(today: DayKey) -> HealthShareState {
+        var copy = self
+        // HEALTHSHARE
+        let first: DayKey = today.adding(days: -(HealthShare.window - 1))
+        if let from, from < first { copy.from = first }
+        return copy
     }
 
     /// Off, written by `by` (the tombstone).

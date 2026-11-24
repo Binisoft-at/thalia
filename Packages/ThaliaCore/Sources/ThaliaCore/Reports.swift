@@ -256,16 +256,13 @@ public enum WeekReport {
     /// value; a limit "im Rahmen" / "überschritten"; otherwise the pace: "nicht erreicht" once the week is
     /// closed or over, "noch offen" on its last planned day, "hinter dem Plan" / "im Plan".
     static func targetStatus(_ measure: MeasureRecord, target: Target, value: Double, input: WeekReportInput, data: WeekData) -> String {
-        if target.isLimit { return PaceStatus.limit(isMet: target.isMet(value)).label }
-        if target.isMet(value) { return PaceStatus.reached.label }
         let week = input.week.week
         let weekOver = input.isClosed || input.today > week.sunday
         let notPlanned: Set<DayKey> = Measures.isWorkMeasure(measure, workCategories: data.workCategories) ? data.workFreeDays : []
         let pace = Pace(done: value, target: target.scaleMax, days: measure.days, week: week, today: input.today, excluding: notPlanned,
                         excused: data.excusedDays, weekOver: weekOver)
-        // Not met although the pace counts it reached (above a range's upper end): missed, or still in the week.
-        guard pace.status != .reached else { return (weekOver ? PaceStatus.missed : PaceStatus.onPlan).label }
-        return pace.status.label
+        // The app's rule (`PaceStatus.of`): above a range's upper end is missed, or still in the week.
+        return PaceStatus.of(target: target, value: value, pace: pace).label
     }
 
     /// The journal column (R58): the plan's journal item (✓/½ → ✓, ✗ → ✗), else the reflection "ja" / "nein".
@@ -532,7 +529,7 @@ public enum PlanPrompt {
         out.append("## Grundsätze")
         out.append(contentsOf: [
             "- Fundamentjahr: auftauchen, nützliches Verhalten wiederholen, konsistent werden – ohne unnötigen Druck. Eine gute Woche ist kein Grund, den Plan zu erhöhen; nichts unaufgefordert steigern.",
-            "- Die zehn Jahresziele sind die Grundlage. Pro Kategorie **so viele Punkte wie nötig, um die Wochenziele zu unterstützen – nicht mehr**. Zwei Punkte sind in Ordnung; keine Fülltätigkeiten.",
+            "- Die Jahresziele sind die Grundlage. Pro Kategorie **so viele Punkte wie nötig, um die Wochenziele zu unterstützen – nicht mehr**. Zwei Punkte sind in Ordnung; keine Fülltätigkeiten.",
             "- Schnell abhakbar formulieren: ein Punkt ist eine Ja/Nein-Frage über mein Verhalten („Protein im Zielbereich“, „Essfenster eingehalten“, „Krafttraining gemacht“).",
             "- Essen und Training nur abhaken, keine Details: Protein „im Zielbereich (mindestens x g, mehr ist ok)“, Fasten/Essfenster „eingehalten“, Training/Zone 2 „gemacht“. Kein Mahlzeitenprotokoll (das führe ich in einer anderen App), keine Stunden fürs Fasten.",
             "- Messwerte (measure) nur für Dinge mit einer Zahl: Power-Hours, Anzahlen (z. B. zweite Aufschläge, TEREA, Seiten), Ausgaben, Gewicht, Schlafdauer, Uhrzeiten.",

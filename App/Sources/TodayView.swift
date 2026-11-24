@@ -1833,9 +1833,9 @@ struct MeasureRow: View {
                         .controlSize(.mini)
                         .tint(.pink)
                     }
-                    // HEALTHSHARE: only read – the iPhone takes it over.
-                    if let phoneSuggestion {
-                        Text(HealthShareController.phoneSuggestionText(phoneSuggestion, unit: measure.unit))
+                    // HEALTHSHARE: only read – the iPhone takes it over (not next to this device's own suggestion).
+                    if let phoneSuggestion, healthSuggestion == nil {
+                        Text(context.healthShare.suggestionText(phoneSuggestion, unit: measure.unit))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -1843,7 +1843,7 @@ struct MeasureRow: View {
                 Spacer(minLength: 6)
                 // HEALTHSHARE: a shared value is shown with "Eigenen Wert eintragen…", never typed over (§1.4.8).
                 if let sharedValue {
-                    SharedHealthInput(measure: measure, day: day, value: sharedValue)
+                    SharedHealthInput(measure: measure, day: day, value: sharedValue, caption: context.healthShare.sharedCaption)
                 } else if !isHealthElsewhere {
                     MeasureInput(measure: measure, context: context, day: day, offersWorkButton: offersWorkButton)
                 }
@@ -1869,7 +1869,7 @@ struct MeasureRow: View {
         // v10: a value from a connected app or the reading list says where it comes from.
         // HEALTHSHARE: so does a value the iPhone shares ("aus Health am iPhone").
         if sharedValue != nil {
-            parts.append(HealthShareController.sharedCaption)
+            parts.append(context.healthShare.sharedCaption)
         } else if let source = context.valueSource(measure, on: day) {
             parts.append(ConnectedAppsTexts.fromSource(source))
         } else if record?.source.listKind != nil {
@@ -2215,8 +2215,9 @@ struct WeeklyGoalRow: View {
         let targetValue: Double = target?.scaleMax ?? 0
         let isLimit: Bool = target?.isLimit ?? false
         let fraction: Double = targetValue > 0 ? min(1, weekValue / targetValue) : 0
-        // A limit ("≤ 6") is never "erreicht" – it is kept or exceeded (`status`).
-        let reached: Bool = !isLimit && targetValue > 0 && weekValue >= targetValue - 1e-9
+        // A limit ("≤ 6") is never "erreicht" – it is kept or exceeded (`status`). v11 P1.16: "erreicht" from the target
+        // itself, like the report – a range or "= 3" compares both ways.
+        let reached: Bool = !isLimit && targetValue > 0 && target?.isMet(weekValue) == true
         let pace: Pace? = context.pace(for: goal.measure)
         let status: PaceStatus? = paceStatus(pace, target: target, weekValue: weekValue)
         let hint: String? = scaledHint
@@ -2261,7 +2262,13 @@ struct WeeklyGoalRow: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 6)
-                    MeasureInput(measure: goal.measure, context: context, day: day)
+                    // HEALTHSHARE: a value the iPhone shares is shown with "Eigenen Wert eintragen…", never typed over
+                    // (§1.4.8) – as in `MeasureRow`.
+                    if let shared = context.sharedHealthValue(goal.measure, on: day) {
+                        SharedHealthInput(measure: goal.measure, day: day, value: shared, caption: context.healthShare.sharedCaption)
+                    } else {
+                        MeasureInput(measure: goal.measure, context: context, day: day)
+                    }
                 }
             }
         }
@@ -2315,12 +2322,14 @@ struct WeeklyGoalRow: View {
         return context.effectiveTarget(record)
     }
 
-    /// v11 P1.16: where the weekly target stands – a limit "im Rahmen" / "überschritten", else the pace's status
-    /// ("im Plan", "hinter dem Plan", "noch offen", "nicht erreicht"); nil without a target that counts.
+    /// v11 P1.16: where the weekly target stands, by the report's rule (`PaceStatus.of`) – a limit "im Rahmen" /
+    /// "überschritten", met "erreicht", else the pace's status ("im Plan", "hinter dem Plan", "noch offen", "nicht
+    /// erreicht"); nil without a target that counts.
     private func paceStatus(_ pace: Pace?, target: Target?, weekValue: Double) -> PaceStatus? {
         guard let target, target.scaleMax > 0 else { return nil }
+        if let pace { return PaceStatus.of(target: target, value: weekValue, pace: pace) }
         if target.isLimit { return PaceStatus.limit(isMet: target.isMet(weekValue)) }
-        return pace?.status
+        return target.isMet(weekValue) ? .reached : nil
     }
 
     /// The chip's colour: green once reached, grey when the target doesn't count, else the status colour.

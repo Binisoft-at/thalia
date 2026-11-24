@@ -63,7 +63,7 @@ public enum ThaliaTour {
             TourStep(
                 id: "day", since: 7, symbol: "calendar", title: "Welcher Tag gerade gilt",
                 body: "Oben stehen Datum, Tagestyp und die Besonderheit aus dem Plan. Um Mitternacht springt Thalia selbst auf den neuen Tag. Blätterst du zurück, zeigt die Leiste unten „Zu heute“. Ist gestern noch offen, erinnert dich morgens ein Hinweis mit „Nachtragen“ und „Abschließen“.",
-                macBody: "Oben stehen Datum, Tagestyp und die Besonderheit aus dem Plan. Um Mitternacht springt Thalia selbst auf den neuen Tag, ⇧⌘T führt zu heute. Ist gestern noch offen, steht links unten „Nachtragen“ und „Abschließen“."
+                macBody: "Oben stehen Datum, Tagestyp und die Besonderheit aus dem Plan. Um Mitternacht springt Thalia selbst auf den neuen Tag, ⌘T führt zu heute. Ist gestern noch offen, steht links unten „Nachtragen“ und „Abschließen“."
             ),
             TourStep(
                 id: "excused", since: 8, symbol: "cross.case", title: "Krank & Urlaub",

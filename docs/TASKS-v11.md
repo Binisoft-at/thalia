@@ -380,7 +380,7 @@ Prüfung: Linux-Tests (`V11Tests.swift`), keine Mac-CI nötig bis Runde 5. Vertr
 braucht (`SettingKeys.goalYearKeys`, `catalogSwitch`, strenges `Format.parse` mit alter Signatur), dann der Rest. P1
 wird in Runde 1 vor P3 gemergt (§2.0).
 
-- [ ] **P1.1 CORE-1** (hoch) Riesige oder ungültige Zahlen lassen Thalia abstürzen (`Int(Double)` in Format,
+- [x] **P1.1 CORE-1** (hoch) Riesige oder ungültige Zahlen lassen Thalia abstürzen (`Int(Double)` in Format,
   WorkTotals, Austausch, CSV). Lösung: (a) `Format.parse` (Format.swift:97-112): nach dem Säubern nur `0-9 . , + -`
   zulassen (weist `nan`, `inf`, Exponent, Hex ab), dann `guard let v = Double(cleaned), v.isFinite, abs(v) < 1e12 else
   { return nil }` – deckt Heute, Ausgaben, Menüleiste, Editoren ab; die „nicht lesbar“-Wege und das Zurücksetzen des
@@ -395,7 +395,7 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   Abnahme: Tests `Format.number(1e19)`, `euro(1e17)` → „–“; `Format.parse("nan"/"inf"/"12345678901234567890")` == nil;
   Tagesdatei mit `"v":"nan"` und Wert „1e999“ liest sich (Tatsache ohne Wert); `ExchangeInbox.value` einer lesbaren
   Datei ist nie „{}“.
-- [ ] **P1.2 CORE-3** (mittel) Zeitziele über Mitternacht verkehrt („≤ 00:00“ nie erfüllt, „23:00–00:30“ wird
+- [x] **P1.2 CORE-3** (mittel) Zeitziele über Mitternacht verkehrt („≤ 00:00“ nie erfüllt, „23:00–00:30“ wird
   00:30–23:00, Mittel 12:00). Lösung nur beim Vergleich (keine Daten- oder `raw`-Änderung, ältere Builds lesen dasselbe):
   `Target.isNight` – Zeitziel und **Einzelvergleich**: Wert ≥ 12:00 (wie heute über `normalizedTime`,
   Vocabulary.swift:217-220) oder < 04:00 (neu); **Bereich**: nur, wenn beide Grenzen ≥ 12:00 oder < 04:00 sind (KR3-3:
@@ -409,7 +409,7 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   „23:00–00:30“ weiter falsch (§0.2). Abnahme: Tests ≤ 00:00 (23:30 ✓, 00:15 ✗), ≤ 00:30, 23:00–00:30 (23:30 ✓, 00:15 ✓,
   12:00 ✗), Wochenmittel von 23:30 und 00:30 = 00:00; „10:00–18:00“: 12:00 ✓, 09:00 ✗, 19:00 ✗; „11:30–13:00“: 12:00 ✓;
   ≤ 23:00, 22:30–23:00, ≤ 06:30 unverändert.
-- [ ] **P1.3 CORE-10** (niedrig) „spätestens 23:00“ wird ≥, „bis 23:00“ unlesbar. Lösung (Vocabulary.swift:165-191):
+- [x] **P1.3 CORE-10** (niedrig) „spätestens 23:00“ wird ≥, „bis 23:00“ unlesbar. Lösung (Vocabulary.swift:165-191):
   nur ganze führende Wörter (gefolgt von Leerzeichen, Ziffer oder Ende): „spätestens“, „bis“, „bis zu“, „höchstens“,
   „maximal“, „max“, „nicht mehr als“ → `.atMost`; „weniger als“, „unter“ → `.below`; „frühestens“, „ab“, „mindestens“,
   „min“ → `.atLeast`; „mehr als“, „über“ → `.above`. „bis“ wird nur zwischen zwei Zahlen zu „-“. Beginnt der Text mit
@@ -421,20 +421,20 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   der Import normalisiert (`Target.parse(text)?.raw`) → Zuarbeit P3. „spätestens 23:00“ zählt in 1.10.0 als ≤, in 1.9.0
   als ≥ (§0.2). Abnahme: Tests „spätestens 23:00“ → ≤ 23:00, „bis 23:00“ → ≤ 23:00, „weniger als 6“ → < 6, „22:30 bis
   23:00“ → Bereich, „≥150 g“ → ≥ 150, „ca 150“ streng → nil, nicht streng → wie in 1.9.0.
-- [ ] **P1.4 CORE-11** (niedrig) „Was kommt an“ zeigt PH in Minuten als PH („55 PH“). Lösung: Thalia-eigene
+- [x] **P1.4 CORE-11** (niedrig) „Was kommt an“ zeigt PH in Minuten als PH („55 PH“). Lösung: Thalia-eigene
   `extension ExchangeFact { var powerHoursValue: Double? }` in Exchange.swift (nicht in `ExchangeFormat.swift`, die
   kopieren die anderen Apps), benutzt in Exchange.swift :157, :656 und `arrivals` :980 („55 min = 1,1 PH“).
   Abnahme: Test ph-Tatsache 55 min → Ankunft 1,1 PH, Woche 1,1 PH.
-- [ ] **P1.5 PERF-3** (niedrig) Tages-/Wochenschlüssel über `String(format:)`. Lösung: privates `pad(_:_:)` in
+- [x] **P1.5 PERF-3** (niedrig) Tages-/Wochenschlüssel über `String(format:)`. Lösung: privates `pad(_:_:)` in
   Calendar.swift für `DayKey.string` (:84-87) und `WeekKey.string` (:254), optional `Format.clock` (:55);
   ExchangeFormat.swift:142 bleibt (Kopie der anderen Apps). Abnahme: Test vergleicht alte und neue Ausgabe (Tage
   1999–2100 als Stichprobe, alle Wochen 2026 inkl. W53); alle Tests grün.
-- [ ] **P1.6 DISPLAY-2** (mittel) PH in Viertelstunden auf eine Stelle gerundet („heute +0,3 PH“). Lösung:
+- [x] **P1.6 DISPLAY-2** (mittel) PH in Viertelstunden auf eine Stelle gerundet („heute +0,3 PH“). Lösung:
   `Units.decimals(_ unit:)` (ph 2, l 2, kg/h 1, Stk., Seiten, Schritte, min, kcal, g, ml 0; € über `euro`) in
   `Format.measure` (Format.swift:92) – wirkt in Heute, Tag abschließen, PDF, Bericht, Watch, Widgets. Abnahme: Tests
   `Format.measure(0.25, "PH") == "0,25 PH"`, `(12.75, "PH") == "12,75 PH"`, `(6.4, "PH") == "6,4 PH"`; P8 prüft im
   nächsten CI-Lauf, dass Komplikation und Widget-Zeilen „12,75 PH“ fassen.
-- [ ] **P1.7 DISPLAY-6** (mittel, mit UIPHONE-9) Anteilige Wochenziele mit krummen Stellen („150 von 85,71 Stk.“) und je
+- [x] **P1.7 DISPLAY-6** (mittel, mit UIPHONE-9) Anteilige Wochenziele mit krummen Stellen („150 von 85,71 Stk.“) und je
   Bildschirm anders. Lösung **nur Anzeige** (kein Aufrunden in `Measures.effectiveTarget` – das änderte gespeicherte
   Noten und brächte Geräte auseinander): `Format.amount(_ value:unit:)` (Wert gerundet nach `Units.decimals`; ph 2,
   kg/h 1) und `Format.amount(target: Target, unit:)` für Ziele (KR3-6 – `effectiveTarget` skaliert alle Vergleiche außer
@@ -445,10 +445,10 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   100 Stk. – 1 Tag krank“, „150 von 86 Stk. – erreicht“, „Ziel 103 statt 120 min“. Abnahme: Tests 100 × 6/7 Stk. ≥ →
   „86“, > → „> 85“, Bereich 150–180 g × 6/7 → „129–154 g“; Note der Demo-Woche unverändert; Screenshot `weekly-goals`
   ohne Hundertstel.
-- [ ] **P1.8 DISPLAY-7** (niedrig) Wochen-PDF KW53: „28. Dez. – 3. Jan. 2026“. Lösung: `WeekKey.rangeLabelWithYear`
+- [x] **P1.8 DISPLAY-7** (niedrig) Wochen-PDF KW53: „28. Dez. – 3. Jan. 2026“. Lösung: `WeekKey.rangeLabelWithYear`
   (gleiches Jahr „16.–22. Nov. 2026“, sonst „28. Dez. 2026 – 3. Jan. 2027“, Logik aus `RangePDFWeeks.dateText`), benutzt
   in Reports.swift:412 (Zielüberprüfung); PDF-Stellen → Zuarbeit P6. Abnahme: Tests 2026-W53, 2027-W01, 2026-W47.
-- [ ] **P1.9 CORE-2** (hoch) Verpasste Wochenquote verschwindet, wenn am Buchungstag ein Punkt leer ist (leerer Sonntag
+- [x] **P1.9 CORE-2** (hoch) Verpasste Wochenquote verschwindet, wenn am Buchungstag ein Punkt leer ist (leerer Sonntag
   hebt 9,05 auf 10). Lösung: Buchung bleibt am letzten möglichen Tag (WORKFLOW, dort zeigt die Oberfläche den
   Fehlbetrag); `Scorer.score` (Scoring.swift:266-272): `entry.score = (entry.isComplete || (data.isComplete &&
   (entry.shortfall > 0 || entry.excused > 0))) ? calculated : nil` – leere Punkte zählen an diesem Tag wie überall
@@ -457,7 +457,7 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   abgeschlossene Woche enthält den Fehlbetrag; (3) entschuldigter Anteil behält die ½-Regel. STATUS (P1.22): nicht
   eingefrorene abgeschlossene Wochen können sich beim Neuwerten einmal ändern; 1.9.0 speichert weiter die alte Note –
   solange ein Gerät 1.9.0 hat, werten Mac und Watch nicht selbst (§0.2).
-- [ ] **P1.10 CORE-5** (mittel) „höchstens“-Zählergebnisse zeigen bei 0 „erreicht“ und nach dem Überschreiten „auf
+- [x] **P1.10 CORE-5** (mittel) „höchstens“-Zählergebnisse zeigen bei 0 „erreicht“ und nach dem Überschreiten „auf
   Kurs“. Lösung (Core GoalResults.swift:573-595), nur `kind == .count` mit `.atMost`/`.below`: `isLimit = true`; Wert >
   Grenze → `.missed` („überschritten“); Zeitraum vorbei und Wert ≤ Grenze → `.reached` („eingehalten“); laufend: Wert >
   Grenze × verstrichener Anteil × 1,15 → `.behind` („zu schnell“, KR2-13), sonst `.onTrack` („im Rahmen“); nie
@@ -466,14 +466,14 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   Zuarbeit P7). `value`-Ziele („≤ x kg“) unverändert. Farben nur über den Status (`StatusTint`, §1.2.4 – kein
   wertabhängiges Gelb) → Zuarbeit P7. Status wird berechnet, nicht gespeichert. Abnahme: Tests 0, 5, 25 im Zeitraum; 15
   danach; Abschnitts-Ziel mit ≤; Labels „zu schnell“, „im Rückstand“.
-- [ ] **P1.11 CORE-6** (mittel) „Zählt für“ an einem Buch wirft alle anderen fertigen Bücher aus der Zählung (Ziel 5
+- [x] **P1.11 CORE-6** (mittel) „Zählt für“ an einem Buch wirft alle anderen fertigen Bücher aus der Zählung (Ziel 5
   „Hörbücher zählen“). Lösung (Core GoalResults.swift:495-505, `.list(kind)`): zugeordnete ∪ fertige nicht zugeordnete
   der Art (`resultID` nil/leer; Einträge eines anderen Ergebnisses bleiben draußen; Zuordnung auf ein gelöschtes Ergebnis
   gilt als nicht zugeordnet), ohne Doppel nach id. Zählung wird berechnet – 1.9.0 zeigt bis zum Update die alte Zahl.
   Fußtext → Zuarbeit P7; TASKS-v10 §1.2.1 und TESTING (P1.22) nennen die neue Regel; eine Auswahl von Hand geht über eine
   eigene Art („Fachbuch“) und `list:fachbuch`. Abnahme: Test B2 umgeschrieben (Bücher = 2) und 2 Buch + 1 Hörbuch mit
   „Zählt für“ → 3.
-- [ ] **P1.12 CORE-7** (mittel) Der erste Seitenstand zählt alle Seiten als an diesem Tag gelesen. Lösung:
+- [x] **P1.12 CORE-7** (mittel) Der erste Seitenstand zählt alle Seiten als an diesem Tag gelesen. Lösung:
   `ListItem.startAt: Double?` (JSON `startAt` in `fieldNames`, `init(fields:)`, `fields`; ältere Builds behalten das
   Feld). `ListMath.dailyAmounts` beginnt mit `highest = item.startAt ?? 0` (die `items`-Variante reicht das Element
   durch); `ListMath.current(item, progress, through:) = max(reached ?? 0, startAt ?? 0)` in `fraction`,
@@ -483,13 +483,13 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   ersten Tag (die betroffenen Wochen werden neu gewertet). 1.9.0 behält `startAt`, rechnet aber ohne (§0.2). Abnahme:
   Tests erster Stand unter/gleich/über `startAt`; „+ Seiten“ ohne Stände; `progressText` mit `startAt` ohne Stände;
   unbekanntes Feld bleibt.
-- [ ] **P1.13 CORE-8** (mittel) Bericht, PDF und Rückblick ignorieren die verborgenen Messwerte von Punkten mit
+- [x] **P1.13 CORE-8** (mittel) Bericht, PDF und Rückblick ignorieren die verborgenen Messwerte von Punkten mit
   `list:`/`app:`. Lösung (Reports.swift:59-65): `let all = measures + ExchangeDerivation.virtualMeasures(items: items,
   measures: measures)` nur für `progressRatio`/`workedDays`; `input.measures` bleibt (keine verborgenen Messwerte in
   „Messwerte“ und Wochenziel-Zeilen, :152, :859). Deckt alle Aufrufer ab. Abnahme: Test: dieselbe Woche über
   `WeekExtras + Scorer` und über `WeekReportInput.weekData` gibt gleiche Gesamt- und Kategorienote (Punkt mit
   `list:buch` und mit `app:theo:ph`).
-- [ ] **P1.14 CORE-9** (niedrig, mit UIPHONE-6) „1 von 10 Bücher“, „1 Punkte in 1 Kategorien“, „1 fällige Punkte“.
+- [x] **P1.14 CORE-9** (niedrig, mit UIPHONE-6) „1 von 10 Bücher“, „1 Punkte in 1 Kategorien“, „1 fällige Punkte“.
   Lösung: `Units.dative(_:)` nur nach „von“ (Wort auf -e/-er/-el, nicht schon -n/-s → +n: Büchern, Kursen, Kapiteln,
   Litern; Kürzel PH, km, kg, Stk., min, € bleiben); `Units.singular(_:)` mit kleiner Tabelle (Bücher→Buch, Seiten→Seite,
   Packungen→Packung, Workouts→Workout, Lektionen→Lektion, Folgen→Folge, Kurse→Kurs, Filme→Film, Minuten→Minute,
@@ -497,14 +497,14 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   (GoalResults.swift:399-402, `unitSuffix` :428-431). „davon 0 in Abschnitt 2“ bleibt. Bericht Reports.swift:195 über
   `Format.count` („1 fälliger Punkt“). Import-Kopf und CSV-Prüfung → Zuarbeit P3. V10Tests.swift:1002 und Doc-Kommentar
   von `text` anpassen. Abnahme: Tests 1/0/10 mit und ohne Ziel („1 von 10 Büchern“, „1 Buch“).
-- [ ] **P1.15 CORE-12** (niedrig) Kommentar nennt „über 8“ noch offene Frage. Lösung: GoalTrack.swift:9
+- [x] **P1.15 CORE-12** (niedrig) Kommentar nennt „über 8“ noch offene Frage. Lösung: GoalTrack.swift:9
   `/// "über 8" – decided: counts from 8,00 (rounded to two places)`; die veraltete erste Doc-Zeile in Format.swift:31
   löschen. Bezeichnung „über 8“ bleibt (§1.1); die Tour sagt schon jetzt die Regel (ThaliaTour.swift:120-121: „Eine
   Kategorie mit einer Wochennote ab 8,00 ist gut dabei: Die Zielkarte zeigt „✓ über 8“ …“). Antwort auf §4 F2 = „ab 8“ →
   alle Stellen auf einmal ändern; die Liste kommt aus `grep -rn "[üu]ber 8" App Shared Watch Widgets Packages` (KR2-22 –
   die feste Liste fehlte u. a. bei GoalResults.swift:328 `.accessibilityLabel("über 8 diese Woche")` und
   Explainers.swift:505). Abnahme: keine „open question“ mehr im Code; Tour nennt „ab 8,00“.
-- [ ] **P1.16 DISPLAY-1** (hoch) Wochenziele zeigen „im Plan“, obwohl sie nicht mehr erreichbar oder verpasst sind;
+- [x] **P1.16 DISPLAY-1** (hoch) Wochenziele zeigen „im Plan“, obwohl sie nicht mehr erreichbar oder verpasst sind;
   der Bericht sagt „nicht erreicht“. Lösung: `Pace` bekommt `plannedLeft` (geplante Tage nach heute) und `weekOver`
   (vom Aufrufer `isClosed || today > week.sunday`; Parameter mit Standard `today > week.sunday` in `Pace.init`/
   `Measures.weeklyPace`); `PaceStatus`: erreicht → „erreicht“; nicht erreicht und `weekOver` → „nicht erreicht“;
@@ -515,17 +515,17 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   (Zuarbeit P4), Anzeige → Zuarbeit P2, P5, P6. Abnahme: Tests Samstag 90 % mit geplantem Sonntag „im Plan“; letzter
   geplanter Tag 93 % „noch offen“ bzw. „noch 0,8 PH offen“; abgeschlossene oder vergangene Woche 93 % „nicht erreicht“;
   Bericht (Reports.swift:174) und App gleich.
-- [ ] **P1.17 DISPLAY-5** (mittel, mit UIPHONE-5) Trend „gleichbleibend“ bei weniger als 8 Wochen (Fenster überlappen).
+- [x] **P1.17 DISPLAY-5** (mittel, mit UIPHONE-5) Trend „gleichbleibend“ bei weniger als 8 Wochen (Fenster überlappen).
   Lösung (Reports.swift:345-347, :982-985): `k = min(4, scores.count / 2)`; k < 2 → erste/letzte nil, Trend nil; sonst
   `prefix(k)`/`suffix(k)` ohne Überlappung; `window: Int` neu in **beiden** `GoalLine` (`PeriodReport`, Reports.swift:293,
   und `RangeReport`, :884); die Felder `firstFour`/`lastFour` behalten ihre Namen (schon `Double?`; GoalsView.swift:1136/
   :1162 lesen sie, KR3-5). Markdown: „erste Wochen“/„letzte Wochen“
   mit „(je k)“, Trend „–“; Kopfzeile behält den Zeitraum und bekommt „· Ø aus abgeschlossenen Wochen“. Anzeige →
   Zuarbeit P7 (Zielüberprüfung), P6 (PDF). Abnahme: Tests n = 2, 3, 4, 5, 8.
-- [ ] **P1.18 GAP-14** (niedrig) Tour nennt „Plan übernehmen“, der Schalter heißt „Vom Plan“. Lösung:
+- [x] **P1.18 GAP-14** (niedrig) Tour nennt „Plan übernehmen“, der Schalter heißt „Vom Plan“. Lösung:
   ThaliaTour.swift:106-107 (body, macBody) „„Vom Plan“ – Punkte einer geplanten Woche übernehmen, dann selbst abhaken
   und abschließen“; CSVTests.swift:372 erwartet „Vom Plan“. Nur Text, kein `since`-Sprung. Abnahme: Tour-Tests grün.
-- [ ] **P1.19 Tour 11** (kein Befund, §1.8, mit KR2-6, KR2-14, KR3-13, KR3-15): `ThaliaTour.version = 11`; nach
+- [x] **P1.19 Tour 11** (kein Befund, §1.8, mit KR2-6, KR2-14, KR3-13, KR3-15): `ThaliaTour.version = 11`; nach
   `connected-apps` drei Schritte `since: 11`:
   (1) `backup` („Sicherung“, Symbol `externaldrive`): „Einstellungen → Deine Daten zeigt, wann und auf welchem Gerät
   zuletzt gesichert wurde, und hat „Sicherung erstellen…“. iPhone und Mac legen außerdem jede Woche selbst eine Sicherung
@@ -544,7 +544,7 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   der „du/deine“-Test bleibt grün.
 
 **Runde 5 (Abschluss):**
-- [ ] **P1.20 SYNC-20** (niedrig) docs/SYNC.md steht bei 1.6.1. Lösung: „Stand 1.10.0“, nur was der Code dann tut;
+- [x] **P1.20 SYNC-20** (niedrig) docs/SYNC.md steht bei 1.6.1. Lösung: „Stand 1.10.0“, nur was der Code dann tut;
   Zeilen „Jahresziel-Ergebnisse, Einträge, Abschnitte, Leseliste, Zuordnungen, Kategorie-Noten → über iCloud als
   Einstellungs-Datensätze (ältere Versionen übergehen sie)“; „Verbundene Apps → nur über ein Gerät, auf dem beide Apps
   laufen und Thalia nachsieht (Start, Vordergrund, alle 5 Min. – am Mac auch im Hintergrund –, nach dem Abgleich,
@@ -555,7 +555,7 @@ wird in Runde 1 vor P3 gemergt (§2.0).
   App-Store-Bereinigung); „Bekannte Grenzen“: Neuinstallation, dieselbe CSV auf zwei Geräten (PH und Notizen werden
   zusammengeführt), gemischte Versionen (§0.2), Siri-Zeile erst nach dem Gerätetest von P4.14, Wiederöffnen gegen
   Offline-Schließen; Zeile 32 nach der Antwort auf §4 F1. Abnahme: jede Zeile mit dem Code abgeglichen.
-- [ ] **P1.21 UIPHONE-21** (niedrig) CI-Screenshots: zwei leer (`iphone-week-light`, `iphone-work-dark`), Ziele,
+- [x] **P1.21 UIPHONE-21** (niedrig) CI-Screenshots: zwei leer (`iphone-week-light`, `iphone-work-dark`), Ziele,
   Rückblick, Einstellungen, Woche abschließen fehlen. Lösung (KR3-10: die Bildschirme müssen schon für die Abnahmen von
   Runde 3 da sein): Config/ci.env `SCREENSHOT_SCREENS` + „goals review close-week settings backup“, `MAC_SCREENS` +
   „review settings“ → Zuarbeit P4 (Runde 3b, mit den Demo-Bildschirmen); „health“ → Zuarbeit P9 (Runde 4). Hier:
@@ -578,7 +578,7 @@ Prüfung: `swiftc -parse`, Harness-Szenarien, Mac-CI; Gerät für P2.1, P2.2, P2
 `mergeImportedCopies` (P3.2) baut P2 selbst in `mergeDuplicates` (KR3-4: kein Aufruf über Paketgrenzen in derselben
 Runde).
 
-- [ ] **P2.1 SYNC-1** (hoch, mit STORE-1; KR1-5, KR1-6, KR1-9, KR1-16) Änderungen am Mac/auf der Watch an abgeschlossenen
+- [x] **P2.1 SYNC-1** (hoch, mit STORE-1; KR1-5, KR1-6, KR1-9, KR1-16) Änderungen am Mac/auf der Watch an abgeschlossenen
   Wochen ab 3 Wochen zurück werden nie neu gewertet (Rückblick, Ziele, „Wochen über 8“, PDF behalten die alte Note).
   Lösung (§1.3):
   (a) `weekReadsHealth(_ week:)` (ein Fortschrittspunkt der Woche hat als `measure` einen Messwert mit `health:`-Quelle –
@@ -624,7 +624,7 @@ Runde).
   abgeschlossene Woche → nur Anfrage, keine Note; Mac schließt eine alte Woche eines früheren Abschnitts → iPhone wertet
   sie mit `force` nach; Anfrage vor `closedAt` → beim nächsten Abgleich bearbeitet; ein Gerät mit `sync.seen.`, aber ohne
   `sync.build.` → Mac wertet nicht; 20 Anfragen → 8 je Lauf; iPad wertet keine Health-Woche. Gerät: TESTING v11.
-- [ ] **P2.2 SYNC-2** (mittel, mit STORE-16, BACKUP-11; KR1-10, KR3-2) Ein neu installiertes iPhone (oder ein iPad)
+- [x] **P2.2 SYNC-2** (mittel, mit STORE-16, BACKUP-11; KR1-10, KR3-2) Ein neu installiertes iPhone (oder ein iPad)
   wertet abgeschlossene Wochen ohne die übernommenen Health-Werte und senkt sie überall. Lösung jetzt:
   `HealthDevice.installedAt` wird **im Getter von `TrackerStore.installID`** gesetzt (TrackerStore.swift:1477-1484), wenn
   er die id neu anlegt (`health.installedAt = Date()`, UserDefaults). Der Leser nimmt den gespeicherten Wert; fehlt er,
@@ -643,14 +643,14 @@ Runde).
   `health.scorer`). Abnahme (Harness): frischer Speicher, abgeschlossene Woche mit Health-Punkt kommt per Import → Note
   bleibt, auch mit `force`-Anfrage (Toast-Rückgabe); ohne Health-Punkt → gewertet; `installedAt` richtig, egal ob zuerst
   `installID` oder `installedAt` gelesen wird; vorhandene id ohne Datum → `.distantPast`.
-- [ ] **P2.3 STORE-4** (niedrig, mit SYNC-17) Verschieben aus einer abgeschlossenen Woche wertet die alte nicht neu;
+- [x] **P2.3 STORE-4** (niedrig, mit SYNC-17) Verschieben aus einer abgeschlossenen Woche wertet die alte nicht neu;
   Health übernehmen/entfernen wertet gar nicht. Lösung: alten Tag vor dem Zuweisen merken und bei Unterschied
   `commit(rescoring: [alt.week])` statt `save()` in `update(_ block:…day:)` (TrackerStore.swift:754-766), `editExpense`
   (:643-655), `move(_:to:)` (:711-716), `restore(_ snapshot:)` (:626-629); `touchedWeeks` (:1597-1612) bekommt
   `else if let value = model as? HealthValue { add(day: value.dayKey) }` (deckt `adoptHealth`/`removeHealth`). Geräte
   ohne Health folgen P2.1. Abnahme (Harness): Block Sonntag → Montag wertet die alte Woche neu; Health für Sonntag
   übernommen → Woche neu gewertet.
-- [ ] **P2.4 STORE-3** (mittel) ⌘Z/Schütteln widerruft Wartung im Hintergrund (Geräte-Meldung, Eingang, Zusammenführen).
+- [x] **P2.4 STORE-3** (mittel) ⌘Z/Schütteln widerruft Wartung im Hintergrund (Geräte-Meldung, Eingang, Zusammenführen).
   Lösung: `func withoutUndo<T>(_ body: () -> T) -> T`: ohne Undo-Manager direkt; sonst `context.processPendingChanges()`,
   `disableUndoRegistration()`, `defer { context.processPendingChanges(); enableUndoRegistration() }` (das Speichern liegt
   im abgeschalteten Block – SwiftData registriert beim Verarbeiten). Eingepackt: `recordDeviceSeen`,
@@ -663,13 +663,13 @@ Runde).
   Objekt, das ⌘Z am Mac zurücknehmen würde; ein Undo auf ein gelöschtes Objekt ist nur am Gerät zu prüfen). Abnahme
   (Mac): abhaken, 10+ min warten oder Eingang lesen lassen, einmal ⌘Z → der Haken ist weg; nach einem Vereinen (R28-Fall)
   tut ⌘Z nichts und stürzt nicht ab.
-- [ ] **P2.5 STORE-7** (niedrig) Widerrufen von „Alle offenen ✓/½/✗“ und „Vorschläge übernehmen“ hinterlässt leere
+- [x] **P2.5 STORE-7** (niedrig) Widerrufen von „Alle offenen ✓/½/✗“ und „Vorschläge übernehmen“ hinterlässt leere
   eigene Markierungen, die künftige ✓ aus verbundenen Apps verdecken. Lösung: `struct MarkSnapshot { item; mark: Mark?;
   existed: Bool }` als Rückgabe von `setMarks` und `apply(suggestions:)` (TrackerStore.swift:437-462); `restoreMarks`
   löscht bei `existed == false` jede `ItemMark` mit weekKey/itemCode/dayKey, sonst `writeMark(mark)` wie bisher.
   Aufrufer → Zuarbeit P4. Abnahme (Harness): Punkt ohne Markierung, `setMarks(.done)` + `restoreMarks` → keine
   ItemMark; abgeleiteter ✓ erscheint.
-- [ ] **P2.6 STORE-10** (niedrig) Doppelte Punkte/Messwerte einer Woche werden nie zusammengeführt; Löschen und
+- [x] **P2.6 STORE-10** (niedrig) Doppelte Punkte/Messwerte einer Woche werden nie zusammengeführt; Löschen und
   Wiederherstellen ignorieren Kopien. Lösung: (a) `trash(_ items:)`/`trash(_ measures:)` (TrackerStore.swift:988-996)
   legen jede andere lebende Kopie mit gleicher Woche + Code mit in den Papierkorb (ein `PlanChange`); (b) `restore`
   (:1020-1026): `restoreConflicts(_:)` nennt die **Titel** mit lebender Kopie (der Papierkorb zeigt Titel, nicht Codes,
@@ -677,31 +677,31 @@ Runde).
   „Wiederherstellen ersetzt den Punkt aus dem letzten Import.“ / „Trotzdem wiederherstellen“ / „Abbrechen“) → Zuarbeit
   P4. Nummern neuer Ziele bleiben (hälfe nicht gegen zwei Geräte offline); Zusammenführen lebender Kopien in
   `mergeDuplicates` → Später. Abnahme (Harness): zwei Kopien, eine löschen → beide im Papierkorb.
-- [ ] **P2.7 STORE-11** (niedrig, mit SYNC-14) „Wieder öffnen“ schreibt auf die neueste Kopie; die Zusammenführung
+- [x] **P2.7 STORE-11** (niedrig, mit SYNC-14) „Wieder öffnen“ schreibt auf die neueste Kopie; die Zusammenführung
   schließt wieder. Lösung: `reopenDay`: `guard planDay(day) != nil …; let info = ensureDay(day); info.closedAt = nil …`,
   `reopenWeek` ebenso mit `ensurePlan` (TrackerStore.swift:341-370); Import-`apply` → Zuarbeit P3. `DuplicateMerge`
   bleibt („abgeschlossen gewinnt“, R28; ein „neuer offen gewinnt“ öffnete Tage durch Offline-Notizen) – Grenze in
   SYNC.md (P1.20). Abnahme (Harness): zwei Kopien eines abgeschlossenen Tages, öffnen, `mergeDuplicates` → offen.
-- [ ] **P2.8 STORE-12** (niedrig) Eingang je Quelle liest die ganze Geschichte. Lösung: `inboxFiles(source:from:through:)`
+- [x] **P2.8 STORE-12** (niedrig) Eingang je Quelle liest die ganze Geschichte. Lösung: `inboxFiles(source:from:through:)`
   (TrackerStore+Records.swift:808-816) mit beiden Grenzen → Tage bauen, `inboxFiles(days:sources:)` (IN, :800-804) in
   Stücken zu 62 Tagen; ohne Quelle `exchangeSources().ids`. Präfix-Weg nur noch für das unbegrenzte `weeksWithFacts`.
   Abnahme (Harness): 400 Tagesdateien, Jahresreihe gleich wie vorher.
-- [ ] **P2.9 STORE-13** (niedrig) Speicher- und Lesefehler bleiben stumm. Lösung: im `catch` von `commit`
+- [x] **P2.9 STORE-13** (niedrig) Speicher- und Lesefehler bleiben stumm. Lösung: im `catch` von `commit`
   `TrackerStore.saveFailed` senden (`userInfo` mit dem Text); `try? context.save()` in `closeWeek`,
   `rescoreRecentClosedWeeks`, `recompute`, `backfillCategoryScores` über `saveQuietly()` (meldet ebenso). Lese- und
   Schreiblogik bleibt (Doppelte heilen über `mergeDuplicates`). Anzeige → Zuarbeit P4. Abnahme (Harness): erzwungener
   Fehler → Benachrichtigung.
-- [ ] **P2.10 SYNC-15** (niedrig) `setSetting` behält eine zufällige Kopie und löscht die anderen. Lösung:
+- [x] **P2.10 SYNC-15** (niedrig) `setSetting` behält eine zufällige Kopie und löscht die anderen. Lösung:
   `setSetting` (TrackerStore.swift:1460-1470) = `writeSetting` in einer `RecordChange`, bei leerer Änderung nichts,
   sonst `commit(change)` – die neueste Kopie bleibt, Gleiches schreibt nicht. `setGoalPeriod` (:1532-1537) schreibt alle
   vier Schlüssel in **einer** Änderung (Grundlage für P4.20). Abnahme (Harness): zwei Kopien von `goal.start` → eine,
   die neueste; gleicher Wert → kein Speichern.
-- [ ] **P2.11 PERF-2** (mittel) `WeekContext` als View-Eingabe wird tief verglichen – und doch immer neu gezeichnet.
+- [x] **P2.11 PERF-2** (mittel) `WeekContext` als View-Eingabe wird tief verglichen – und doch immer neu gezeichnet.
   Lösung: in WeekContext.swift `extension WeekContext: Equatable { static func == (l, r) -> Bool { l.records ===
   r.records } }` mit Kommentar „gleich nur Kopien desselben Aufbaus – ein neuer Aufbau ist nie gleich, wie heute; so
   geht keine Änderung verloren“. Keine Revision, kein Cache. Abnahme: Mac-CI: `mac-log.txt` ohne Stapel
   `WeekExtras ==`/`AGDispatchEquatable`; Verhalten gleich.
-- [ ] **P2.12 PERF-4** (mittel) `PlanItem.record`/`MeasureDefinition.record` werden bei jedem Helfer neu gebaut. Lösung:
+- [x] **P2.12 PERF-4** (mittel) `PlanItem.record`/`MeasureDefinition.record` werden bei jedem Helfer neu gebaut. Lösung:
   in `WeekContext.init` die gebauten Datensätze behalten – `[ObjectIdentifier: ItemRecord]` für die `PlanItem`-Instanzen
   (nicht nach Code: eine Doppel-Kopie bekäme sonst die falsche) und `[String: MeasureRecord]` (eigene +
   `extras.measures`); `record(_ item:) = itemRecords[ObjectIdentifier(item)] ?? item.record` (Rückfall für fremde
@@ -710,7 +710,7 @@ Runde).
   `allWeeklyTargets`; `measure(code:)` nachschlagen. Liegt in der Referenz-Box `WeekRecords`. Kein statischer
   `Target.parse`-Speicher (PDFs lesen abseits). Heute-Seiten → Zuarbeit P5. Abnahme (Harness): alle Helfer liefern auf
   der Demo-Woche dasselbe wie vorher.
-- [ ] **P2.13 PERF-5** (hoch, mit STORE-9, SYNC-7) Start und jeder iCloud-Import räumen die ganze Datenbank auf dem
+- [x] **P2.13 PERF-5** (hoch, mit STORE-9, SYNC-7) Start und jeder iCloud-Import räumen die ganze Datenbank auf dem
   Hauptthread auf. Lösung (Hauptkontext bleibt): `mergeDuplicates(since minWeek: WeekKey? = nil)` – nil wie heute;
   sonst **IN-Prädikate** (KR1-17, KR3-19: ein `>=` auf Texten wäre das erste Bereichs-Prädikat im Projekt, und ein
   fehlgeschlagener Abruf gibt still `[]`, TrackerStore.swift:67-69 – R28 käme für bis zu 24 h zurück): ItemMark mit
@@ -723,7 +723,7 @@ Runde).
   Doc-Kommentare anpassen. Nicht: „vom Import berührte Wochen“ (das Ereignis nennt keine Objekte), keine Purge-Speicherung
   ohne `commit`. Abnahme (Harness): doppelte Markierung der laufenden Woche → von `afterSync` zusammengeführt; 10 Wochen
   zurück → erst im täglichen Lauf; Lesen dazwischen richtig.
-- [ ] **P2.14 PERF-7** (niedrig, mit WATCH-15) Kleine Leser laden alle Ziel-, Lese- und Noten-Datensätze; die Watch
+- [x] **P2.14 PERF-7** (niedrig, mit WATCH-15) Kleine Leser laden alle Ziel-, Lese- und Noten-Datensätze; die Watch
   rechnet je Änderung dreimal. Lösung: `WeekReader(week:today:goalYear: Bool = true, content:)` – bei false zeigen
   `_goalRecords` und `_scoreRecords` auf eine IN-Abfrage über `TrackerStore.goalPeriodKeys`; `list.`, `link.rule.`,
   `x.sources`/archive und Eingang bleiben (die Leseliste speist Watch-Werte); Doc-Kommentar „keine Ergebnisse,
@@ -731,7 +731,7 @@ Runde).
   155-158): Abruf und Aufbau trennen, bei `tomorrow.week == today.week` einmal abrufen, zwei Kontexte bauen. Keine
   Schlüsselbereich-Abfragen (die Leseliste braucht alle früheren Stände). Aufrufer → Zuarbeit P4, P5, P8. Abnahme
   (Harness): Note und `todaySummary` mit `goalYear: false` gleich wie mit true.
-- [ ] **P2.15 DISPLAY-16** (niedrig) Großes Widget nennt Wochenziele anders als die App. Lösung: `todaySummary`
+- [x] **P2.15 DISPLAY-16** (niedrig) Großes Widget nennt Wochenziele anders als die App. Lösung: `todaySummary`
   (WeekContext.swift:510-512) `title: target.item?.title ?? target.measure.title` wie App und PDF. Abnahme: Code-Review;
   P8 prüft die ForEach-id im Widget.
 - (P2.16 der ersten Fassung – Health-Teilen, Shared-Kern – ist jetzt **P9.1**: das ganze Teilen liegt in einem Paket,
@@ -747,7 +747,7 @@ Dateien. **Runde 2:** der Rest
 in `V11BackupTests.swift`; bricht eine P3-Änderung eine Erwartung in einer P1-Testdatei (z. B. CSVTests), passt P3 sie
 nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
 
-- [ ] **P3.1 CORE-4** (niedrig) Drei Zahlenleser in einer CSV: 1,125 kommt nach Sicherung und Einspielen als 1125
+- [x] **P3.1 CORE-4** (niedrig) Drei Zahlenleser in einer CSV: 1,125 kommt nach Sicherung und Einspielen als 1125
   zurück, „≥8.000“ heißt 8. Lösung: (1) Schreiber: nur in den Exportzeilen von PlanCSV (nicht `Format.plain` global – das
   schreibt auch synchronisierte Einstellungstexte) bekommt ein Wert mit genau drei Nachkommastellen eine vierte Null
   („1.1250“) – jeder Leser und jeder ältere Build liest das richtig, Sicherungen sind sofort heil. (2) Leser:
@@ -756,7 +756,7 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   einzelner Punkt mit genau drei Stellen bringt eine Vorschau-Warnung „Zeile n: „8.000“ als 8 gelesen – Tausenderpunkt?
   Bitte 8000 schreiben“. `Format.parse` bleibt für die Oberfläche. (3) Prompts → Zuarbeit P1. Abnahme: Tests Rundreise
   1.125, 0.125, 81.125; „8.000“ → 8 plus Warnung.
-- [ ] **P3.2 BACKUP-2** (hoch, mit SYNC-16; KR1-2, KR1-20, KR3-2) Eingespielte PH, Werte und Notizen doppeln sich
+- [x] **P3.2 BACKUP-2** (hoch, mit SYNC-16; KR1-2, KR1-20, KR3-2) Eingespielte PH, Werte und Notizen doppeln sich
   (Einspielen während iCloud noch lädt, dieselbe CSV auf zwei Geräten). Lösung: (1) `mergeImportedCopies()` baut **P2**
   in TrackerStore.swift (Zuarbeit; dort liegen `mergeDuplicates` und `mergeWork`): läuft in `mergeDuplicates` **vor** dem
   Zusammenführen nach `importID` und gruppiert Original und alle eingespielten Kopien in einem Schritt; immer voll (nicht
@@ -784,7 +784,7 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   Original + eingespielte Kopie → einer; bearbeitetes Original behält die Änderung; **Original nach der Sicherung
   bearbeitet + eingespielte Kopien von zwei Geräten → das Original behält die Änderung**; Wächterzeile ohne Merker.
   Gerät: frisches Gerät, Sicherung früh einlesen → Warnung; Merker erst nach dem ganzen ersten Abgleich (§3.4.7).
-- [ ] **P3.3 BACKUP-4** (mittel; KR1-15) Einspielen wertet jede abgeschlossene Woche mit heutigen Regeln und Gerät neu
+- [x] **P3.3 BACKUP-4** (mittel; KR1-15) Einspielen wertet jede abgeschlossene Woche mit heutigen Regeln und Gerät neu
   (auch am Mac ohne Health). Lösung: neue Zeile `wertung` nach jeder abgeschlossenen Woche mit `finalScore`: `id =
   <Woche>`, `value = String(finalScore)` – **volle Genauigkeit**, nicht `Format.plain` (schreibt höchstens 4 Stellen,
   Format.swift:44-51) –, `note = finalGoalScores` („1=8.2;2=7.5“, ebenso mit `String`; Anzahl = `finalGoalsScored`,
@@ -796,7 +796,7 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   Builds listen die Zeile unter „Nicht gelesen“. Nach dem Wächter aus P3.2. Abnahme: Rundreise-Test der drei Felder mit
   7,123456 (bitgleich); Harness: Einspielen auf dem Mac ändert keine Note, auch nicht in schon abgeschlossenen Wochen,
   und schreibt für Wochen mit Zeile keine Anfrage.
-- [ ] **P3.4 BACKUP-5** (mittel, mit STORE-6) Widerrufen eines Imports ist unvollständig; ein Plan macht ein vorher
+- [x] **P3.4 BACKUP-5** (mittel, mit STORE-6) Widerrufen eines Imports ist unvollständig; ein Plan macht ein vorher
   gesetztes „Urlaub“ zu „Arbeitstag“. Lösung: (a) ImportPreview löst eingehend über vorhanden auf wie
   `SettingRow.resolved`: eine leere Notiz der Datei behält die vorhandene Markierungs- und Tagesnotiz (wie R21/K1);
   Markierungswerte bleiben „Datei gewinnt“, auch geleerte (v10 Grundregel 1). (b) **Krank/Urlaub bleiben:** ist der
@@ -807,20 +807,20 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   zurück; „Widerrufen“ erscheint, sobald es so etwas gibt (ImportView.swift:466-478). Kein allgemeines Umkehr-Dokument.
   Abnahme: Tests (Vorschau idempotent; leere Notiz löscht nicht; Urlaub bleibt mit Zeile); Harness: Vergangene Woche
   nachtragen → Widerrufen entfernt eingefügte Notizen/Reflexionen, Tagestypen zurück.
-- [ ] **P3.5 BACKUP-6** (niedrig) Ein älteres Backup bringt den alten Schlüssel eines verschobenen Eintrags oder
+- [x] **P3.5 BACKUP-6** (niedrig) Ein älteres Backup bringt den alten Schlüssel eines verschobenen Eintrags oder
   Seitenstands zurück – er zählt doppelt. Lösung: (1) `SettingRecords.decode` neueste je id (Zuarbeit P1);
   (2) `storedRecordRows` exportiert nach derselben Regel; (3) ImportPreview: hält die App dieselbe id unter anderem
   Schlüssel → App-Stempel neuer = unverändert, Datei neuer = schreiben und den anderen Schlüssel löschen (wie `write`);
   (4) `mergeDuplicates` löscht den veralteten Schlüssel einer doppelten id (Zuarbeit P2). Abnahme: Tests decode und
   Vorschau.
-- [ ] **P3.6 BACKUP-7** (niedrig) Sicherung ohne Datum, Version, Gerät. Lösung: erste Datenzeile
+- [x] **P3.6 BACKUP-7** (niedrig) Sicherung ohne Datum, Version, Gerät. Lösung: erste Datenzeile
   `sicherung,<ISO Datum-Zeit>,,Thalia 1.10.0 (<Build>),<Geräteart>` nur bei „Alles als CSV“ (Geräteart =
   `SyncDeviceKind.current`). Vorschau-Kopf „Sicherung vom 22.11.2026, 18:03 · Thalia 1.10.0 (58) · iPhone“; älter als
   1 Tag mit Änderungen: orange „Die Sicherung ist 9 Tage alt – 37 Markierungen und 12 Werte in der App weichen ab und
   werden auf den Stand der Sicherung gesetzt.“; weder `sicherung` noch `record`: „Diese Sicherung stammt von einer
   älteren Thalia-Version – Ergebnisse, Leseliste und verbundene Apps fehlen darin.“ Kein „neuer gewinnt“-Modus.
   Abnahme: Tests Zeile hin und zurück; alte Datei ohne Zeile liest sich.
-- [ ] **P3.7 BACKUP-8** (niedrig, mit STORE-8, BACKUP-10) Sicherung ohne Zieljahr und Katalog-Schalter; Archivieren
+- [x] **P3.7 BACKUP-8** (niedrig, mit STORE-8, BACKUP-10) Sicherung ohne Zieljahr und Katalog-Schalter; Archivieren
   löscht Planänderungen. Lösung: (1) `SettingKeys.goalYearKeys` und `catalogSwitch` (Zuarbeit P1) als `record`-Zeilen
   exportieren und lesen; Import **füllt nur auf**, wo die App keinen Wert hat (ohne Stempel überschriebe ein altes Backup
   sonst ein neues Zieljahr); abweichend: Vorschauzeile „Zieljahr in der Datei: 1.6.2026–31.5.2027 – in der App bleibt
@@ -829,11 +829,11 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   `restore(archive)` und `undoImport` legen sie wieder an; ältere Builds übergehen die Zeile. (3) `WeekArchive` nicht
   exportieren. Text → P3.14. Abnahme: Tests (Zeilen hin und zurück, Auffüllen statt Ersetzen); Harness: Woche neu
   importieren + Widerrufen → „Auch in den nächsten Wochen“ wieder da.
-- [ ] **P3.8 BACKUP-12** (niedrig) Eine Woche vor KW42 mit neuem Modell kommt als „alt“ zurück. Lösung:
+- [x] **P3.8 BACKUP-12** (niedrig) Eine Woche vor KW42 mit neuem Modell kommt als „alt“ zurück. Lösung:
   `PlanCSV.export` (:797) schreibt `neu` für Wochen vor `WeekRecord.scoringChange` mit Modell „“; ältere Builds ohne
   `neu` fallen auf den heutigen Standard zurück. Abnahme: Test export → parse gleiches Modell für KW41 mit „“ und „alt“,
   auch über `exportDocument(weeks:)`.
-- [ ] **P3.9 BACKUP-15** (niedrig) Einspielen verliert Uhrzeiten und Reihenfolge und bringt Markierungen gelöschter
+- [x] **P3.9 BACKUP-15** (niedrig) Einspielen verliert Uhrzeiten und Reihenfolge und bringt Markierungen gelöschter
   Punkte als Waisen. Lösung: (1) Einzelner Eintrag: `aggregate()` setzt `order = recordedAt.timeIntervalSince1970`,
   Export schreibt `title = Format.clock(minutes)` auf die einfache Eintragszeile, Parse setzt `order` aus `title`; der
   Vergleich nullt `order` beidseitig (ImportPreview.swift:247-251, :351) – Re-Import bleibt „unverändert“; ältere Builds
@@ -841,7 +841,7 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   Position) statt (Tag, id). (3) Nur in der vollen Sicherung (`weeks == nil`) Markierungen auf `doc.items` beschränken,
   nie in Archiv-Schnappschüssen. Abnahme: Rundreise-Test (07:10 bleibt 07:10, Reihenfolge zweier Notizen); volle
   Sicherung ohne Warnung „Markierungen für unbekannte Punkte“.
-- [ ] **P3.10 BACKUP-3** (mittel) Jahres-Sicherung einlesen: quadratisches Lesen, alles im Hauptthread, ganze Datei im
+- [x] **P3.10 BACKUP-3** (mittel) Jahres-Sicherung einlesen: quadratisches Lesen, alles im Hauptthread, ganze Datei im
   Textfeld. Lösung: Core: in `PlanCSV.parse` nur suchen, wenn der Schlüssel schon vorkam (Arten mit `warnDuplicate`
   über `seen`; Markierungen :378/:429 gemeinsam, Einträge :450 – neuer Schlüssel direkt anhängen –, Arbeit, Notizen,
   Reflexionen, Noten, Datensätze je ein `Set<String>`): „letzte Zeile gewinnt“ und Reihenfolge exakt wie heute. App:
@@ -851,13 +851,13 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   (Teilspeicherungen schöben halbe Stände zu iCloud), davor ein blockierender Hinweis „Sicherung wird eingespielt –
   bitte warten“ (50 ms zeichnen lassen). Abnahme: Test doppelte Zeilen je Art → letzte gewinnt, Reihenfolge wie vorher;
   synthetisches Jahr (52 Wochen) mit lockerer Grenze (< 5 s); Gerät: Jahres-Sicherung ohne Einfrieren.
-- [ ] **P3.11 PERF-13** (niedrig) „Alles als CSV (Sicherung)“ (künftig „Sicherung erstellen (alles als CSV)“, P3.14)
+- [x] **P3.11 PERF-13** (niedrig) „Alles als CSV (Sicherung)“ (künftig „Sicherung erstellen (alles als CSV)“, P3.14)
   wird im Knopf auf dem Hauptthread gebaut. Lösung:
   `BackupWriter.exportText(store:)`: `exportDocument()` auf dem Hauptthread, `PlanCSV.export(doc)` in
   `Task.detached(priority: .userInitiated)` (Muster RangePDF.swift:311); Knopf mit `isBackingUp`, ProgressView
   „Sicherung wird erstellt …“, deaktiviert. `storedRecordRows`/`syncableValue` bleiben (Health-Schutz). Derselbe Weg für
   P3.13 und P4.9. Abnahme: Gerät: Fortschritt sichtbar, kein Doppeltipp.
-- [ ] **P3.12 PERF-6** (mittel, mit STORE-14) Prompt kopieren, Woche wiederholen, Woche als CSV und jede Vorschau lesen
+- [x] **P3.12 PERF-6** (mittel, mit STORE-14) Prompt kopieren, Woche wiederholen, Woche als CSV und jede Vorschau lesen
   die ganze Datenbank samt Eingang. Lösung: (1) `existingState(includeRecords:)`: `storedRecordRows()` nur bei voller
   Sicherung oder wenn die Datei `record`-Zeilen hat; bei `exportDocument(weeks: nicht nil)` nie. (2)
   `existingState(weeks:includeRecords:)`: ganz wie heute Ziele, Kategorien, Pläne, **Messwerte aller Wochen**
@@ -869,7 +869,7 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   `weekChanged` (:516-531, :641-650) mit Prädikaten und dem schon gebauten Zustand. Volle Sicherung und Wiederherstellen
   bleiben voll. Abnahme: Test `referencedWeeks` je Zeilenart; Harness: gleiche Vorschau wie mit vollem Zustand (Demo,
   ChatGPT-Plan, Vergangene Woche); Log-Zeiten am Gerät < 200 ms.
-- [ ] **P3.13 BACKUP-1** (hoch, mit UIPHONE-8; KR1-13, KR2-2, KR2-17) Keine automatische Sicherung, keine Erinnerung,
+- [x] **P3.13 BACKUP-1** (hoch, mit UIPHONE-8; KR1-13, KR2-2, KR2-17) Keine automatische Sicherung, keine Erinnerung,
   kein „zuletzt gesichert“. Lösung (§1.6): **Schritt 1:** Einstellungen → „Deine Daten“ erste Zeile „Sicherung
   erstellen…“ (gleicher Export, ein Name überall, §1.6.5). „Letzte Sicherung“ gilt für **alle** Geräte (KR2-2: eine
   Sicherung enthält alle synchronisierten Daten – ein Mac sollte nicht mahnen, wenn das iPhone gestern gesichert hat):
@@ -892,7 +892,7 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   Abnahme (Harness): `backup.last` wird geschrieben und nie exportiert; `.memory`/Demo → keine Datei; halbe Größe → kein
   Aufräumen. Gerät: Sicherung erstellen am iPhone → Mac zeigt „am iPhone“; nach dem Wechsel in den Hintergrund liegt eine
   datierte Datei in Application Support; die achte Woche räumt richtig auf.
-- [ ] **P3.14 BACKUP-16** (niedrig; KR2-17) Daten-Texte versprechen mehr als Sicherung und Papierkorb. Lösung (nach
+- [x] **P3.14 BACKUP-16** (niedrig; KR2-17) Daten-Texte versprechen mehr als Sicherung und Papierkorb. Lösung (nach
   P3.7): SettingsView.swift:356 Titel „Sicherung“: „Einstellungen → Deine Daten → „Sicherung erstellen…“: Pläne,
   Einträge, Ergebnisse, Leseliste, Zieljahr und die Daten verbundener Apps im Importformat. Nicht darin: das Archiv
   ersetzter Wochen, übernommene Health-Werte und Einstellungen dieses Geräts.“; :357 „Gelöschte Punkte, Messwerte,
@@ -902,13 +902,13 @@ nach dem Merge von P1 an (P1 wird in Runde 1 zuerst gemergt).
   CSV hat dasselbe Format wie der Import – bearbeiten und wieder importieren funktioniert. Eine Sicherung erst
   einspielen, wenn iCloud auf diesem Gerät abgeglichen hat (Einstellungen → iCloud & Daten).“ Abnahme: Texte passen zu
   P3.7 (Code-Review); `grep -rn "Alles als CSV\|Sicherung exportieren" App` leer.
-- [ ] **P3.15 GAP-5** (niedrig) Die gewählte Woche steuert nur den Prompt; eine CSV für eine andere Woche wird ohne
+- [x] **P3.15 GAP-5** (niedrig) Die gewählte Woche steuert nur den Prompt; eine CSV für eine andere Woche wird ohne
   Warnung importiert. Lösung: `previewSection`: bei `showPrompt` und genau einer geplanten Woche der Datei ≠
   `targetWeek` orange „Die CSV ist für KW49 – gewählt ist KW48.“; Einlesen über Bestätigung „Trotzdem KW49 importieren“ /
   „Abbrechen“, Fuß „ChatGPT bitten, die Woche zu korrigieren“. Mehrwochen-Dateien ohne Warnung. Nicht über
   `repeated(from:to:)` umschreiben (verliert Struktur-, Notiz- und `record`-Zeilen). Abnahme: Gerät: falsche KW zeigt
   die Zeile.
-- [ ] **P3.16 SYNC-12** (niedrig) Leere Zustände bieten Anlegen/Wiederholen, während iCloud noch abgleicht – ein zweiter
+- [x] **P3.16 SYNC-12** (niedrig) Leere Zustände bieten Anlegen/Wiederholen, während iCloud noch abgleicht – ein zweiter
   Plan mischt sich mit dem echten. Lösung: (1) `ImportView.apply` baut die Vorschau direkt vor dem Anwenden neu aus
   `text`; weichen die Ersetzungen ab (die Zielwoche hat inzwischen einen Plan), `preview = fresh` und zurück – der
   vorhandene Dialog „KW48 ersetzen?“ mit Archiv und Widerrufen greift. (2) NoPlanView-Hinweis → Zuarbeit P5 (Text nach
@@ -929,7 +929,7 @@ Fassung (u. a. `StatusTint`, `focusTodayPage`, `reopenWeek`, `showsWeekSummary`,
 als eigener CI-Lauf (KR3-11c); P5–P8 bauen auf dem Ergebnis auf. **Runde 3b:** der Rest, parallel zu P5–P8; dazu
 Config/ci.env (P1.21).
 
-- [ ] **P4.1 UIMAC-1** (hoch; KR2-3, KR3-20) Heute und Woche sind breiter als das Fenster: Seitenleiste verdeckt, „Nicht
+- [x] **P4.1 UIMAC-1** (hoch; KR2-3, KR3-20) Heute und Woche sind breiter als das Fenster: Seitenleiste verdeckt, „Nicht
   erledigt“/„Entfällt“ abgeschnitten (mac-today, mac-week). Lösung: (1) Ursache zuerst messen (nur Debug, Runde 3a):
   `onGeometryChange` → `diagNote` für die Breiten von Seitenleiste, Heute-Liste und -Seite, beiden Inspektoren und der
   WeekTable-ScrollView; CI bei 1024 zeigt, welche Spalte über ihrem Minimum bleibt (Verdacht: HSplitView hält die Liste
@@ -950,7 +950,7 @@ Config/ci.env (P1.21).
   bei 1024 × 768 zeigen ganze Seitenleiste und alle vier Markierungsknöpfe; in CI bei 1024 pt zeigt ⌘0 „Heute im Blick“
   als Blatt; Bini prüft 1180 und 900 pt, je mit und ohne „Heute im Blick“/„Wochenübersicht“, und zieht die
   Seitenleiste (kein Flackern).
-- [ ] **P4.2 UIMAC-2** (mittel) Ohne Hauptfenster (oder mit Einstellungen vorne) tun Menübefehle, Erinnerungen und
+- [x] **P4.2 UIMAC-2** (mittel) Ohne Hauptfenster (oder mit Einstellungen vorne) tun Menübefehle, Erinnerungen und
   Kurzbefehle nichts Sichtbares; das Fenster öffnet später mit einem alten Blatt. Lösung: (1) `ThaliaCommands`:
   `@Environment(\.openWindow)`; auf macOS zuerst `MainWindow.show(openWindow)` in `present()`, `closeDay()`,
   `closeWeek()`, `showGlance()`, `startTour()` und den „Gehe zu“-Befehlen ⌘1–4. (2) `MainWindow.showWithoutEnvironment()`
@@ -960,62 +960,62 @@ Config/ci.env (P1.21).
   `.thaliaRoute` ebenso; `PendingRoute.destination` bleibt, RootView.task leitet weiter, sobald das Fenster da ist –
   Shared/RouteIntents.swift unverändert. Abnahme (Mac): ⌘W, dann ⌘N → Fenster mit „Power-Hours erfassen“; Einstellungen
   vorne, ⌘↩ → Hauptfenster mit „Tag abschließen“; Fenster zu, Abend-Erinnerung tippen → Fenster mit „Tag abschließen“.
-- [ ] **P4.3 UIMAC-4** (niedrig) Woche-Befehle ignorieren den in Heute gezeigten Tag (⇧⌘↩ schließt die falsche Woche,
+- [x] **P4.3 UIMAC-4** (niedrig) Woche-Befehle ignorieren den in Heute gezeigten Tag (⇧⌘↩ schließt die falsche Woche,
   ⇧⌘[ zeigt nichts, ⌘6/⌘0 uneinheitlich). Lösung nur in `ThaliaCommands` – Tag und Woche bleiben unabhängig (kein
   `didSet`, R1 bleibt): `moveWeek` auf Heute `selectedDay += 7 × offset` (wie das Titelmenü), auf Woche wie bisher, auf
   Ziele/Rückblick deaktiviert; `closeWeek` → `.closeWeek(isOnToday ? selectedDay.week : selectedWeek)`; ⌘6 →
   `.expenses(captureDay)`; `showGlance` (macOS) zeigen oder ausblenden wie Glance.swift:938-943. Abnahme (Mac): Montag
   ⌘[ auf Sonntag, ⇧⌘↩ öffnet die Vorwoche.
-- [ ] **P4.4 UIMAC-5** (niedrig) Ein Klick in den leeren Seitenleisten-Bereich hebt die Auswahl auf, die Seite fällt auf
+- [x] **P4.4 UIMAC-5** (niedrig) Ein Klick in den leeren Seitenleisten-Bereich hebt die Auswahl auf, die Seite fällt auf
   Heute. Lösung: MacRoot `List(selection: Binding<AppTab?>(get: { app.sidebar }, set: { if let tab = $0 { app.sidebar =
   tab } }))` (Muster TodaySplit); `sidebar` bleibt optional. Abnahme (Mac): auf Ziele in die Leere klicken → Ziele bleibt.
-- [ ] **P4.5 UIMAC-6** (niedrig) Menükürzel bleiben aktiv, während ein lokales Fenster (Ziele, Zielseite, Leseliste)
+- [x] **P4.5 UIMAC-6** (niedrig) Menükürzel bleiben aktiv, während ein lokales Fenster (Ziele, Zielseite, Leseliste)
   Eingaben hält (R14-Lücke). Lösung: `var blocksSheetCommands: Bool { hasUnsavedInput }` (AppModel.swift:273) –
   `hasUnsavedInput` setzt nur `UnsavedInputModifier` und setzt es beim Verschwinden zurück (SheetChrome.swift:133-140);
   die lokalen v10-Fenster bleiben lokal (TASKS-v10 P3). Abnahme: Ziele → … → „Jahresziel eintragen…“, Wert tippen →
   ⌘N/⌘↩/⇧⌘N grau; nach Sichern/Abbrechen wieder aktiv (TESTING).
-- [ ] **P4.6 UIMAC-11** (niedrig) „Darstellung“ ohne Seitenleisten-Befehl; ⌥⌘0 steht in keinem Menü. Lösung:
+- [x] **P4.6 UIMAC-11** (niedrig) „Darstellung“ ohne Seitenleisten-Befehl; ⌥⌘0 steht in keinem Menü. Lösung:
   (1) macOS-Szene `.commands { SidebarCommands(); ThaliaCommands(app: app) }`. (2) `AppModel.showsWeekSummary` nach dem
   Muster von `showsGlanceInspector` (Schlüssel `week.summary`, `UserDefaults.standard.object(forKey:) as? Bool ?? true` –
   `bool(forKey:)` drehte den Standard um; nicht in der Übung schreiben); WeekTable bindet daran (Zuarbeit P6).
   (3) „Gehe zu“ unter „Heute im Blick“ ⌘0 (bleibt dort, TESTING.md:96): „Wochenübersicht“ ⌥⌘0 (sidebar/tab = .week,
   umschalten). (4) Das Kürzel am Symbolleistenknopf fällt weg (P6). Abnahme (Mac): Darstellung → Seitenleiste
   ausblenden; ⌥⌘0 wirkt auch mit Knopf im Überlauf.
-- [ ] **P4.7 UIMAC-12** (niedrig) Menüleisten-Fenster: kein Widerrufen, Bestätigung bleibt ewig, PH-Bereich ≠
+- [x] **P4.7 UIMAC-12** (niedrig) Menüleisten-Fenster: kein Widerrufen, Bestätigung bleibt ewig, PH-Bereich ≠
   PH-Fenster. Lösung: `confirmation` wird eine Zeile, die nach `addPowerHours`/`addExpense` sichtbar ist, solange
   `app.toasts.current?.id == lastToastID` (Text + „Widerrufen“ → `app.toasts.performUndo()`; ToastCenter räumt nach
   4,5 s); kein eigener Toast-Host (nähme Hauptfenster und Einstellungen die Toasts). Stepper und `fill` auf `0.25...16`
   (MenuBar.swift:100, :125) – eine „Zuletzt“-Kombination mit 10 PH wird nicht mehr still 8. Optional „Einstellungen…“
   über `@Environment(\.openSettings)` + `NSApp.activate()`. Abnahme (Mac): PH in der Menüleiste → „Widerrufen“ entfernt
   sie; Zeile verschwindet nach ~5 s; TESTING R96 anpassen (P1.22).
-- [ ] **P4.8 UIMAC-13** (niedrig) Mac-Einstellungen zeigen die iPhone-Anleitung für Kartenzahlungen. Lösung:
+- [x] **P4.8 UIMAC-13** (niedrig) Mac-Einstellungen zeigen die iPhone-Anleitung für Kartenzahlungen. Lösung:
   SettingsView.swift:85 unter `#if os(macOS)`: „Auf dem iPhone: Kurzbefehle → Automation → Transaktion → Aktion
   „Ausgabe in Thalia“, Betrag = Betrag, Wofür = Händler. Die Zahlungen erscheinen dann auch hier.“; iOS unverändert.
   Kein Umbau in Reiter (→ Später). Abnahme: Mac-Screenshot `settings`.
-- [ ] **P4.9 BACKUP-13** (niedrig; KR2-17) Mac: kein Menübefehl für die Sicherung. Lösung: Ablage nach „Zeitraum als
+- [x] **P4.9 BACKUP-13** (niedrig; KR2-17) Mac: kein Menübefehl für die Sicherung. Lösung: Ablage nach „Zeitraum als
   PDF…“: Trenner, „Sicherung erstellen…“ (ein Name überall, §1.6.5; ohne Kürzel), deaktiviert bei `isBlocked` oder
   offener Tour; arbeitet mit dem **echten** `app` (nie `commandTarget` = Übungsspeicher), `BackupWriter.exportText`
   (P3.11) → `app.backupFile`; Mac-RootView `.fileExporter` („Thalia Sicherung <Tag>“, `.commaSeparatedText`, Toasts
   „Sicherung gespeichert“ / Fehlertext), schreibt `backup.last` (P3.13). Kein „Sicherung einlesen…“ (das ist ⇧⌘I).
   Abnahme (Mac): Ablage → Sicherung erstellen… legt die CSV ab, „Letzte Sicherung … am Mac“ springt – auch am iPhone.
-- [ ] **P4.10 PERF-10** (niedrig, mit UIMAC-10) Der Menüleisten-Titel baut nach jedem Speichern die ganze Woche, auch
+- [x] **P4.10 PERF-10** (niedrig, mit UIMAC-10) Der Menüleisten-Titel baut nach jedem Speichern die ganze Woche, auch
   mit ausgeschalteter Menüleiste. Lösung: `updateMenuBarTitle`: `guard !isSandbox, menuBarEnabled`,
   `weekContext(for:today:goalYear: false)` (`dayStatusText` braucht kein Zieljahr); der Setter von `menuBarEnabled`
   ruft beim Einschalten einmal auf; nur der didSave-Weg entprellt (300 ms, abbrechbare Task), andere Aufrufer sofort.
   Abnahme: Code-Review; Log: aus → kein Aufbau.
-- [ ] **P4.11 SYNC-5** (mittel, plausibel) Nach einem Hintergrund-Push läuft `afterSync` erst nach 1,5 s ohne
+- [x] **P4.11 SYNC-5** (mittel, plausibel) Nach einem Hintergrund-Push läuft `afterSync` erst nach 1,5 s ohne
   Hintergrundzeit – Abend-Erinnerung trotz Abschluss am Mac. Lösung: neue Datei `BackgroundGrace.swift` (`#if os(iOS)`):
   höchstens eine `UIBackgroundTaskIdentifier`; `afterSyncSoon` beginnt sie nur, wenn keine läuft, beendet sie nur aus der
   Task, die `afterSync()` wirklich ausführte, oder im Ablauf-Handler (nie je abgebrochener Task). Im Import-Beobachter
   einmal sofort `clearRemindersOfClosedDays()` (entfernt nur Mitteilungen; `afterSync` wiederholt mit zusammengeführten
   Daten). Abnahme (Gerät): iPhone gesperrt, Tag am Mac kurz vor der Abend-Erinnerung abschließen → keine Erinnerung.
-- [ ] **P4.12 SYNC-8** (mittel, plausibel) Am Mac schaut Thalia nicht mehr in die App Group, sobald eine andere App vorn
+- [x] **P4.12 SYNC-8** (mittel, plausibel) Am Mac schaut Thalia nicht mehr in die App Group, sobald eine andere App vorn
   ist. Lösung (macOS, `startConnectedApps`): den didResignActive-Beobachter nicht registrieren; nach `monitor.start()`
   einmal `monitor.setActive(true)` – der 5-min-Takt läuft, solange der Prozess läuft; didBecomeActive → `setActive(true)`
   bleibt. iOS unverändert; App Nap darf strecken. Der Text „alle 5 Minuten, solange sie offen ist“ stimmt dann;
   CONNECTED_APPS §5 Frage 3 → Zuarbeit P8. Abnahme (Mac): Theo schreibt, Thalia im Hintergrund → Menüleiste spätestens
   nach 5 min aktuell.
-- [ ] **P4.13 SYNC-9** (niedrig, mit WATCH-16) Kein Zeichen, ob eigene Änderungen gesendet sind; der Notspeicher der
+- [x] **P4.13 SYNC-9** (niedrig, mit WATCH-16) Kein Zeichen, ob eigene Änderungen gesendet sind; der Notspeicher der
   Watch ist unsichtbar. Lösung: (1) AppModel beobachtet `NSPersistentCloudKitContainer.eventChangedNotification` selbst
   (Kit unverändert): `lastSent` (.export erfolgreich), `lastReceived` (.import) in UserDefaults, beobachtbar;
   Einstellungen → iCloud & Daten: „Gesendet: vor 1 Min. · Empfangen: vor 4 Min.“ (Stil `SyncDevice.seenText`).
@@ -1023,14 +1023,14 @@ Config/ci.env (P1.21).
   `sync.seen.*`) älter als 15 min, seitdem kein erfolgreicher Export, Account verfügbar → orange „Letzte Änderung noch
   nicht an iCloud gesendet“. (3) Watch → Zuarbeit P8. Watch-SyncMonitor und Menüleisten-Zeile → Später. Abnahme
   (Gerät): Haken am iPhone → „Gesendet“ springt; 20 min Flugmodus → Warnung.
-- [ ] **P4.14 SYNC-10** (mittel) Siri, Kurzbefehle und Widget-✓ warten nicht auf den iCloud-Export (andere Geräte sehen
+- [x] **P4.14 SYNC-10** (mittel) Siri, Kurzbefehle und Widget-✓ warten nicht auf den iCloud-Export (andere Geräte sehen
   es erst nach dem Öffnen). Lösung: `BackgroundGrace.holdForExport(after: saveDate, timeout: .seconds(20))` (App-Ziel,
   iOS): Hintergrundaufgabe, endet bei einem `.export` mit `startDate >= saveDate` und `endDate != nil`, bei Zeitablauf
   oder Ablauf; „fire and forget“ nach dem Speichern in `LogPowerHourIntent`, `LogMeasureIntent`, `AddExpenseIntent`
   (Zuarbeit P8) und in `AppModel.applyWidgetAction`; der Siri-Dialog kommt sofort. Nicht in Shared/WidgetActions.swift
   (die Erweiterung hat kein `UIApplication.shared`). SYNC.md-Grenze erst nach Gerätetest (P1.20). Abnahme (Gerät):
   iPhone zu, Ausgabe per Kurzbefehl → Mac zeigt sie, ohne dass die App offen war.
-- [ ] **P4.15 SYNC-19** (niedrig) „Geräte im Abgleich“: ein Menüleisten-Mac meldet sich nie, alte Installationen
+- [x] **P4.15 SYNC-19** (niedrig) „Geräte im Abgleich“: ein Menüleisten-Mac meldet sich nie, alte Installationen
   bleiben, Zeiten laufen nicht weiter. Lösung: `recordDeviceSeen()` am Ende von `refreshToday()` (Mac: jedes
   didBecomeActive; iOS schon auf 10 min begrenzt) und in `MenuBarContent.onAppear`; nie aus `afterSync` (sonst
   Ping-Pong). Zeilen in `TimelineView(.periodic(from: .now, by: 60))`; Geräte, 60 Tage nicht gesehen, in einer
@@ -1039,7 +1039,7 @@ Config/ci.env (P1.21).
   vor 2 Min.“); fehlt sie bei einem Gerät der letzten 30 Tage: „Thalia 1.9 – bitte dort aktualisieren. Bis dahin werten
   Mac und Watch abgeschlossene Wochen nicht selbst.“ (orange, P2.1 (d), KR1-9). Abnahme: Mac nur über die Menüleiste
   benutzt → aktuelle Zeit am iPhone; Gerät ohne `sync.build.` → Hinweis.
-- [ ] **P4.16 GAP-1** (hoch) Die „Wochenabschluss“-Erinnerung öffnet am Montag (oder bei einem anderen Wochentag) die
+- [x] **P4.16 GAP-1** (hoch) Die „Wochenabschluss“-Erinnerung öffnet am Montag (oder bei einem anderen Wochentag) die
   neue, leere Woche. Lösung: `case "close-week"` ohne Argument → `argument.flatMap(WeekKey.init) ?? weekToCloseNow()`
   über `WeekKey.toClose(on: dayToClose(), isClosed:, hasData:)` (Zuarbeit P1, Linux-Test): Sonntag → diese Woche; sonst
   die Vorwoche, wenn sie Plan oder Archivdaten hat (`hasItems || archiveGrades != nil || recordedScore != nil`) und offen
@@ -1047,7 +1047,7 @@ Config/ci.env (P1.21).
   today.week && today.weekday != .sunday` orange „Diese Woche läuft noch bis Sonntag.“ über dem Knopf (Zuarbeit P6;
   ein Samstag-Abschluss bleibt möglich). Datierte Wochen-Erinnerungen tragen ihre Woche ohnehin (P4.17). Abnahme:
   Core-Test der Regel (So; Mo mit offener Vorwoche; Mo mit geschlossener; Vorwoche ohne Plan).
-- [ ] **P4.17 WATCH-5** (niedrig, mit SYNC-4) Morgen-Erinnerung an Krank/Urlaub-Tagen; „Wochenabschluss“ kommt nach dem
+- [x] **P4.17 WATCH-5** (niedrig, mit SYNC-4) Morgen-Erinnerung an Krank/Urlaub-Tagen; „Wochenabschluss“ kommt nach dem
   Abschluss (auch am Mac) und öffnet die geschlossene Woche. Lösung: Core (Zuarbeit P1): `morningRequests` (ids
   `thalia.morning.<JJJJ-MM-TT>`, 7 Tage, `morningDays` beachtet, entschuldigte Tage aus) und `weeklyRequests` (Woche der
   Erinnerung = Woche des Erinnerungstags bei Fr–So, sonst Vorwoche; ausgelassen, wenn sie abgeschlossen ist und die
@@ -1058,7 +1058,7 @@ Config/ci.env (P1.21).
   neues `AppModel.reopenWeek(_:)` (für P6.8) plant neu. TESTING: Morgen- und Wochen-Erinnerungen enden nach ~7 Tagen
   ohne Öffnen, wie die Abende. Abnahme: Tests neben `eveningRequests` (V7Tests); Gerät: Woche am Sonntagvormittag am Mac
   abschließen → keine 17-Uhr-Erinnerung; Krank-Tag → keine Morgen-Erinnerung.
-- [ ] **P4.18 GAP-2** (mittel) Notspeicher und kaputtes iCloud sind nur tief in Einstellungen sichtbar. Lösung:
+- [x] **P4.18 GAP-2** (mittel) Notspeicher und kaputtes iCloud sind nur tief in Einstellungen sichtbar. Lösung:
   `SyncGerman.isPersistentProblem` (Zuarbeit P1); eine kompakte, nicht blockierende Zeile nur bei dauerhaften Zuständen
   (nie bei kurzen Netzfehlern oder Account `.unknown` beim Start, nie in `.demo`/Übung): `.memory` „Thalia kann gerade
   nicht speichern – Einträge gehen beim Beenden verloren.“ (rot, nicht wegklickbar); `.local` „Nur auf diesem Gerät –
@@ -1071,14 +1071,14 @@ Config/ci.env (P1.21).
   erfolgreichen Export. Signatur `SyncGerman.isPersistentProblem(mode:account:quotaExceeded:)`. Die Debug-Startoption ist
   eine eigene: `-FakeSyncProblem local|memory|quota`, gelesen in AppModel (`LaunchOptions` liegt in Vendor und bleibt).
   Abnahme: `-FakeSyncProblem local`, `memory` und `quota` zeigen je die Zeile.
-- [ ] **P4.19 GAP-3** (mittel) Die Übungsseite der Tour bietet Echtes an (Sicherung mit Übungsdaten, Import, Einstellungen
+- [x] **P4.19 GAP-3** (mittel) Die Übungsseite der Tour bietet Echtes an (Sicherung mit Übungsdaten, Import, Einstellungen
   mit echten Erinnerungen). Lösung: `SheetContent` (RootView.swift) zeigt bei `app.isSandbox` für `.importPlan`,
   `.importPast`, `.planWeek`, `.rangePDF`, `.trash`, `.archive`, `.settings` eine kleine `PracticeUnavailableView`: „In der
   Übung nicht verfügbar – nach der Tour mit deinen eigenen Daten.“ mit „Schließen“ (KR2-20: „Mehr“ gibt es nur auf
   iOS, TodayView.swift:3076/:3193, WeekView.swift:481) (deckt Menüs, „2 · CSV einfügen“ und Mac-Befehle);
   `.connectedApps` und die anderen Tour-Vorführungen bleiben (ConnectedApps.swift:1210-1220). Ablage-Befehle grau bei
   `app.tourModel != nil`. Heute-„Mehr“-Menüs → Zuarbeit P5. Abnahme: Tour → Mehr ohne Import; ⇧⌘I während der Tour grau.
-- [ ] **P4.20 STORE-5** (niedrig) „Beginn“ des Zieljahrs ändern versteckt alle Ergebnisse und Abschnitte; jede Eingabe
+- [x] **P4.20 STORE-5** (niedrig) „Beginn“ des Zieljahrs ändern versteckt alle Ergebnisse und Abschnitte; jede Eingabe
   schreibt vier synchronisierte Einstellungen. Lösung: Einstellungen → Jahresziele hält „Beginn“, „Ende“,
   „Zielüberprüfung“ lokal und speichert mit „Zieljahr sichern“ (Knopf nur bei Änderung – kein ungültiger Zwischenstand
   geht zu iCloud); Motto bei `.onSubmit` und beim Verlassen. Weicht „Beginn“ ab und gibt es Ergebnisse oder gespeicherte
@@ -1086,7 +1086,7 @@ Config/ci.env (P1.21).
   1. Juni 2026. Mit dem neuen Beginn werden sie nicht mehr angezeigt – stellst du den alten Beginn wieder ein, sind sie
   zurück.“ / „Neues Zieljahr beginnen“ / „Abbrechen“. Speichern über `setGoalPeriod` (eine Änderung, P2.10).
   „Mitnehmen“ → Später. Abnahme (Gerät): Motto tippen schreibt bis zum Bestätigen nichts; Beginn ändern fragt.
-- [ ] **P4.21 KR2-8** (niedrig–mittel) Mac: „Jahresziel eintragen…“ und „Lesen…“ haben kein Kürzel
+- [x] **P4.21 KR2-8** (niedrig–mittel) Mac: „Jahresziel eintragen…“ und „Lesen…“ haben kein Kürzel
   (ThaliaApp.swift:176, :178) – die Abnahme „Mac ohne Maus“ von P7.4 geht so kaum. Lösung: ⌥⌘J „Jahresziel eintragen…“,
   ⌥⌘L „Lesen…“ in `ThaliaCommands` (beide in der App frei); `isBlocked`/`blocksSheetCommands` (P4.5) gelten mit.
   TESTING-Kürzelliste → P1.22. Abnahme (Mac): ⌥⌘L öffnet „Lesen“ mit vorgewähltem Buch und Fokus (P7.4), Zahl, ↩ trägt
@@ -1096,60 +1096,60 @@ Config/ci.env (P1.21).
 Prüfung: `swiftc -parse`, Mac-CI; Screenshots `today`, `overview`, `focus`, `close-day`, `create`, `mac-today`; Gerät für
 P5.12.
 
-- [ ] **P5.1 PERF-1** (mittel) Dieselbe Woche wird je Änderung 3- (iPhone) bis 7-mal (Mac) gelesen und gewertet. Lösung:
+- [x] **P5.1 PERF-1** (mittel) Dieselbe Woche wird je Änderung 3- (iPhone) bis 7-mal (Mac) gelesen und gewertet. Lösung:
   `YesterdayBanner(today:style:context: WeekContext? = nil)`: ist `context.week == yesterday.week && context.today ==
   today`, `content(context)`, sonst eigener `WeekReader(week:today:goalYear: false)` (nur montags); Übergabe an
   TodayView.swift:151, :289, :363 und Glance.swift:151, :960. Kein globaler WeekCache (→ Später). Danach einen ✓ auf
   iPhone und Mac im TestFlight-Build messen (Instruments oder `os_signpost` um `WeekContext.init`); ein Cache nur, wenn
   ein Tipp dann noch > 30 ms Hauptthread kostet. Abnahme: Code-Review (Di–So ohne eigenen Banner-Leser); Mac-CI ohne
   neue Hänger-Hinweise.
-- [ ] **P5.2 PERF-17** (niedrig) „Heute im Blick“ liest dieselbe Woche zweimal (zweiter Leser nur für den PDF-Knopf).
+- [x] **P5.2 PERF-17** (niedrig) „Heute im Blick“ liest dieselbe Woche zweimal (zweiter Leser nur für den PDF-Knopf).
   Lösung: ein Leser – `.toolbar { Schließen; PDFButton(kind: .day(day), context: context, title: "PDF") }` an `GlanceList`
   innerhalb des Leser-Blocks (Glance.swift:78-100); Titel und Ziele bleiben, wo sie sind. Mit P5.1 von 3 auf 1 Leser.
   Abnahme: Screenshot `overview` unverändert.
-- [ ] **P5.3 UIPHONE-7** (mittel) „Diese Woche noch“: Titel abgeschnitten, Quote bricht um. Lösung (nur
+- [x] **P5.3 UIPHONE-7** (mittel) „Diese Woche noch“: Titel abgeschnitten, Quote bricht um. Lösung (nur
   `WeeklyOpenSection`, Glance.swift:688-713): Titel und Quote untereinander (`VStack`, Titel `.subheadline`
   `lineLimit(2)`, Quote `.caption .monospacedDigit() .secondary`), Quote ohne „ diese Woche“ („0 von 1“; bei
   entschuldigten Tagen „0 von 1 · Rest zählt halb (krank)“ statt des rätselhaften „· ½ krank“, Glance.swift:707-711,
   KR2-11). Kein `fixedSize`. Heute und Tag abschließen behalten ihren Text. Abnahme: Screenshot `overview` hell/dunkel.
-- [ ] **P5.4 UIPHONE-10** (niedrig) „Messwert eintragen“: flache Liste aller Messwerte, Feld ohne Fokus. Lösung:
+- [x] **P5.4 UIPHONE-10** (niedrig) „Messwert eintragen“: flache Liste aller Messwerte, Feld ohne Fokus. Lösung:
   `MeasurePicker` mit „Heute“ (`applies && period != .week`) und „Diese Woche“ (wöchentliche und heute nicht fällige),
   je Zeile KeyBadge und aktueller Wert; `ContentUnavailableView` bleibt. `MeasureForm(autofocus: Bool = false)`, nur aus
   dem Picker true: `.onAppear { if autofocus && !isTime && !isText && !isWork && !isExpense && !isList { valueFocused =
   true } }`; direkte Aufrufe (Heute-Info, „Verlauf und Einträge…“) ohne Fokus. Gilt auch für Mac ⇧⌘E. Abnahme: Gerät:
   Feld hat Fokus nach der Wahl.
-- [ ] **P5.5 UIPHONE-11** (niedrig) „Tag abschließen“ sagt nicht, dass Leeres nicht zählt. Lösung: `heroSubtitle`
+- [x] **P5.5 UIPHONE-11** (niedrig) „Tag abschließen“ sagt nicht, dass Leeres nicht zählt. Lösung: `heroSubtitle`
   (CloseDayView.swift:341-344): offen, nicht entschuldigt, `requiredBlanks` nicht leer → „Noch \(n) offen – zählen
   nicht mit“; unterer Knopf „Tag abschließen · \(n) bleiben offen“ (KR2-19: dasselbe Wort wie die Leiste darunter,
   „7 offen“); beide aus `requiredBlanks.count` (=
   `overall.blank`, R5). Kein Dialog (Abendablauf bleibt schnell). Abnahme: Screenshot `close-day`.
-- [ ] **P5.6 UIPHONE-13** (niedrig) VoiceOver-Lücken: tippbare Zeilen ohne Knopf-Merkmal, fester Text am Abschluss-Knopf,
+- [x] **P5.6 UIPHONE-13** (niedrig) VoiceOver-Lücken: tippbare Zeilen ohne Knopf-Merkmal, fester Text am Abschluss-Knopf,
   „tippen zum Eintippen“. Lösung: `.accessibilityAddTraits(.isButton)` + kurzer Hinweis („Öffnet die Notiz“ …) an
   TodayView.swift:2370 und :2820 (Hinweis dort vorhanden); WeekView/WeekTable → Zuarbeit P6, GoalsView → P7, RootView
   (`context.isClosed(day) ? "Tagesabschluss ansehen" : "Tag abschließen"`) → P4; TodayView.swift:1903 Label „\(title) in
   \(unit)“ ohne Hinweis. Tippverhalten unverändert. Abnahme: VoiceOver am Gerät (TESTING v11).
-- [ ] **P5.7 UIPHONE-14** (niedrig) Fokus und Wochenziele sagen an freien, Krank- und Urlaubstagen „heute noch nichts“.
+- [x] **P5.7 UIPHONE-14** (niedrig) Fokus und Wochenziele sagen an freien, Krank- und Urlaubstagen „heute noch nichts“.
   Lösung nur bei Wert 0: Fokus `dayLine` (Focus.swift:490-495) – entschuldigt → „\(label) \(context.excusedWord([day]))“,
   `!context.applies(measure, on: day)` → „\(label) frei“, sonst wie bisher; `WeeklyGoalRow.todayText`
   (TodayView.swift:2211-2213) ebenso mit `goal.measure`, nur bei Arbeit. Abnahme: Screenshot `focus` (Erholungstag) zeigt
   „heute frei“.
-- [ ] **P5.8 UIPHONE-15** (niedrig) „Eigene Wertung entfernen“ und „Wertung entfernen“ (Vergangene Woche) ohne
+- [x] **P5.8 UIPHONE-15** (niedrig) „Eigene Wertung entfernen“ und „Wertung entfernen“ (Vergangene Woche) ohne
   Widerrufen. Lösung: `OverrideSheet` (CloseDayView.swift:612-614) merkt alte Note und Grund, zeigt nach dem Entfernen
   `app.toasts.show("\(category.key): eigene Wertung entfernt", symbol: "trash") { setOverride(…, score: old, reason:
   oldReason) }` (neuer Datensatz derselben Art), dann schließen; Vergangene Woche → Zuarbeit P3. Kein extra Dialog.
   Abnahme (Gerät): entfernen → Widerrufen bringt Note und Grund zurück.
-- [ ] **P5.9 UIPHONE-17** (niedrig) Uneinheitliche Texte. Lösung: `workText` (CloseDayView.swift:418) „Arbeitsfrei –
+- [x] **P5.9 UIPHONE-17** (niedrig) Uneinheitliche Texte. Lösung: `workText` (CloseDayView.swift:418) „Arbeitsfrei –
   keine PH nötig“; „…“ an „Vergangene Woche nachtragen“ und „Mehrere Wochen als PDF“ in beiden Heute-Menüs
   (TodayView.swift:3067-3068, :3184-3185); „IDs“, „Messwert-IDs“, „CSV-Block“ → Zuarbeit P3. Die Fokus-Kachel bleibt
   kompakt „Woche 23 / 22,4 PH“; „hinten“ wird „im Rückstand“ (§1.2.4, P1.10, P7.2). Abnahme: Screenshot `close-day`.
-- [ ] **P5.10 UIPHONE-18** (niedrig) Erfassen: „Fokus ansehen“ (nur Ansicht) steht oben, „Lesen“ weiter unten. Lösung
+- [x] **P5.10 UIPHONE-18** (niedrig) Erfassen: „Fokus ansehen“ (nur Ansicht) steht oben, „Lesen“ weiter unten. Lösung
   (Editors.swift:1774-1797): Listen-Optionen in der Reihenfolge Lesen, Tag abschließen, Jahresziel eintragen, Punkt
   anlegen, Messwert anlegen, Wochenplan importieren, Fokus ansehen; die vier Kacheln bleiben, keine wechselnde Kachel.
   TESTING.md:93 gilt weiter. Abnahme: Screenshot `create`.
-- [ ] **P5.11 UIPHONE-20** (niedrig) Der Hero-Titel bricht im Datum um („Sonntag, 22. / November 2026“). Lösung:
+- [x] **P5.11 UIPHONE-20** (niedrig) Der Hero-Titel bricht im Datum um („Sonntag, 22. / November 2026“). Lösung:
   `heroTitle` in CloseDayView: „\(weekday.name), \(day).\u{00A0}\(Monat)“, Jahr nur bei einem anderen Jahr; Core
   `longLabel` bleibt (PDF, Prompt, Tests). Abnahme: Screenshot `close-day`.
-- [ ] **P5.12 UIMAC-3** (mittel; KR2-7) Tasten 1–4 wirken erst nach einem Mausklick und enden nach jedem
+- [x] **P5.12 UIMAC-3** (mittel; KR2-7) Tasten 1–4 wirken erst nach einem Mausklick und enden nach jedem
   Kategoriewechsel. Lösung: (1) **Sichtbare Auswahl vor dem ersten Tastendruck:** bekommt die Liste den Fokus ohne
   Auswahl, setzt `CategoryPage` `selectedItemCode` auf den ersten offenen Punkt (`nextOpenItem`-Regel) – er ist markiert,
   bevor „1“ wirkt (KR2-7: ein Tastendruck auf einen nicht markierten Punkt wäre blind; `handleKey` braucht heute
@@ -1161,36 +1161,36 @@ P5.12.
   Kategorienliste lässt den Fokus dort (↑/↓ blättert weiter). ⌫/Return/Escape und Zellen-Fokus der Woche → Später;
   TESTING.md:176 → P1.22. Abnahme (Mac): App aktivieren, ⌘1 – der erste offene Punkt ist markiert –, „1“ → erledigt,
   ohne Klick; ⌥⌘↓, dann 1 → ebenso.
-- [ ] **P5.13 UIMAC-14** (niedrig) Notizen lassen sich mit der Maus nur über ihr Fenster löschen. Lösung: Notizzeile
+- [x] **P5.13 UIMAC-14** (niedrig) Notizen lassen sich mit der Maus nur über ihr Fenster löschen. Lösung: Notizzeile
   (TodayView.swift:2357-2373) `.contextMenu { Bearbeiten… ; Löschen (destruktiv, app.trash([note])) }` wie alle anderen
   Wisch-Zeilen. Kein Hover-Modifier, kein `pointerStyle`, kein Kontextmenü an `CategoryListRow` (→ Später). Abnahme (Mac):
   Rechtsklick → Löschen mit Widerrufen.
-- [ ] **P5.14 DISPLAY-15** (niedrig) Mac-Liste zeigt bei einer vollständigen Kategorie ohne Wertung „100 %“ statt ✓.
+- [x] **P5.14 DISPLAY-15** (niedrig) Mac-Liste zeigt bei einer vollständigen Kategorie ohne Wertung „100 %“ statt ✓.
   Lösung: `CategoryListRow` (TodayView.swift:877-888) `else if entry.isComplete { Image(systemName: "checkmark") …
   .help("Alles erfasst – heute nichts zu werten").accessibilityLabel("alles erfasst") }`; iPhone `CategoryPicker` (:812)
   dasselbe statt „–“; Wochentabelle behält „–“. Abnahme: Screenshot `mac-today`.
-- [ ] **P5.15 DISPLAY-17** (niedrig) Ausgaben genau am Limit: rotes „+0 €“ bei „< 50 €“. Lösung: `ExpenseGoal.init`
+- [x] **P5.15 DISPLAY-17** (niedrig) Ausgaben genau am Limit: rotes „+0 €“ bei „< 50 €“. Lösung: `ExpenseGoal.init`
   (Expenses.swift:359) vergleicht in Cent; `target.isLimit && totalCents == limitCents` → bei `.below` „nicht unter
   50 €“ (rot), bei `.atMost` „Limit ausgeschöpft“ (orange) (KR2-28: ein rotes „am Limit“ war mehrdeutig); „noch X €“/„+X €“
   auf Cent-Basis; VoiceOver „genau 50 €, Ziel unter 50 €“. Core `Target.isMet` bleibt (Wertung). Abnahme: 20,10 + 29,90
   bei „< 50“ → „nicht unter 50 €“; bei „≤ 50“ → „Limit ausgeschöpft“.
-- [ ] **P5.16 SYNC-18** (niedrig) Reflexionsfelder in „Tag/Woche abschließen“ übernehmen Änderungen des anderen Geräts
+- [x] **P5.16 SYNC-18** (niedrig) Reflexionsfelder in „Tag/Woche abschließen“ übernehmen Änderungen des anderen Geräts
   nicht und überschreiben sie beim Tippen. Lösung: `stored[f] = context.reflection(scope:field:)`;
   `.onChange(of: stored)`: Felder mit `answers[f] == loadedAnswers[f]` folgen still; bearbeitete Felder mit abweichendem
   gespeichertem Text bekommen „Am anderen Gerät geändert“ mit „Übernehmen“ (setzt Text und `loadedAnswers[f]`); sonst
   gewinnt wie heute der eigene Text. CloseWeekView → Zuarbeit P6. Abnahme (Gerät): Tagebuch am iPhone, Fenster am Mac
   offen → Mac zeigt den neuen Text.
-- [ ] **P5.17 GAP-10** (niedrig) Ein Zukunftstag lässt sich abschließen (morgen angesehen, Mond getippt). Lösung:
+- [x] **P5.17 GAP-10** (niedrig) Ein Zukunftstag lässt sich abschließen (morgen angesehen, Mond getippt). Lösung:
   `dayToClose(showing:)` → `if let day, day < today { return day }` (Zuarbeit P4, AppModel.swift:404-405) – heute und
   Zukunft fallen auf `closingDay`; `CloseDayForm` bei `day > app.today` (z. B. Link `close-day:<Zukunft>`) statt der
   Knöpfe „Abschließen geht erst am \(day.shortLabel).“ (KR2-16: „Morgen liegt in der Zukunft …“ sagte dasselbe
   zweimal), ⌘↩ wirkungslos. Abnahme (Gerät): zu morgen blättern, Mond → heutiger Tag.
-- [ ] **P5.18 KR2-9** (niedrig–mittel) Der Heute-Hero schneidet den Kategorietitel ab („1.1 Ernährung und…“, Screenshot
+- [x] **P5.18 KR2-9** (niedrig–mittel) Der Heute-Hero schneidet den Kategorietitel ab („1.1 Ernährung und…“, Screenshot
   `iphone-today-light`) – Hauptbildschirm, jeden Tag gesehen; Ursache `.lineLimit(1)` mit fünf festen Elementen dahinter
   (TodayView.swift:1229-1233). Lösung: Titel `.lineLimit(2)` und `.fixedSize(horizontal: false, vertical: true)`; die
   Elemente dahinter bleiben. (Aus P6.6, wo der Hero „blieb“.) Abnahme: Screenshot `today` zeigt „Ernährung und
   Gewicht“ ganz.
-- [ ] **P5.19 KR1-7** (mittel) Fokus allein schreibt einen eigenen Wert: `MeasureInput` speichert beim Verlassen des
+- [x] **P5.19 KR1-7** (mittel) Fokus allein schreibt einen eigenen Wert: `MeasureInput` speichert beim Verlassen des
   Felds (TodayView.swift:1897), sobald der Text mit zwei Stellen vom ungerundeten Wert abweicht (`guard parsed != value`,
   :1981) – Hinein- und Herausklicken bei 7,316 h legt einen eigenen Eintrag 7,32 an, der einen übernommenen Health-Wert
   dauerhaft (iCloud, Sicherung, Prompt) überdeckt. Lösung: `commit` vergleicht mit dem **gezeigten** Wert –
@@ -1202,7 +1202,7 @@ P5.12.
 Prüfung: `swiftc -parse`, Mac-CI; Screenshots `week`, `weekly-goals`, `close-week`, `review`, `range-pdf`, `mac-week`;
 Gerät für P6.11.
 
-- [ ] **P6.1 DISPLAY-4** (mittel) Eingefrorene Woche: Wochenblatt und Wochen-PDF zeigen eine neu gerechnete Note,
+- [x] **P6.1 DISPLAY-4** (mittel) Eingefrorene Woche: Wochenblatt und Wochen-PDF zeigen eine neu gerechnete Note,
   Rückblick/Ziele/PDF-Bericht die gespeicherte – neben „ihre Wertung bleibt, wie sie ist“. Lösung nur für eingefrorene
   abgeschlossene Wochen (`context.isClosed && context.isFrozen`): `heroScore` (ArchiveCard.swift:80-82), `GoalBars`
   (`plan.finalGoalScoreMap[goal.key]`), Ring des Wochen-PDFs (PDFExport.swift:626) und Teilen-Bild zeigen
@@ -1211,7 +1211,7 @@ Gerät für P6.11.
   wenn das Gerät Health-Wochen wertet (`scoresHealth`) oder die Woche keine Health-Werte liest (Zuarbeit P7,
   Segments.swift; „oder geteilt abgedeckt“ ergänzt P9.3). Kategoriezeilen bleiben live. Abnahme (Harness/Gerät):
   eingefrorene Woche ändern → Hero bleibt, Zeile „Nach heutigem Stand“.
-- [ ] **P6.2 DISPLAY-3** (hoch) PDF-Bericht „4/3 Wochen abgeschlossen“, Tage zählen Krank-Tage mit. Lösung: Wochen
+- [x] **P6.2 DISPLAY-3** (hoch) PDF-Bericht „4/3 Wochen abgeschlossen“, Tage zählen Krank-Tage mit. Lösung: Wochen
   (RangePDF.swift:626-634): `finished = data.rows.filter { $0.line.isClosed || !$0.hasPages }.count`,
   `"\(finished)/\(data.rows.count)"`; `isFinishedWithoutPlan` entfällt; laufende Woche zählt offen. Tage: `WeekLine
   .closedDays` ohne entschuldigte (Zuarbeit P1, Reports.swift:873, Doc-Kommentar); `RangePDFData.closedCountedDays =
@@ -1219,7 +1219,7 @@ Gerät für P6.11.
   (Suite „v8 report over several weeks“, V8Tests.swift:699, KR3-25)
   (geschlossener kranker Donnerstag → `closedDays == 2`); Screenshot `range-pdf` „n/n Wochen“; TESTING-Schritt mit
   abgeschlossener Archivwoche.
-- [ ] **P6.3 DISPLAY-8** (niedrig, mit WATCH-19; KR2-21, KR3-14) „x/10 Ziele bewertet“, „je 10 %“, „10 Jahresziele“
+- [x] **P6.3 DISPLAY-8** (niedrig, mit WATCH-19; KR2-21, KR3-14) „x/10 Ziele bewertet“, „je 10 %“, „10 Jahresziele“
   fest – falsch mit entschuldigten oder neuen Zielen. Lösung: (1) Rückblick: wie `excusedClosed` für abgeschlossene
   Zeilen mit `finalGoalsScored < goals.count` den `score.goalsTotal` über weekContext holen (wenige); „n/total Ziele
   bewertet“ nur bei n < total. (2) Texte ohne Zahl: CloseWeekView :262 – nur der erste Satz wird „Jedes Jahresziel zählt
@@ -1231,26 +1231,26 @@ Gerät für P6.11.
   Jahresziele gleich gewichtet“ und Beschreibung „Wochenwertung und deine Jahresziele“ → P8. Kein „je 9,09 %“.
   (3) Teilen-Bild „\(goals.count) Jahresziele“ (Sharing.swift:332). Balken nach Zielschlüssel → Später. Abnahme (nach
   Runde 3b): `grep -rnE "10 %|10 Prozent|[Zz]ehn Jahresziele" App Widgets` leer; Screenshots `review`, `week`.
-- [ ] **P6.4 DISPLAY-10** (niedrig) PDF-Bericht mischt Genauigkeit (Ring 6,81, Zeile 6,8; 7,95 erscheint als „8“). Lösung:
+- [x] **P6.4 DISPLAY-10** (niedrig) PDF-Bericht mischt Genauigkeit (Ring 6,81, Zeile 6,8; 7,95 erscheint als „8“). Lösung:
   `Format.score(score, outOf: false)` statt `oneDecimal` in `RangeBar.valueText` (:458), `RangeScoreChip` (:766),
   `RangeGoalCell` (:796) (Regel V6: bis zu zwei Stellen); `oneDecimal` nur für `PowerHoursCell` (:814); Zelle 19 pt mit
   `minimumScaleFactor(0.6)`, Chip 38 pt. Abnahme: Screenshot `range-pdf`.
-- [ ] **P6.5 DISPLAY-12** (niedrig, mit WATCH-10) Krank/Urlaub: Siri sagt „100 % erfasst, nichts offen“, das Teilen-Bild
+- [x] **P6.5 DISPLAY-12** (niedrig, mit WATCH-10) Krank/Urlaub: Siri sagt „100 % erfasst, nichts offen“, das Teilen-Bild
   zeigt einen vollen Ring. Lösung: Intents → Zuarbeit P8 (erste Zeile in `sentence()`: `summary.isExcusedDay` →
   „Heute: \(excusedName) – der Tag zählt nicht. \(PH).“; `count == 0` und `score.days[today]?.due == 0` → „Heute ist
   nichts fällig.“; Rückgabewert bleibt, `IntentDescription` ergänzt „Ergebnis: nach dem Abschluss die Tageswertung
   (0–10), sonst der erfasste Anteil in %.“). Sharing: `ShareContent.ringText`/`ringCaption` (optional); `day()` bei
   `context.isExcused(day)` fill 0, „–“, `excusedName`; ShareCard nutzt sie. Abnahme (Gerät): Krank-Tag teilen → Ring
   „–“ mit „Krank“.
-- [ ] **P6.6 DISPLAY-13** (niedrig) Kategorienamen werden vom „✓ über 8“ abgeschnitten. Lösung: WeekView.swift:317
+- [x] **P6.6 DISPLAY-13** (niedrig) Kategorienamen werden vom „✓ über 8“ abgeschnitten. Lösung: WeekView.swift:317
   `Text(context.title(of: category)).lineLimit(2).layoutPriority(1)`; die Zielkarte (GoalsView.swift:366) → Zuarbeit P7.
   Nicht `shortTitle` (verlöre den abschnittsgenauen Titel), kein Nur-Symbol (kollidiert mit dem Siegel geschlossener
   Tage). Der Heute-Hero hat eine andere Ursache (→ P5.18). Abnahme: Screenshot `week` dunkel.
-- [ ] **P6.7 GAP-4** (niedrig) Der Abschluss einer vergangenen Woche bietet „Nächste Woche · KWn+1 – Prompt kopieren /
+- [x] **P6.7 GAP-4** (niedrig) Der Abschluss einer vergangenen Woche bietet „Nächste Woche · KWn+1 – Prompt kopieren /
   CSV einfügen“ für eine längst vergangene Woche an. Lösung: `planningSection` (CloseWeekView.swift:152-172) nur, wenn
   `next >= context.today.week`; sonst nichts. Montags nach der letzten Woche bleibt die Planung. Abnahme: Rückblick →
   alte Woche abschließen → keine Planung.
-- [ ] **P6.8 GAP-7** (mittel) „Woche wieder öffnen“: ein Tipp, keine Rückfrage, kein Widerrufen; in eingefrorenen Wochen
+- [x] **P6.8 GAP-7** (mittel) „Woche wieder öffnen“: ein Tipp, keine Rückfrage, kein Widerrufen; in eingefrorenen Wochen
   ist die alte Note danach weg. Lösung: `CloseWeekView.reopen` ruft `app.reopenWeek(week)` (Zuarbeit P4): Schnappschuss
   (`ClosedWeekSnapshot`, Zuarbeit P2: `closedAt`, `finalScore`, `finalGoalScores`, `finalGoalsScored`,
   `categoryScores`), öffnen, Toast „\(week.label) wieder geöffnet“ mit Widerrufen (schreibt alles zurück, ohne
@@ -1258,30 +1258,30 @@ Gerät für P6.11.
   öffnen?")`: „Die Woche gehört zu einem früheren Abschnitt. Ihre Wertung \(score) wird beim erneuten Abschließen nach
   heutigen Regeln neu berechnet.“ Knopf `.borderless`, `.secondary` (nicht gleichrangig neben „Fertig“). Abnahme
   (Gerät): öffnen → Widerrufen stellt Note und Kategorie-Noten exakt her.
-- [ ] **P6.9 GAP-11** (niedrig) Das Wochen-Bild zeigt den Zwischenstand einer laufenden Woche als Endnote. Lösung:
+- [x] **P6.9 GAP-11** (niedrig) Das Wochen-Bild zeigt den Zwischenstand einer laufenden Woche als Endnote. Lösung:
   `ShareContent.week`: `subtitle: context.isClosed ? "Meine Woche" : "Zwischenstand"`, Ring-Unterschrift „bisher“ statt
   „von 10“ (über `ringCaption`, P6.5). Abnahme: Mittwoch teilen → „Zwischenstand“.
-- [ ] **P6.10 PERF-8** (niedrig) Rückblick baut im Body je offener Woche einen ganzen Kontext. Lösung: `let weeks =
+- [x] **P6.10 PERF-8** (niedrig) Rückblick baut im Body je offener Woche einen ganzen Kontext. Lösung: `let weeks =
   self.weeks` einmal je Body und an `unclosed`, `excusedClosed`, `chartPoints` übergeben; in beiden Schleifen
   `weekContext(for:today:goalYear: false)` (gelesen werden nur Note und `isExcused`); `archivedWeeks`: ein Abruf der
   PlanItem-Wochen aller Archivwochen in ein Set statt `items(week)` je Woche. Kein `@State`-Speicher (eine offene
   Vorwoche muss live bleiben). Abnahme: Screenshot `review` unverändert; Code-Review.
-- [ ] **P6.11 PERF-12** (mittel) Der bewegte Verlauf läuft dauernd mit 20 fps (Woche, Fokus, Mac-Panel); die
+- [x] **P6.11 PERF-12** (mittel) Der bewegte Verlauf läuft dauernd mit 20 fps (Woche, Fokus, Mac-Panel); die
   Feier-Animation endet nie. Lösung: (1) `CelebrationView`: `@State finished`, `TimelineView(.animation(paused:
   finished))`, `.task { 2,3 s; finished = true }` – sichtbar gleich. (2) `AuroraBackground`: `paused: !isLive`, `isLive`
   = `scenePhase == .active` (iOS) bzw. zusätzlich `controlActiveState` `.key`/`.active` (macOS). (3) Ruhe nach 10 s auf
   Woche/Fokus/Mac-Panel nur nach §4 F13 (V12 wollte Bewegung). Abnahme (Mac-Gerät): Energieverbrauch von „Woche“ im
   Hintergrund ≈ 0.
-- [ ] **P6.12 PERF-14** (niedrig) Wochen- und Tages-PDF entstehen in einem Zug auf dem Hauptthread. Lösung:
+- [x] **P6.12 PERF-14** (niedrig) Wochen- und Tages-PDF entstehen in einem Zug auf dem Hauptthread. Lösung:
   `static func make(_:context:progress:) async -> URL?` (PDFExport.swift:159-168): nach jeder Seite `progress(drawn,
   total)` und `guard await pause() else { pdf.closePDF(); return nil }` (`pause()` aus RangePDF.swift von `private` auf
   intern); `.task { url = await PDFExport.make(kind, context: context) { page = $0 } }` (:1509); solange `url == nil`
   „PDF wird erstellt … Seite x von y“; Schließen bricht ab. Rendern bleibt auf dem Hauptthread (ImageRenderer). Abnahme
   (Gerät): Woche als PDF → Fortschritt, Vorschau scrollt.
-- [ ] **P6.13 PERF-16** (niedrig) Das Mehrwochen-PDF lädt je Woche das ganze Zieljahr. Lösung: RangePDF.swift:1451
+- [x] **P6.13 PERF-16** (niedrig) Das Mehrwochen-PDF lädt je Woche das ganze Zieljahr. Lösung: RangePDF.swift:1451
   `store.weekContext(for: week, today: today, goalYear: false)` – die Seiten lesen keine abschnittsgenauen Titel oder
   Ergebnisse. Abnahme: Screenshot `range-pdf` unverändert.
-- [ ] **P6.14 SYNC-13** (niedrig) Der Mac erklärt nur teilweise, was ihm fehlt (Wochentabelle, Ergebnisse, Wochennote).
+- [x] **P6.14 SYNC-13** (niedrig) Der Mac erklärt nur teilweise, was ihm fehlt (Wochentabelle, Ergebnisse, Wochennote).
   Lösung, alles hinter `context.isHealthElsewhere(measure, on:)` (P2 baut die Überladung; P9.1 macht sie für geteilt
   abgedeckte Tage falsch – dann verschwinden die Hinweise an einer Stelle): (1) `WeekTableValueRow`
   (WeekTable.swift:319-340): caption2 „aus Health am iPhone“ neben dem Titel, `.help(WeekContext.healthElsewhereHint)`
@@ -1289,7 +1289,7 @@ Gerät für P6.11.
   ohne“ (Zuarbeit P7). (3) Nur laufende Woche auf Mac/Watch/iPad (`!scoresHealth`), wenn die Woche Health liest: unter
   dem Hero „Ohne Werte aus Apple Health – am iPhone kann die Wertung höher sein.“ („und nicht geteilt abgedeckt“ ergänzt
   P9.3). Keine neue DataFacts-Rubrik. Abnahme: Screenshot `mac-week` mit aufgeklappten Werten.
-- [ ] **P6.15 UIMAC-8** (niedrig) Woche-Symbolleiste schiebt „Wochenübersicht“ und „Erfassen“ in den Überlauf;
+- [x] **P6.15 UIMAC-8** (niedrig) Woche-Symbolleiste schiebt „Wochenübersicht“ und „Erfassen“ in den Überlauf;
   „Erfassen“ mal mit, mal ohne Text; zwei Kürzel für „zurück zu jetzt“. Lösung: (1) Mac-WeekTable
   `.navigationTitle(context.week.label)` + `.navigationSubtitle(context.week.rangeLabel)` wie Heute
   (TodayView.swift:259) – ~100 pt frei; die drei Knöpfe behalten Text (R62). (2) **Ein** Befehl „Zu heute“ ⌘T in „Gehe
@@ -1305,7 +1305,7 @@ Gerät für P6.11.
 Prüfung: `swiftc -parse`, Mac-CI; Screenshots `goals`, `goal-detail`, `goal-review`, `reading`, `connected-apps`,
 `mac-goals`, `mac-goal-detail`, `mac-reading`.
 
-- [ ] **P7.1 STORE-2** (mittel, mit SYNC-6, UIPHONE-3; KR2-4, KR2-14) „Neu berechnen“ und Abschließen am Mac speichern
+- [x] **P7.1 STORE-2** (mittel, mit SYNC-6, UIPHONE-3; KR2-4, KR2-14) „Neu berechnen“ und Abschließen am Mac speichern
   eine Note ohne Apple-Health-Werte – in eingefrorenen Wochen für immer, ohne Hinweis. Lösung (§1.3), **entschieden für
   den schnellen Weg** (KR2-4 – „statt des Knopfs … zusätzlich darf“ ließ parallele Umsetzer Verschiedenes bauen):
   (1) Store (Zuarbeit P2): `recompute` speichert auf einem Gerät ohne `scoresHealth` für eine Woche, die Health liest,
@@ -1320,7 +1320,7 @@ Prüfung: `swiftc -parse`, Mac-CI; Screenshots `goals`, `goal-detail`, `goal-rev
   `score.<Woche>` über `ClosedWeekSnapshot` her); kein weiterer Dialog. Geteilt abgedeckte Wochen (Knopf wie am iPhone)
   ergänzt P9.3. Abnahme: Mac: eingefrorene Woche mit Health-Punkt → Zeile und „Am iPhone neu berechnen“, keine lokale
   Note; iPhone nach dem Abgleich: neue Note; iPhone: Neu berechnen → Widerrufen stellt die alte Note her.
-- [ ] **P7.2 DISPLAY-9** (niedrig) Zwei Wortschätze und Farbschemata für denselben Status; die Zielüberprüfung ist ganz
+- [x] **P7.2 DISPLAY-9** (niedrig) Zwei Wortschätze und Farbschemata für denselben Status; die Zielüberprüfung ist ganz
   grau. Lösung (§1.2.4): (1) `GoalResultLine.statusKind` (Zuarbeit P1; nur im Speicher, der Prompt nutzt weiter den
   Text); `GoalReviewView.resultRow` (GoalsView.swift:1076-1078) färbt damit. (2) Eine Farbzuordnung `StatusTint` in
   Style.swift (Zuarbeit P4, mit `PaceStatus`) für Ergebnisse (statt `Status.tint`, App GoalResults.swift:280-287),
@@ -1328,12 +1328,12 @@ Prüfung: `swiftc -parse`, Mac-CI; Screenshots `goals`, `goal-detail`, `goal-rev
   Ergebnisse „auf Kurs“/„im Rückstand“ (statt „hinten“: App GoalResults.swift:321, Explainers.swift:450; Core-Label und
   Tour → P1.10, P1.19), Grenzen „im Rahmen“/„zu schnell“/„überschritten“/„eingehalten“. Abnahme: Screenshot
   `goal-review` – „im Rückstand“ orange, „erreicht“ grün; `grep -rn "„hinten“\|\"hinten\"" App Packages` leer.
-- [ ] **P7.3 DISPLAY-14** (niedrig) Die Verlaufslinie der Zielkarte zeigt die laufende Woche wie eine abgeschlossene.
+- [x] **P7.3 DISPLAY-14** (niedrig) Die Verlaufslinie der Zielkarte zeigt die laufende Woche wie eine abgeschlossene.
   Lösung: `history(for:)` (GoalsView.swift:148-150) `ScorePoint(week:score:isLive: true)`; die Sparkline behält die
   Füllregel (gefüllt ab 8 – passt zum Live-Abzeichen), zeichnet den Live-Punkt aber in `tint.opacity(0.45)` wie
   „laufend“ im Rückblick, optional letzte Strecke gestrichelt; `spokenText` „KW47 laufend 7,8“. Abnahme: Screenshot
   `goals`.
-- [ ] **P7.4 UIPHONE-1** (mittel, mit UIMAC-15) „Lesen“ und „Jahresziel eintragen“ öffnen immer auf „Bitte wählen“ mit
+- [x] **P7.4 UIPHONE-1** (mittel, mit UIMAC-15) „Lesen“ und „Jahresziel eintragen“ öffnen immer auf „Bitte wählen“ mit
   einem Feld ohne Fokus (am Mac nie ohne Maus). Lösung: `ReadingProgressSheet` (ReadingList.swift:429-514):
   `@FocusState numberFocused`; `.onAppear`: ist nichts gewählt, das zuletzt gelesene **laufende** Buch vorwählen
   (`ReadingTexts.byLastReading(context.runningListItems, …).first`; nie ein geplantes – der erste Stand startet ein Buch
@@ -1343,50 +1343,50 @@ Prüfung: `swiftc -parse`, Mac-CI; Screenshots `goals`, `goal-detail`, `goal-rev
   Wahl; bei `.count`/`.value` Fokus mit denselben Übergaben; kein „zuletzt benutzt“ (der Standard „1“ machte einen
   falschen Rat zum Ein-Tipp-Fehler). Keine Store-/Sync-Änderung. Abnahme (Gerät): Erfassen → Lesen → Zahl → Eintragen;
   Mac ohne Maus.
-- [ ] **P7.5 UIPHONE-2** (mittel) Die Zielüberprüfung am iPhone zeigt beim Gewicht „Wert nur auf dem Gerät“ statt des
+- [x] **P7.5 UIPHONE-2** (mittel) Die Zielüberprüfung am iPhone zeigt beim Gewicht „Wert nur auf dem Gerät“ statt des
   Werts. Lösung: Store (Zuarbeit P2) `resultLines(today:hidesHealth: Bool = true)` mit `hidesValue: hidesHealth &&
   resultUsesHealth(result)` – Prompt und Berichte behalten den Standard; `GoalReviewView`: `results` (verborgen) nur für
   `copyReport()`, neu `screenResults` aus `resultLines(today:hidesHealth: !HealthDevice.readsHealth)`; am Mac zeigt ein
   verborgener Wert `WeekContext.healthElsewhereHint` über `hiddenText:` (Zuarbeit P1). Abnahme: Screenshot `goal-review`
   mit Gewichtswert.
-- [ ] **P7.6 UIPHONE-4** (niedrig) Leseliste: Tippen auf ein laufendes Buch öffnet das Bearbeiten, „Fortschritt
+- [x] **P7.6 UIPHONE-4** (niedrig) Leseliste: Tippen auf ein laufendes Buch öffnet das Bearbeiten, „Fortschritt
   eintragen…“ steht ganz unten. Lösung: `ReadingListContent.row` (ReadingList.swift:274-304): laufend → Fortschritt
   (`.progress(itemID:day: app.captureDay)`), geplant/fertig/abgebrochen → `BookEditor`; bei laufenden „Bearbeiten“ statt
   „Fortschritt“ im führenden Wischen (geplante behalten „Fortschritt“); Kontextmenü bleibt;
   `.accessibilityHint("Fortschritt eintragen")`. Zusammenfassung „Gelesen in Abschnitt 2: 120 Seiten“ / „Gelesen im
   Zieljahr: …“ (einziger Aufrufer `summaryLine`, :255-258). Abnahme: Screenshot `reading`.
-- [ ] **P7.7 UIPHONE-12** (niedrig) Der Fuß der Zielseite nennt „Eintrag mit Datum…“, auch wenn es keinen solchen Knopf
+- [x] **P7.7 UIPHONE-12** (niedrig) Der Fuß der Zielseite nennt „Eintrag mit Datum…“, auch wenn es keinen solchen Knopf
   gibt. Lösung: Fuß (GoalResults.swift:464-468) aus dem Gezeigten: `quick = results.filter { quickAction != nil }`,
   `dated = quick.contains { $0.kind != .value }`; ohne quick, mit Listen-Ergebnis: „Bücher zählen über die Leseliste:
   fertig ist ein Buch mit der letzten Seite unter „Lesen“ oder mit „Fertig“ im Buch-Fenster.“; ohne quick ohne Liste:
   kein Fuß; sonst wie bisher plus `dated ? "; ein anderes Datum geht über „Eintrag mit Datum…“." : "; „Wert eintragen“
   fragt nach dem Datum."`. Abnahme: Screenshot `goal-detail`.
-- [ ] **P7.8 UIPHONE-16** (niedrig) Fuß „Wochen über 8“ spricht von 12 Wochen und zeigt 0/5. Lösung: `weeksFooter`
+- [x] **P7.8 UIPHONE-16** (niedrig) Fuß „Wochen über 8“ spricht von 12 Wochen und zeigt 0/5. Lösung: `weeksFooter`
   (GoalsView.swift:738-741): „0/5 = Wochen ab 8,00 von 5 gewerteten – aus bis zu 12 abgeschlossenen Wochen \(scope).
   Krank- und Urlaubswochen zählen nicht.“ (KR2-26: „je Kategorie „über 8 / gewertet““ war rätselhaft; Zahlen aus der
   ersten Zeile). Regel ≥ 8,00 bleibt. Abnahme: Screenshot
   `goal-detail`.
-- [ ] **P7.9 UIPHONE-19** (niedrig) Die Zielflagge heißt „Woche abschließen“ und „Ergebnis“. Lösung: `flag.checkered`
+- [x] **P7.9 UIPHONE-19** (niedrig) Die Zielflagge heißt „Woche abschließen“ und „Ergebnis“. Lösung: `flag.checkered`
   bleibt nur beim Wochenabschluss (WeekView :370, WeekTable :15/:602, CloseWeekView :115, ReviewView :238/:245,
   PastImport :217); Ergebnisse bekommen `trophy`: GoalResults.swift :520/:561/:889/:971/:1441, GoalsView :241/:386/:752,
   ConnectedApps :835, Explainers :251; Erfassen-Option Editors.swift:1787 → Zuarbeit P5; Tour-Schritt `goal-results`
   (ThaliaTour.swift:119) → P1.19 (KR3-15). Nicht `target` (= Ziele-Tab). Abnahme (nach Runde 3b): grep –
   `flag.checkered` nur an Abschluss-Stellen.
-- [ ] **P7.10 PERF-9** (mittel) Ziele-Seite: je Body ~16 Zieljahr-Abrufe und bis zu 20 Abrufe aller Wochen. Lösung:
+- [x] **P7.10 PERF-9** (mittel) Ziele-Seite: je Body ~16 Zieljahr-Abrufe und bis zu 20 Abrufe aller Wochen. Lösung:
   `GoalsContent.period` = `context.goalPeriod` (GoalsView.swift:27); die Ziel-Verläufe einmal je Body aus der
   vorhandenen `@Query plans`: `plans.latest(by: \.weekKey, modified: \.modifiedAt).values`, Wochen bis
   `context.week.adding(weeks: -1)`, `finalGoalScoreMap` je Plan einmal → `[goalKey: [WeekScorePoint]]`, an
   `history(for:)` und `recentAverage(for:)` (gleiche Regel und Reihenfolge wie `goalScoreHistory`). `excusedWeeks` bleibt.
   Kein `.task`/`@State` (die Karten bleiben live). `GoalReviewView` liest `goalPeriod` einmal je Body. Abnahme:
   Screenshot `goals` gleich; kein `allPlans()` mehr im Body.
-- [ ] **P7.11 SYNC-3** (niedrig) Ergebnisse mit Quelle `measure:`/`app:` (Gewicht, Vermögen aus Finn) aktualisieren
+- [x] **P7.11 SYNC-3** (niedrig) Ergebnisse mit Quelle `measure:`/`app:` (Gewicht, Vermögen aus Finn) aktualisieren
   nicht, wenn sich ein Wert ändert. Lösung: (1) `ResultSeriesReader` `.task(id: loadKey + "|\(app.syncTick)")`. (2)
   `ResultProgressTable.loadKey` (GoalResults.swift:244-249) mit Inhalts-Fingerabdruck statt Anzahlen: gespeiste
   `measure:`-Codes max(`modifiedAt`) und Wertsumme; `app:`-Quellen die `generatedAt` ihrer Tagesdateien; die
   Health-Anzahl bleibt drin (die geteilten Werte ergänzt P9.3). (3) `GoalHistoryCharts.loadKey` (GoalsView.swift:1277) +
   `app.syncTick`. GoalReviewView, ReportView, NoPlanView bleiben. Abnahme (Gerät): Gewicht am iPhone ändern, Ziele am
   Mac offen → neuer Wert nach dem Abgleich.
-- [ ] **P7.12 UIMAC-7** (niedrig) CI-Screenshots `mac-goal-detail`/`mac-reading` zeigen die Ziele-Seite. Lösung (nur
+- [x] **P7.12 UIMAC-7** (niedrig) CI-Screenshots `mac-goal-detail`/`mac-reading` zeigen die Ziele-Seite. Lösung (nur
   Demo-Weg): `GoalsContent` `.task { guard app.launch.isDemo …; 1,5 s; openLaunchScreen() }` statt `.onAppear`;
   `GoalsLaunch.handled = true` erst im `.onAppear` von `ReadingListView`/`GoalDetailView` (hinter `isDemo`). Kein Umbau
   der Navigation. Abnahme: nächster CI-Lauf zeigt Zielseite und Leseliste; STATUS.md:92-94 → P1.22.
@@ -1399,16 +1399,16 @@ die Watch gebaut – `UIApplication` dort nur hinter `#if os(iOS)`; `Intents.swi
 dort die leere Fassung aus P4.
 
 **Runde 1 (Doku):**
-- [ ] **P8.1 E1 „Über 8“ = ab 8,00 (entschieden)** (Wunsch 1, §1.1): CONNECTED_APPS §5 Frage 1 → „Entschieden
+- [x] **P8.1 E1 „Über 8“ = ab 8,00 (entschieden)** (Wunsch 1, §1.1): CONNECTED_APPS §5 Frage 1 → „Entschieden
   (23. Nov. 2026): ab 8,00, gerundet auf zwei Stellen“, §2 Schritt 10 entfällt; TASKS-v10 „Offene Fragen“ 1 und die
   Nachträge-Zeile „Annahme, siehe offene Fragen“ (TASKS-v10.md:94, KR3-16) → „entschieden“; STATUS (STATUS.md:89) →
   P1.22. Code unverändert (P1.15). Abnahme **nach Runde 5** (STATUS ändert sich erst dort): „8,01“ steht in den Docs
   (außer alten TASKS-Dateien) nur noch im Entscheidungssatz.
-- [ ] **P8.2 E2 Schonfrist und Notiz am abgeleiteten Haken (entschieden)** (Wunsch 2, §1.1): TASKS-v10 „Lückenschluss“
+- [x] **P8.2 E2 Schonfrist und Notiz am abgeleiteten Haken (entschieden)** (Wunsch 2, §1.1): TASKS-v10 „Lückenschluss“
   – beide Absätze „von Bini bestätigt (23. Nov. 2026)“; CONNECTED_APPS §1 „Eigenes gewinnt“ um „Eine Notiz an einem
   abgeleiteten ✓ macht ihn zum eigenen – er bleibt, auch wenn die Tatsache später verschwindet.“; TESTING-Schritte →
   P1.22. Abnahme: Code-Review der Texte.
-- [ ] **P8.3 N1 Finn – alles einzeln wählbar, Vermögen bei jeder Änderung, Kontostände** (Wunsch 3, §1.5): CONNECTED_APPS
+- [x] **P8.3 N1 Finn – alles einzeln wählbar, Vermögen bei jeder Änderung, Kontostände** (Wunsch 3, §1.5): CONNECTED_APPS
   §3.4 Finn-Auftrag neu – §2 „Was Finn liefert“ (je Zeile ein Schalter, Standard aus; Gruppen, Vermögen `aus`/`bei jeder
   Änderung` mit `nw-<Tag>`, Sparquote `aus`/`an` mit `sr-<Monat>`, Konten/Kontogruppen mit `account_balance` und
   `kb-<ref>-<Tag>`; Schalter in einem synchronisierten Einstellungs-Datensatz, nie UserDefaults), §4 Kennzahl-Tabelle
@@ -1427,7 +1427,7 @@ dort die leere Fassung aus P4.
   `Fixtures`). Abnahme: die Beispiele im Auftrag sind Kopien der Fixtures; ein P1-Test vergleicht die Fixtures
   `Finn/exchange/*` und `Thalia/catalog.json` mit dem, was der Encoder schreibt; alle fünf Aufträge nennen dieselbe
   Tabelle.
-- [ ] **P8.4 WATCH-21** (niedrig) Die Doku verspricht Timer und Live Activity, die es seit v2 nicht mehr gibt. Lösung:
+- [x] **P8.4 WATCH-21** (niedrig) Die Doku verspricht Timer und Live Activity, die es seit v2 nicht mehr gibt. Lösung:
   ARCHITECTURE.md:33 „work (power-hours)“, :45 „WidgetBridge, WidgetPublisher, WidgetActions – Widget-Schnappschuss in
   der App Group, ✓ aus dem Widget“, :49 „+PH, „aus Theo““, :72 ohne „Live Activity“, :74 „Watch: Ring, Offen, Zähler,
   Power-Hours mit Bereich und Wofür, Messwerte“, :75 „Heute- und Woche-Widgets (Home und Sperrbildschirm),
@@ -1439,7 +1439,7 @@ dort die leere Fassung aus P4.
   TASKS-Dateien und im „entfällt“-Vermerk.
 
 **Runde 3b (Code):**
-- [ ] **P8.5 WATCH-1** (mittel) Auf der Watch sieht ein ✓ aus einer verbundenen App aus wie ein eigener; ein Tipp
+- [x] **P8.5 WATCH-1** (mittel) Auf der Watch sieht ein ✓ aus einer verbundenen App aus wie ein eigener; ein Tipp
   entfernt ihn ohne Hinweis. Lösung: `WatchItemRow` (WatchHomeView.swift:355-389): caption2 `.secondary` aus
   `context.derivedMarkLabel(item, on: day)` („⇄ George · Push“); Tippen bleibt „leeren“ wie am iPhone
   (TodayView.swift:1516, v10 Grundregel 1 – eine Übernahme durch Tippen würde dieselbe Geste je Gerät verschieden
@@ -1447,44 +1447,44 @@ dort die leere Fassung aus P4.
   „Haken der App ausblenden“ statt „Leeren“ bei `isDerivedMark`. `WatchMeasureRow.valueRow`: caption2 „aus <Quelle>“
   aus `context.valueSource`; solange der Tageswert aus einer App kommt, nur lesen (wie `listRow`, WatchValues.swift:
   173-174). Text inline (ConnectedAppsTexts liegt im App-Ziel). Abnahme (Gerät): Demo-Krafttraining zeigt „⇄ …“.
-- [ ] **P8.6 WATCH-4** (mittel) Auf Seite 1 lässt sich nichts direkt abhaken; Kategorieseiten mischen Erledigtes und
+- [x] **P8.6 WATCH-4** (mittel) Auf Seite 1 lässt sich nichts direkt abhaken; Kategorieseiten mischen Erledigtes und
   Offenes. Lösung jetzt: Planreihenfolge bleibt (springende Zeilen am kleinen Bildschirm vermeiden); beantwortete Zeilen
   gedämpft: `WatchItemRow` Titel `.foregroundStyle(mark == nil ? .primary : .secondary)` (wie iPhone R36). Direktes
   Abhaken auf Seite 1 nur nach §4 F4 (dann unter „Offen“ höchstens 3 Zeilen der ersten Kategorie mit offenen Punkten,
   `WatchItemRow`, Zähler bleiben darunter). Abnahme: Screenshot `watch-today`.
-- [ ] **P8.7 WATCH-6** (mittel) Watch-PH: kein Widerrufen, keine Liste der heutigen Einträge. Lösung:
+- [x] **P8.7 WATCH-6** (mittel) Watch-PH: kein Widerrufen, keine Liste der heutigen Einträge. Lösung:
   `WatchPowerHourEntry.save`: `let block = store.addWork(...)`; `onSaved`/`WatchRouteView`/`powerHoursSaved` tragen
   (WorkBlock, Double, String); `WatchHomeView` `@State lastBlock`; Banner als Knopf „+1 PH · <Bereich> – Widerrufen“
   (das Wort der App, KR2-14),
   ~4 s (Schlaf 2 → 4 s): `store.trash([block])`, Klick-Haptik, „Power-Hours gelöscht“. `WatchPowerHourPicker`:
   Abschnitt „Heute erfasst“ aus `context.work(on: today)` (nur eigene, nicht „aus Theo“), Zeile „1 PH · 3.2 · Aufgabe“
   mit `.swipeActions` „Löschen“ (wiederherstellbar in „Zuletzt gelöscht“). Abnahme (Gerät/Watch).
-- [ ] **P8.8 WATCH-12** (niedrig; KR1-7) Der Kronen-Editor für Health-Werte startet bei 0 und endet bei 1000. Lösung:
+- [x] **P8.8 WATCH-12** (niedrig; KR1-7) Der Kronen-Editor für Health-Werte startet bei 0 und endet bei 1000. Lösung:
   `healthRow` (WatchValues.swift:170-193, `openEditor` :205-209): Start = eigener Tageswert, sonst
   `store.lastValue(...)`; ohne Startwert nur Anzeige (kein Knopf), Hinweis `WeekContext.healthElsewhereHint`; Grenzen
   bleiben (R81). **„Sichern“ schreibt nur, wenn die Krone bewegt wurde** (Wert ≠ Startwert; heute ruft `save`
   `setDayValue` auch ohne Änderung, :211-214) – so wird ein angezeigter Wert nie still zum eigenen Eintrag. Geteilte
   Werte (Anzeige, Start) → P9.3. Abnahme (Watch): Gewicht ohne Wert → kein Editor; mit Wert → Start beim Wert;
   öffnen und „Sichern“ ohne Drehen → kein Eintrag.
-- [ ] **P8.9 WATCH-13** (niedrig) Watch-Zeilen ohne Ziel und ohne Wochenquote. Lösung: `valueRow` caption2 `.secondary`
+- [x] **P8.9 WATCH-13** (niedrig) Watch-Zeilen ohne Ziel und ohne Wochenquote. Lösung: `valueRow` caption2 `.secondary`
   mit „ · “ verbunden: „Ziel \(target.label)“ und ggf. „aus <Quelle>“ (P8.5); grünes `checkmark.circle.fill` nur bei
   `Measures.isMet == true` (kein Orange – am iPhone ist „noch nicht“ neutral). `WatchItemRow`: aus
   `context.quotaProgress(item)` nur „\(done)/\(target)×“ als caption2 („2/3×“, ohne den Zusatz „· ½ krank“ aus
   `quotaText`, KR2-11), grün ab Ziel. Abnahme: Screenshot `watch-today`.
-- [ ] **P8.10 WATCH-14** (niedrig) Die PH-Bereiche auf der Watch zeigen keinen Wochenstand. Lösung:
+- [x] **P8.10 WATCH-14** (niedrig) Die PH-Bereiche auf der Watch zeigen keinen Wochenstand. Lösung:
   `WatchPowerHourPicker`: je Bereich das Wochenziel mit `.work(key)`-Quelle aus `context.weeklyTargets` → caption2
   „\(value)/\(Ziel) PH · Woche“ (skaliertes Ziel, wie das Widget), grün bei `isMet`. Abnahme (Watch).
-- [ ] **P8.11 WATCH-17** (niedrig) Leere Zustände ohne nächsten Schritt. Lösung: `WatchTodayPage` bei `!hasPlan` Zeile
+- [x] **P8.11 WATCH-17** (niedrig) Leere Zustände ohne nächsten Schritt. Lösung: `WatchTodayPage` bei `!hasPlan` Zeile
   „Wochenplan am iPhone oder Mac importieren – danach kommt er über iCloud.“ (Status bleibt kurz „Kein Plan“); leerer
   PH-Picker: „Noch keine Bereiche. Öffne Thalia am iPhone und warte kurz auf iCloud.“ Widgets bleiben (sie öffnen schon
   „Heute im Blick“ mit Import); höchstens Medium-Überschrift „Kein Plan – tippen“. Abnahme: Watch-Vorschau.
-- [ ] **P8.12 WATCH-18** (niedrig) Der Schnappschuss trägt Tages-Messwerte und „diese Woche noch“, die nichts zeigt.
+- [x] **P8.12 WATCH-18** (niedrig) Der Schnappschuss trägt Tages-Messwerte und „diese Woche noch“, die nichts zeigt.
   Lösung: (1) `WidgetText.openHeading`/`largeStatus`: `openCount == 0 && weeklyOpenCount > 0` → „Alles Wichtige erfasst
   · diese Woche noch \(n)“. (2) Nur großes Widget: eine Zeile mit bis zu 3 Messwert-Chips („Zähler 3 / ≤ 6“) – dafür
   eine offene Zeile weniger; `todaySummary` stellt Tages-Summenzähler ohne Health voran (Zuarbeit P2); rot nur bei
   verfehltem Limit (≤/<), grün bei erfüllt, sonst neutral. (3) Komplikation unverändert (kein Punkt-Titel auf dem
   Zifferblatt). Kein Formatwechsel. Abnahme: Widget-Vorschau.
-- [ ] **P8.13 WATCH-3** (mittel, mit SYNC-11) Die Komplikation aktualisiert nur mit laufender Watch-App und zeigt Montag
+- [x] **P8.13 WATCH-3** (mittel, mit SYNC-11) Die Komplikation aktualisiert nur mit laufender Watch-App und zeigt Montag
   früh „Kein Plan“. Lösung jetzt: `widgetSummary` (Zuarbeit P2) schreibt keinen `nextDay` voraus, der eine neue Woche
   ohne Plan beginnt (`nextDay = (tomorrow.week != today.week && !nextContext.hasPlan) ? nil : [next]` – der
   `WeekContext`-Wert `hasPlan: Bool`, WeekContext.swift:232; `TodaySummary.hasPlan` ist `Bool?`, ThaliaTour.swift:233,
@@ -1492,7 +1492,7 @@ dort die leere Fassung aus P4.
   auf „Neuer Tag – Thalia öffnen“ zurück, iPhone-Widget wie Watch; Core-Test (Zuarbeit P1). Ein Hintergrund-Refresh der
   Watch allein brächte nichts (rechnet nur aus dem eigenen Speicher); der WatchConnectivity-Push vom iPhone nur nach
   §4 F6. Abnahme: Core-Test; Gerät: Sonntag vor dem Import → Montag „Neuer Tag“ statt „Kein Plan“.
-- [ ] **P8.14 WATCH-11** (niedrig, plausibel) Nach einem iCloud-Import wird der Schnappschuss sofort ohne zweiten
+- [x] **P8.14 WATCH-11** (niedrig, plausibel) Nach einem iCloud-Import wird der Schnappschuss sofort ohne zweiten
   Durchgang geschrieben. Lösung: Import-Beobachter (WidgetPublisher.swift:44-56) `publishNow(); publishSoon()` – Gleiches
   wird übersprungen (WidgetBridge.swift:49), kostet kein Reload-Budget; am iPhone bricht `afterSync.publishNow` das
   ausstehende ab. P8.14, P8.15, P8.16 und P3.2 (2) ändern denselben Beobachter – zusammen (KR3-22):
@@ -1500,17 +1500,17 @@ dort die leere Fassung aus P4.
   os(iOS)`: `UIApplication.shared.applicationState == .active ? publishSoon() : { publishNow(); publishSoon() }`;
   sonst (Watch, Mac) `publishNow(); publishSoon()`. Abnahme (Gerät): Tag am iPhone abschließen → Komplikation
   „Abgeschlossen“ ohne Öffnen der Watch-App.
-- [ ] **P8.15 PERF-11** (niedrig) Das iPhone schreibt nach jedem Import den Schnappschuss doppelt. Lösung: iOS-Import-
+- [x] **P8.15 PERF-11** (niedrig) Das iPhone schreibt nach jedem Import den Schnappschuss doppelt. Lösung: iOS-Import-
   Beobachter aktiv nur `publishSoon()` (Code bei P8.14; Hintergrund-Weckruf behält das „sofort“ aus 1.6.1, `.inactive`
   zählt als Hintergrund); `afterSync` mit begrenztem Zusammenführen (P2.13);
   Ordner-Scan und Katalog bleiben (der Scan läuft schon abseits, der Katalog muss Änderungen anderer Geräte sehen).
   Abnahme: Code-Review.
-- [ ] **P8.16 PERF-18** (niedrig) Die Watch baut bei jedem Phasenwechsel zwei volle Wochen. Lösung: `WidgetPublisher`
+- [x] **P8.16 PERF-18** (niedrig) Die Watch baut bei jedem Phasenwechsel zwei volle Wochen. Lösung: `WidgetPublisher`
   `isDirty` (gesetzt von didSave- und Import-Beobachter) und `lastDay`; `publishNow()` setzt beides; `publishIfNeeded()`
   = `isDirty || lastDay != DayKey.today()`; ThaliaWatchApp ruft bei **jedem** Phasenwechsel `publishIfNeeded()` (nicht
   nur `.background` – nach dem Senken bleibt die App oft in `.inactive`, SYNC.md 1.6.1). Abnahme (Watch): Heben/Senken
   ohne Änderung → kein Schreiben (Log).
-- [ ] **P8.17 WATCH-2** (mittel) Siri „Messwert eintragen“ speichert ohne Rückfrage 1 (Gewicht 1 kg, Schlaf 1 h).
+- [x] **P8.17 WATCH-2** (mittel) Siri „Messwert eintragen“ speichert ohne Rückfrage 1 (Gewicht 1 kg, Schlaf 1 h).
   Lösung: (1) `@Parameter(title: "Wert", requestValueDialog: IntentDialog("Welcher Wert?")) var value: Double?` ohne
   Standard (Double → Double? hält gespeicherte Kurzbefehle mit Wert gültig). (2) `amount = value ?? (isPlainCounter ? 1
   : nil)` mit `isPlainCounter = ["", "stück"].contains(Units.normalized(unit)) && aggregation == .sum` (KR3-17:
@@ -1521,7 +1521,7 @@ dort die leere Fassung aus P4.
   `ExpensePurposeOptions`, Intents.swift:222-233) aus den Messwerten der Woche, für die `refusal(for:) == nil`. Abnahme
   (Gerät): „Messwert eintragen“ → Gewicht → Siri fragt „Welcher Wert für „Gewicht“ (kg)?“; ein Zähler ohne Einheit
   speichert 1.
-- [ ] **P8.18 KR2-10** (niedrig) Die Watch sagt an arbeitsfreien, Krank- und Urlaubstagen „Noch keine PH“
+- [x] **P8.18 KR2-10** (niedrig) Die Watch sagt an arbeitsfreien, Krank- und Urlaubstagen „Noch keine PH“
   (WatchHomeView.swift:232; `watch-today` zeigt es an einem Erholungstag) – P5.7 deckt nur das iPhone. Lösung: leere
   Arbeit → entschuldigt: `context.excusedName(today)` („Krank“/„Urlaub“, WeekContext.swift:428); arbeitsfrei
   (`DayTypes.isWorkFree`): „Arbeitsfrei“; sonst „Noch keine PH“. Abnahme: Screenshot `watch-today` (Sonntag)
@@ -1532,7 +1532,7 @@ Prüfung: Harness (Typprüfung + Szenarien), Linux-Tests der Core-Datei (C14, vo
 Gerät (TestFlight-Build auf iPhone, Mac, Watch – §3.4.2). Jede geänderte Stelle trägt `// HEALTHSHARE` (§0.6). P9 ist das
 einzige Paket der Runde und darf deshalb die Dateien der Runden 2–3 an den markierten Stellen ändern (§2.0).
 
-- [ ] **P9.1 N2 Health-Werte teilen – Shared-Kern** (Wunsch 4, §1.4; bisher P2.16; KR1-3, KR1-4, KR1-12, KR3-1, KR3-8)
+- [x] **P9.1 N2 Health-Werte teilen – Shared-Kern** (Wunsch 4, §1.4; bisher P2.16; KR1-3, KR1-4, KR1-12, KR3-1, KR3-8)
   Lösung: neue Datei `Shared/HealthShareStore.swift`: `HealthShareGate` (drei Zustände `.allowed`/`.denied`/`.unknown`,
   Cache `thalia.health.shareGate`, `resolve(timeout:) async`, Benachrichtigung `changed`; Debug immer `.allowed`, dazu
   nur in Debug die Startoption `-HealthShareGate allowed|denied|unknown`, um Bereinigung und Offline-Start zu prüfen);
@@ -1552,7 +1552,7 @@ einzige Paket der Runde und darf deshalb die Dateien der Runden 2–3 an den mar
   Tag älter als 35 Tage wird gelöscht; Zustand aus → Tage gelöscht, Mac zeigt den Hinweis; Tor `.unknown` → nichts
   geschrieben, gelesen oder gelöscht; Tor `.denied` → alle `hshare.` gelöscht, auch fremde; ⌘Z nach `adoptHealth` →
   `counted` ohne den Wert; Export (P3) ohne `hshare.`.
-- [ ] **P9.2 Schalter, Schreiber und Start** (§1.4.1, §1.4.2, §1.4.5, §1.4.6; KR1-8, KR1-18, KR3-1, KR3-9) Lösung:
+- [x] **P9.2 Schalter, Schreiber und Start** (§1.4.1, §1.4.2, §1.4.5, §1.4.6; KR1-8, KR1-18, KR3-1, KR3-9) Lösung:
   `App/Sources/HealthShareSettings.swift`: Abschnitt in HealthSettingsView (SettingsView.swift:447-480) nur bei
   `readsHealth` und `.allowed`; Schalter, Fuß und Übernehmen-Rückfrage nach §1.4.1. Schreiber: nach jedem `didSave`, das
   eine `HealthValue` enthält, die betroffenen Tage; beim Aktivieren alle 35 Tage (nur bei Änderung) und höchstens alle
@@ -1565,7 +1565,7 @@ einzige Paket der Runde und darf deshalb die Dateien der Runden 2–3 an den mar
   prüft das Tor ebenso, bereinigt bei `.denied`, zeichnet bei `changed` neu. `-DemoScreen health` (§1.8.2) und `health`
   in Config/ci.env (P1.21). Abnahme: Harness (zweiter Schreiber übernimmt, der erste schaltet ab; Selbstheilung nach
   gelöschtem Zustand; offline-Start mit `.unknown` löscht nichts); Screenshot `health`; Gerät §3.4.2.
-- [ ] **P9.3 Anzeige auf Mac, Watch und iPad – nur lesen** (§1.4.7, §1.4.8; KR1-7) Lösung: Heute (TodayView.swift:1696,
+- [x] **P9.3 Anzeige auf Mac, Watch und iPad – nur lesen** (§1.4.7, §1.4.8; KR1-7) Lösung: Heute (TodayView.swift:1696,
   :1738-1740): für einen `health:`-Messwert mit geteiltem Wert und ohne eigenen Eintrag statt `MeasureInput` der Wert mit
   caption „aus Health am iPhone“ und Knopf „Eigenen Wert eintragen…“ (öffnet `MeasureForm` mit leerem Feld); `read`
   ohne `counted`: „Health am iPhone: 72,6 kg – dort übernehmen“. Watch `healthRow` (WatchValues.swift:170-193): geteilter
@@ -1575,7 +1575,7 @@ einzige Paket der Runde und darf deshalb die Dateien der Runden 2–3 an den mar
   WeekTable.swift) und im `loadKey` der Ergebnisse (P7.11, GoalResults.swift: Anzahl und `modifiedAt` der geteilten
   Tage). Abnahme: Harness/Mac-CI; Gerät: am Mac in einen geteilten Schlafwert klicken → kein Feld, kein Eintrag;
   „Eigenen Wert eintragen…“ → eigener Wert gewinnt; Watch: Editor öffnen und „Sichern“ ohne Drehen → kein Eintrag.
-- [ ] **P9.4 Datenschutz-Texte** (§1.4.10; KR1-11, KR2-1, KR3-7) Lösung: solange `HealthShareGate.isAllowed &&
+- [x] **P9.4 Datenschutz-Texte** (§1.4.10; KR1-11, KR2-1, KR3-7) Lösung: solange `HealthShareGate.isAllowed &&
   healthShareState.on`, je markiert: SettingsView.swift:349 Titel „Bleibt auf dem Gerät – außer beim Teilen
   (TestFlight)“, Text „Übernommene Health-Werte bleiben auf diesem Gerät – außer „Health-Werte mit Mac und Watch teilen“
   ist an (nur TestFlight): dann liegen die letzten 5 Wochen in deiner iCloud. Was sonst synchronisiert, ist deine eigene
@@ -1585,7 +1585,7 @@ einzige Paket der Runde und darf deshalb die Dateien der Runden 2–3 an den mar
   ConnectedApps.swift:1150 „Apple Health schlägt den Wert auf dem iPhone vor; bestätigt wird er hier. Übernommene Werte
   teilt das iPhone mit Mac und Watch (nur TestFlight).“ Sonst bleiben die heutigen Texte. Abnahme: Screenshot `health`
   (Demo mit Schalter an) zeigt die geänderten Texte; Schalter aus → die alten.
-- [ ] **P9.5 Doku und Checkliste** (kein Befund, §1.4.12) Lösung: Bericht an P1.22 mit STATUS-Absatz „Health teilen
+- [x] **P9.5 Doku und Checkliste** (kein Befund, §1.4.12) Lösung: Bericht an P1.22 mit STATUS-Absatz „Health teilen
   (nur TestFlight)“, SYNC-Zeile, TESTING-Schritten (§3.4.2) und der Checkliste „Vor App-Store entfernen“ mit den echten
   Stellen aus `grep -rn HEALTHSHARE`. Abnahme: jede Fundstelle des greps steht in der Checkliste und umgekehrt; der
   Abgleich aus §3.5 (Bezeichner ohne Marke) ist leer.
@@ -1858,3 +1858,381 @@ Aus der Plan-Prüfung (KR) nicht oder nur teilweise übernommen:
 - **KR3-4, Variante „`StatusTint` nach Shared verschieben“** – nicht nötig; der Vertragscommit in Runde 3a deckt alle
   P4-Schnittstellen.
 - **KR3-10, Teil „ci.env ganz in P4“** – `health` gehört zum entfernbaren Teilen und kommt mit P9 (Runde 4).
+
+## Nachträge (Umsetzung)
+
+Was bei der Umsetzung genauer oder anders wurde als oben geplant. Der Plan oben bleibt stehen; bei Abweichungen gilt
+dieser Abschnitt.
+
+**Stand je Punkt** (die Kästchen oben sind abgehakt bis auf P1.22): P1.1–P1.21, P2.1–P2.15, P3.1–P3.16,
+P4.1–P4.21, P5.1–P5.19, P6.1–P6.15, P7.1–P7.12, P8.1–P8.18 und P9.1–P9.5 sind umgesetzt und lokal geprüft (Linux-Tests,
+`swiftc -parse`, Typprüfung gegen nachgebildete Apple-Module, Verhaltensprüfungen in Shared); die Lücken der Prüfung
+danach sind geschlossen (unten „Lückenschluss nach der Prüfung“). Ausnahmen nach §4 ohne Antwort: P6.11 (3) nicht
+gebaut (F13), P1.15 ohne Codeänderung (F2), P8.6 ohne Abhaken auf Seite 1 (F4). P8.13 haben P2 (`widgetSummary`) und P1
+(Test) erledigt. Abnahmen, die Mac-CI, Screenshots oder ein Gerät brauchen (P1.6, P1.21, die Geräte-Punkte aus §2.0),
+stehen mit P1.22 aus: CI, Screenshots und TestFlight (unten „Offen nach Runde 5“).
+
+### P1 Core (Runde 1)
+- `ExchangeInbox.value(_:) -> String?` wie im Vertrag, dazu eine `@_disfavoredOverload value(_:) -> String` (gibt
+  „“, nie „{}“), damit die Aufrufer aus 1.9.0 übersetzen; deshalb brauchten V10GapFixTests.swift:105 und :116 eine
+  Angabe `: String`. Shared (`storeInbox`, P2) und Import (P3) überspringen nil.
+- `Pace.init(…, weekOver:)` und `Measures.weeklyPace(…, weekOver:)` nehmen `weekOver: Bool? = nil` (nil heißt
+  `today > week.sunday`) – Swift erlaubt keinen Standardwert aus einem anderen Parameter.
+- `Format.amount(_:unit:)` und `Format.amount(target:unit:)` geben die Zahl ohne Einheit zurück (€ wie `euro` ohne
+  Zeichen); bei ≥ fehlt das „≥“ (nach „von“ sagt es „von“ schon, „86“), die anderen Vergleiche behalten ihr Zeichen
+  („> 85“, „≤ 6“, „< 50“, „= 3“), ein Bereich ist „129–154“ (die Stelle hängt „ g“ an), Zeiten geben `Target.label`; der
+  Bericht setzt „≥ “ davor. Die Rundungsrichtung gilt bei den Stellen aus `Units.decimals` für jede Einheit; ≤ rundet
+  ab, < auf.
+- `ResultProgress.compute(…, resultIDs: Set<String>? = nil)` – sonst wüsste Core nicht, welches Ergebnis gelöscht ist
+  (P1.11). `ResultProgress.Status` bekam keine neuen Fälle (die App unterscheidet sie); die Grenz-Wörter kommen aus
+  `limitLabel` und `label(isLimit:)`, `isLimit` ist berechnet.
+- `PaceStatus` hat zusätzlich `withinLimit` und `overLimit` (eine Farbzuordnung für alles); `label(remaining:unit:)`
+  hängt die Menge nur bei `.open` an.
+- `HealthShare.read(_:code:day:state: HealthShareState? = nil)` – mit Zustand gelten dieselben Regeln wie bei `entries`.
+- `SyncDevice.allCurrent(seen:builds:now:)` nimmt `builds` als `[String: SyncBuild]` (installID → Datensatz,
+  `SyncBuild.builds(_:)`); `firstV11Build = 58` (in Runde 5 bestätigt, siehe dort).
+- `ReminderSettings.requests()` gibt `[]`; Wochen-Erinnerungen haben die id `thalia.weekly.<JJJJ-Www>`, das Ziel
+  `close-week:<JJJJ-Www>` bzw. `import` (abgeschlossen ohne nächsten Plan).
+- P1.16: das Wochenziel-Wort im Bericht ist jetzt das der App („im Plan“, „hinter dem Plan“, „noch offen“, „nicht
+  erreicht“, „im Rahmen“, „überschritten“); vorher immer „erreicht“/„nicht erreicht“. Noten unverändert.
+- `Units.dative` ändert nur großgeschriebene Wörter mit mehr als 3 Buchstaben auf -e/-er/-el (Kürzel wie „kcal“
+  bleiben).
+- Tour: den macBody des Schritts `backup` hat P1 formuliert; Symbol von `health-share` `heart.text.square` (der Plan
+  nennt keins); „Deine Daten“ ist der Name des Abschnitts (der Test prüft nur kleines „deine“).
+- P3.4: die Zeile „Schon eingetragen für KWnn: …“ nennt eine Tagesnotiz in „…“, schreibt Tag und Monat zweistellig
+  („Fr 20.11.“) und steht direkt vor „## Mein Rückblick und Plan für KWnn:“.
+- Testorte: P1.9 in V11 C8 (nicht ScoringTests), P4.17 in V11 C12, P1.7 „Note der Demo-Woche unverändert“ in V11 C6
+  (`demoWeekNotesAsBefore` hält 6 Wochen auf den Noten von 1.9.0, gemessen an einem nur gelesenen Export von HEAD –
+  ändern sich Demo oder Wertungsregeln absichtlich, neu messen); SyncDeviceTests und CalendarTests unverändert (ihre
+  Prüfungen stehen in V11 C7, C13, C18). Angepasst, weil der Plan das Verhalten ändert: V7Tests, V10Tests, CSVTests,
+  V8Tests.
+- Fixtures: `nw-2026-11` heißt `nw-2026-11-22`; Kontostände, `days/2026-10-31.json` und `source.json` (Gruppen und
+  Konten) neu; `catalog.json` hat Ziel 8, Kategorie 8.1, Messwert `ausgaben`, Ergebnisse `res-worth`, `res-giro` und
+  `source` bei `res-books` (`list:buch`). Alle Werte neutral.
+- Sichtbar neu: `Format.measure` mit Stellen je Einheit; Ergebnis-Status „im Rückstand“ (auch in Prompt und Bericht).
+
+### P3 Sicherung und Import (Runde 1 und 2)
+- `ImportPreview` ist `@unchecked Sendable` (`ImportPlan` im Kit ist nicht Sendable; alle Felder sind `let` aus
+  einfachen Werten).
+- Vom Vertrag offen gelassene Namen: `PlanCSV.BackupInfo(date, app, device)` mit `appName(version:build:)` und
+  `headline(timeZone:)`, `PlanCSV.FinalScore(score, goalScores, goalsScored)`, `Document.changes`,
+  `PlanCSV.plainSettings`, `isBackupSetting(_:)`, `ExistingState.finalScores`; an `ImportPreview` `finalScores`,
+  `notices`, `removedRecords`, `backupHeadline`, `backupAgeNotice(now:timeZone:)`, `olderBackupNotice`; Zeilenarten
+  `.backup = "sicherung"`, `.finalScore = "wertung"`, `.change`.
+- Zeilen: `sicherung` – id ISO 8601 UTC mit Millisekunden; `wertung` am Ende ihres Wochenblocks, Anzahl in der Spalte
+  `count` (die Kopfzeile hat sie, sobald es Wertungen gibt); `change` – parent Punkt/Messwert, value
+  neu/geändert/gelöscht, flags dauerhaft/einmalig, nur nach einer `week`-Zeile. Die Notiz der `wertung` übernimmt
+  `finalGoalScores` wörtlich; deren Zielnoten haben höchstens 4 Stellen (`storeFinalScore` schreibt sie mit
+  `Format.plain`), nur die Gesamtnote ist bitgenau.
+- P3.1: mehr als ein Komma ist unlesbar, mehrere Punkte ohne Komma sind deutsche Gruppierung. **Verhalten neu:**
+  „8.000“ in einer CSV heißt 8 mit Hinweis (1.9.0 las 8000).
+- P3.4: ein leerer Tagestyp der Datei behält einen entschuldigten Typ ohne Zeile; `fillingPastBlanks` setzt auf einen
+  behaltenen Krank-/Urlaubstag kein ✗. P3.5: bei Gleichstand bleibt die Kopie der App, ein fehlender Stempel gilt als
+  sehr alt. P3.6: die Alterszeile zählt geänderte Markierungen, Werte und „weitere Angaben“, erst nach mehr als 24 h; die
+  Zeile „ältere Thalia-Version“ ist eine Schätzung. P3.7: nur Beginn und Ende geben die Zieljahr-Zeile. P3.9: `title`
+  nur, wenn `order` auf den eigenen Tag fällt, Minute abgerundet; die Vorschau übernimmt `order` der Datei auf die
+  verglichene App-Kopie.
+- P1.3 (Zuarbeit): Ergebnis-Ziele werden schon in `PlanCSV.parse` normalisiert. `PlanCSV.export` schreibt
+  `record`-Zeilen nur für Sicherungs-Schlüssel; `referencedWeeks` lässt `record`- und `sicherung`-Zeilen weg.
+  V10Tests `recordRowsRoundTripOnlyWhenThere` angepasst (`goal.start` wird gelesen, P3.7).
+- Runde 2: `existingState(weeks:includeRecords:includeWork: Bool = true)`, dazu `existingState(for:adding:)`,
+  `readState(weeks:includeRecords:work:)` (`StateWork`, `StateRead`). `BackupWriter.writeWeeklyIfDue(store:today:mode:in:
+  now:)` ist `async` und gibt `BackupFile?` zurück; `files(in:)`, `stamp(store:now:)` mit Standardwerten. Weitere Namen:
+  `backgroundPreview`, `probe`, `preview(_:probe:existing:)`, `backupInfo(now:)`, `olderDatedCopies`, `sameValues`,
+  `weekPart`, `restoreChanges`, `RestoreWindow`; an `ImportResult` `insertedWork`, `insertedNotes`,
+  `insertedReflections`, `daysBefore`, `keptScores`, `canUndo`; App-Typen `LoadedFile`, `LoadedFileRow`,
+  `ImportReadingRow`, `ImportApplyingHint`, `BackupFile`, `BackupExportButton`, `BackupsPage`, `BackupFileRow`,
+  `BackupProgressLabel`; UserDefaults `backup.lastAutoSmall` (orange Zeile „auffällig klein“).
+- `restore.window` hält bis zu 8 Fenster (Beginn, Ende, Tage) je 7 Tage statt eines Paars; `cleanRestoreDuplicates`
+  vergleicht auf 4 Stellen gerundet und nie die Uhrzeit.
+- `apply` ist eine Speicherung ohne frühes Zwischenspeichern; der v9-Durchgang, der Archivwochen beim Import neu wertete,
+  ist weg (die eine Wartungs-Speicherung deckt ihn; vorher wertete er auch am Mac – gegen P2.1). Folge: ein iPhone vor
+  seinem ersten Abgleich wertet eine Archivwoche beim Import nicht neu.
+- `wertung`-Zeilen nur in der vollen Sicherung. „Widerrufen“ erscheint, sobald ein Import einen Tag geändert hat; nach
+  dem Import eines neuen Wochenplans nimmt es Tagestypen, Notizen, Blöcke und Reflexionen zurück (kein allgemeines
+  Umkehr-Dokument, §2.11). `undoImport` endet mit `commit(rescoring:)` für die Wochen der zurückgenommenen Tage und
+  Blöcke (vorher blieb dort die Note des Imports).
+- Ohne jede Sicherung von Hand sagt der Wochenabschluss „Noch keine Sicherung – jetzt sichern?“; Gerätewörter „am
+  iPhone/am iPad/am Mac/an der Apple Watch“; Fuß- und Leertexte der Seite „Sicherungen“ von P3. Aufbewahren: die
+  neueste Datei je Kalendermonat der letzten 6 Monate (dieser eingeschlossen); „Hälfte der größten“ gegen die
+  behaltenen Dateien ohne die neue; gibt es die Datei von heute schon, wird nichts geschrieben.
+- Mehrere Prüfungen zugleich → ein Bestätigungsdialog mit allen Texten; Knopf „KWnn ersetzen“ (destruktiv), sonst
+  „Trotzdem KWnn importieren“, sonst „Trotzdem einlesen“. Für Dateien ohne Sicherung heißen die Hinweise „Wird gelesen …“
+  und „Wird importiert – bitte warten“. Die gezeigte Größe einer großen Datei ist die UTF-8-Länge des Texts. P3.16 (1)
+  zeigt die neue Vorschau und kehrt zurück; der nächste Tipp fragt „KWnn ersetzen?“. IMPORT.md hat zusätzlich „Who
+  scores after an import“.
+
+### P8 Doku (Runde 1)
+- Anzeige-Beispiel „→ Thalia: Ergebnis „Vermögen“ (Ziel 8)“ statt „(Ziel 2)“, passend zum Fixture-Katalog.
+- ARCHITECTURE, README, WORKFLOW, SETUP und HANDBOOK sind englisch – der deutsche Wortlaut des Plans ist übersetzt;
+  HANDBOOK Zeile 14 behält „entfällt – Thalia hat seit v2 keinen Timer“ wörtlich. README ohne „50-minute stop“;
+  `WatchWidgets/` in README und ARCHITECTURE; SETUP nennt die Kontrollzentrum-Knöpfe statt Live Activity.
+- CONNECTED_APPS: „Alles als CSV“ (zwei Stellen) heißt „Sicherung erstellen…“ (§1.6.5). TASKS-v10 „Offene Fragen“ 2
+  (Finn) ist ebenfalls entschieden.
+- In allen fünf Aufträgen ist der §6-Text zu ref-Arten berichtigt (`account` für Kontostand, Kennzahl-refs werden nie
+  angeboten), die Zeile `app:<quelle>:<metric>[=<ref>]` und „…, Konto“ ergänzt; §9/§4 „sobald 1.9.0 auf main ist“ →
+  „auf main“ mit „Stand Thalia 1.10.0“.
+- Finn-Auftrag zusätzlich: ein Absatz zum Umstieg („monatlich“ gilt als „bei jeder Änderung“, Schalter aus
+  UserDefaults einmal in den synchronisierten Datensatz), Beispiel-JSON für `thalia.delivery`; `source.json` ohne
+  Kennzahl-refs (wie das Fixture); ein Katalog ganz ohne `results[].source` zeigt „Thalia auf diesem Gerät
+  aktualisieren …“. Der allgemeine Auftrag verlangt ebenfalls einen Schalter je Zeile und eine synchronisierte Auswahl.
+
+### P2 Shared (Runde 2)
+- `MarkSnapshot` trägt zusätzlich `day` (`restoreMarks(_ snapshots:)` hat keinen Tag); die Brücke
+  `restoreMarks(_:day:)` mit Schnappschüssen und die alte Tupel-Fassung sind nach Runde 3 entfernt (siehe Querverweise).
+- `commit(rescoring:origin:keeping:)` mit `keeping: Set<WeekKey> = []` – Wochen mit `wertung`-Zeilen (P3.3) werden
+  weder gewertet noch angefragt.
+- `SyncProgress.noteImport(_:container: ModelContainer? = nil)` mit `isFirstImportDone(now:)` und
+  `confirmFirstImport(context:)`; die Rückfälle (Update von 1.9.0, 24 h) setzen den Merker beim ersten Lesen.
+- `resultLines(today:hidesHealth:hiddenText: String? = nil)` für den Mac-Hinweis (P7.5).
+- `processRescoreRequests(now:limit:)` nimmt im laufenden Start noch nicht bearbeitete Anfragen zuerst (20 Anfragen →
+  8, 16, 20); eine geschützte `force`-Woche kommt je Anfrage und Start einmal zurück (ein Toast).
+- In-Memory-Speicher (Demo, Übung) schreiben keine Anfragen und haben kein Erst-Abgleich-Tor; sie werten eine berührte
+  abgeschlossene Woche, wenn `canScore` (vorher wertete die Mac-Demo nur Wochen ohne Punkte).
+- `backfillCategoryScores` wartet auf den ersten Abgleich, überspringt P2.2-geschützte Wochen und nimmt
+  `scoresHealth` (ein iPad trägt Wochen mit Punkten nicht mehr nach); `rescoreRecentClosedWeeks` nur am iPhone.
+- Eigene `withoutUndo` haben `mergeDuplicates`, `rescoreRecentClosedWeeks`, `backfillCategoryScores`,
+  `processRescoreRequests`, `recordDeviceSeen`, `maintenance`; `storeInbox` speichert immer als Wartung.
+- `mergeImportedCopies` gruppiert jeden Block und jede Notiz mit `importID` nach `recordID`, immer voll, auch
+  übernommene `x:…`-ids (zwei übernommene Kopien behalten die Felder der ältesten, außer eine wurde später bearbeitet);
+  wirft der UUID-IN-Abruf, liest es die lebenden Blöcke bzw. Notizen ganz. Die 1970-Regel (P3.16 (4)) läuft bei jedem
+  `mergeDuplicates`, veraltete Schlüssel (P3.5 (4)) nur im vollen Lauf.
+- `ClosedWeekSnapshot.categoryScores` ist der gespeicherte Text (`String?`); `restore(_:)` speichert ohne Wertung.
+  `HealthDevice.scoresHealth`/`installedAt` sind `@MainActor`, `saveFailed`/`saveFailedMessageKey` nonisolated.
+- Weitere Namen: `WeekInputs`, `weekInputs(for:goalYear:)`, `WeekContext.weekOver`, `isDayCounter(_:)`,
+  `record(_ item:)`, `record(_ measure:)`, `ScoringDecision`, `scoringDecision(for:fromMaintenance:)`,
+  `keepsScoreBeforeInstall(_:)`, `writeRescoreRequest(_:force:now:)`, `mergeTemplateCopies()`,
+  `TrackerStore.currentBuild`, `weekKeys(from:through:)`, `lastFullMaintenanceKey`; UserDefaults `health.installedAt`,
+  `sync.firstImportDone`, `sync.buildWritten`, `maintenance.lastFull`.
+- `recordDeviceSeen` schreibt `sync.build.` nach einem Build-Wechsel sofort (ohne die 10 Minuten). P8.12 „Tageszähler“ =
+  ein täglicher, summierender Messwert ohne Health; er steht zuerst.
+
+### P4 App-Rahmen, Mac, System (Runde 3a und 3b)
+- Runde 3a: fünf Debug-Zeilen `.diagWidth` in TodayView.swift und WeekTable.swift (Dateien von P5/P6; P4.1 (1) gibt
+  die Messung P4). Neuer Blatt-Fall `AppSheet.settingsPage(SettingsPage)` statt eines Arguments an `.settings` (alle
+  `.settings`-Aufrufer bleiben, §0.9); `SettingsPage.health` (iOS) ohne Marke, weil es nicht das Teilen ist.
+- `showDayOverview(_:)` blendet am Mac auch die Spalte ein und aus, solange sie passt (ein Weg für ⌘0, Knopf, Ring und
+  Karte). Zusätzliche Namen: `SaveFailure`, `showsGlanceColumn`, `showsWeekSummaryColumn`, `AppModel.fits(_:detail:
+  width:)`, die festen Breiten und Schlüssel, `diagMeasure`, `View.diagWidth`, `PracticeUnavailableView.text` und
+  `init(onClose:)`, `StatusTint.Kind` mit `init(kind:)` (beschriftet, weil `StatusTint(.behind)` mehrdeutig wäre).
+  `StatusTint` nimmt die lesbaren Farben `MarkDoneText`/`MarkPartialText`/`MarkMissedText` und `Brand.accent` für „im
+  Plan“. `lastSent`/`lastReceived` sind `private(set)`, nur Gerät, nur erfolgreich beendete Ereignisse.
+  PracticeUnavailableView behält „deinen eigenen Daten“ (Blatt, kein Tour-Schritt). Kein Blatt-Fall für die
+  Wochenübersicht (`WeekSummaryPanel` ist privat in WeekTable, P6 zeigt sie lokal).
+- P4.1: ob ein Inspektor passt, entscheidet `AppModel.roomWidth` = max(Detailbreite, Fenster − sichtbare Seitenleiste
+  − 1), neue Glieder `sidebarWidth`, `showsSidebar`, `roomWidth`; `mainWindowWidth` berechnet; dazu ein Sprungschutz
+  (ändert sich „passt“ innerhalb 0,5 s, wird ein Breitensprung ≥ 200 pt übergangen).
+- P4.6: passt die Spalte nicht, schaltet ⌥⌘0 `showsWeekSummary` sofort aus und nach 100 ms (auf Woche) bzw. 350 ms
+  (von einer anderen Seite) wieder ein, damit WeekTable das Blatt zeigt.
+- P4.2: ⌘↩/⇧⌘↩ schließen ein offenes Abschluss-Fenster nur, wenn das Hauptfenster schon vorne war (mit Einstellungen
+  vorne holen sie es nur nach vorn). `MainWindow.remember(_:)` merkt sich `openWindow`; ist ein anderes Thalia-Fenster
+  sichtbar, öffnet `showWithoutEnvironment()` damit statt mit dem Apple-Event.
+- P4.13: eine „Änderung“ ist ein Speichern mit mehr als HealthValue und den eigenen `sync.seen.`/`sync.build.`;
+  ihre Zeit liegt in `sync.lastChange`; fehlt eine Zeit, steht „noch nicht“.
+- P4.15: „Entfernen“ nur unter „Früher“, löscht auch `sync.build.`, Hinweis mit „Widerrufen“. P4.17: anderswo
+  abgeschlossene Wochen einmal je Woche; der Planer bekommt den Wochenzustand über `isWeekClosed`/`weekHasPlan`.
+- P4.18: AppModel fragt das iCloud-Konto beim Start ab (sonst käme „Nicht bei iCloud angemeldet“ nie); Symbole, das ×
+  mit „Bis zum nächsten Start ausblenden“ und VoiceOver-Texte von P4; Tippen öffnet am Mac das Einstellungsfenster, am
+  iPhone das `.settings`-Blatt; die Debug-Option wirkt auch mit `-Demo`, `quota` spielt iCloud mit Konto vor.
+- P4.7: „Einstellungen…“ gebaut; die Bestätigung zeigt den Text des Hinweises („1 PH · Wofür“). P4.9: der Exporter
+  hängt an einem Hintergrund von MacRoot, Abbrechen zeigt keinen Hinweis. P3.13-Auslöser am Mac bei jedem
+  didResignActive (erst `isDue`, nie zwei Schreiber), nie auf der Watch.
+- P2.6: für Messwerte lautet die Rückfrage „Wiederherstellen ersetzt den Messwert aus dem letzten Import.“ (nach dem
+  Muster des Punkts). P4.20: „Zieljahr sichern“ nur bei geänderten Beginn/Ende/Zielüberprüfung, grau bei Ende ≤
+  Beginn mit „Das Ende liegt vor dem Beginn.“; gezählt werden Ergebnisse und Abschnitte mit dem gespeicherten Beginn;
+  nach „Neues Zieljahr beginnen“ Hinweis „Neues Zieljahr ab <Datum>“ mit „Widerrufen“ (§0.4). P2.9: Datum
+  „dd.MM.yyyy, HH:mm“, leerer Fehlertext „unbekannter Fehler“.
+- ⌘0 am iPad zeigt den gezeigten Tag (`captureDay`); „Zuletzt gelöscht“ während der Tour grau. P3.2: am Mac ruft
+  AppModel `SyncProgress.noteImport` selbst (WidgetPublisher läuft dort nicht).
+
+### P5 Heute, Erfassen, Tag abschließen (Runde 3b)
+- P5.4: der erste Abschnitt heißt nur für heute „Heute“, sonst wie der Tag („So, 22. Nov.“); Wochenzeilen „Woche 6
+  PH“; der Fokus kommt 0,35 s nach dem Erscheinen (`.task`), sonst ginge er beim Einschieben verloren.
+- P5.5 in der Einzahl „Noch 1 offen – zählt nicht mit“ und „Tag abschließen · 1 bleibt offen“; ein künftiger Tag zeigt
+  keine Zahl.
+- P1.16 Fokus: `label(remaining:unit:)` in `StatusTint`, darunter klein „6 / 8 PH“. WeeklyGoalRow: ein Grenz-Ziel ist nie
+  „erreicht“ (behebt einen Fehler aus 1.9.0); das kurze Wort neben „x von y“ nur, solange nicht erreicht. P1.7: ein Ziel,
+  das nicht ≥ ist, zeigt sein Zeichen („3 von ≤ 6 Stk.“, „32,50 €/< 50 €“).
+- P5.6: Notizzeile und Ausgabenzeile sind je ein VoiceOver-Element; der Hinweis der Ausgabe bleibt „Tippen zum
+  Bearbeiten“. P5.11 aus `DayKey.longLabel` gekürzt („Sonntag, 22. November“).
+- P5.12: nur die sichtbare Seite nimmt den Fokus; „Abschluss & Notizen“ löscht eine offene Anforderung; ohne offenen
+  Punkt wird nichts vorgewählt. P5.15: VoiceOver über `SummaryTile(…, spoken:)` (additiv), bei ≤ „genau 50 €, Ziel
+  höchstens 50 €“. P5.16: die Zeile kommt auch, wenn ein getipptes Feld auf den geladenen Text zurückgesetzt wurde.
+  P5.17: graue Zeile mit `calendar.badge.clock`, die Leiste hat dann nur das ×.
+- P4.19: beide „Mehr“-Menüs teilen `MoreMenuDataItems`; in der Übung ist das „Mehr“ der MainToolbar ganz weg (es wäre
+  leer). P4.1: der VoiceOver-Hinweis des Rings folgt dem Platz; die Seitenleisten-Karte hat denselben Tooltip.
+  P6.15: Tooltip „Zu heute (⌘T)“.
+
+### P6 Woche, Abschluss, Rückblick, PDF (Runde 3b)
+- P6.1 gilt überall, wo die Note steht (§1.2.7): auch Abschluss-Fenster und Bericht, Zielliste der Mac-Spalte und
+  „Bestes Ziel“ im PDF; `keepsStoredScore` verlangt Punkte; ohne gespeicherte Zielnoten zeigen sich die heutigen.
+  Weil Kontexte mit `goalYear: false` nicht wissen, ob sie eingefroren sind, reicht RangePDF die Einfrier-Regel durch
+  (`RangePDFData(…, isFrozen:)`, `RangePDFRow.isFrozen`, `PDFExport.weekPages(…, frozen: Bool? = nil)`).
+- Namen: `keepsStoredScore`, `shownScore`, `storedGoalScores`, `shownGoalScores(_:)`, `scoredGoalScore(_:)`,
+  `shownGoalsScored`, `readsHealthProgress`, `lacksHealthValues`, `lacksHealthHint`, `WeeklyTarget.shownStatus`,
+  `amountUnit`, `amountSuffix`, `amountsText(joiner:)`, `ShareContent.ringText`/`ringCaption`/`shownRingText`/
+  `shownRingCaption`, `RangePDFData.closedCountedDays`/`finishedWeeks`, `ClosedWeekFacts`, `WeekHistoryRow(goalsTotal:)`,
+  `WeekSummarySections(heroNote:)`, `WeekSummarySheet`, `BackupReminderRow`. `PDFExport.make(_:context:progress:)` ist
+  `async`, die synchrone Fassung ist weg.
+- P6.2: `finishedWeeks` zählt die laufende Woche immer offen (`state != .running`), zusätzlich zur Formel des Plans.
+- P6.14: am Mac ersetzt „aus Health am iPhone“ die Zeile „Ziel …“ (das Ziel steht im Tooltip); der Satz unter der Note
+  steht auch im Wochenblatt des schmalen iPads. Die P7.1-Zeile im Abschluss erst nach dem Abschließen, aus dem Kontext
+  berechnet.
+- Anzeige: € ohne „€“ vor „von“, Grenzen mit Zeichen („32,50 von ≤ 50 €“); „im Plan“ in der Akzentfarbe; PDF-Kacheln
+  „steigend (je k)“ bzw. „Trend –“ (keine Spalten erste/letzte); Fortschritt als Kapsel unten; eine Woche nur aus
+  Krank-/Urlaubstagen hat im Teilen-Bild „–“ und „zählt nicht“; Knöpfe der Wiederöffnen-Frage „Woche wieder öffnen“ /
+  „Abbrechen“; die Sicherungs-Zeile fehlt in der Übung.
+
+### P7 Ziele, Leseliste, Verbundene Apps (Runde 3b)
+- `FrozenWeekNote` entscheidet mit `TrackerStore.canScore(week)` – Knopf, „Hier fehlen …“ und „Nach heutigem Stand“
+  folgen genau `recompute`; P9 deckt geteilte Wochen über `canScore` ohne Änderung in Segments.swift.
+- „Neu berechnen“ mit Schnappschuss und Hinweis samt „Widerrufen“ auf jedem Gerät (§0.4), nicht nur am iPhone; ohne
+  sichtbare Änderung „KWnn neu berechnet · 7,84“, ohne Änderung „KWnn: Wertung unverändert“. P6.1 vergleicht die
+  gezeigten (gerundeten) Noten.
+- P7.4: Fokus nach 350 ms über `.task(id: chosenID)`. P7.8: hat die erste Kategorie keine gewertete Woche, beginnt der Fuß
+  mit „Je Kategorie: Wochen ab 8,00 von den gewerteten – …“. P6.14: der Messwert eines Ergebnisses wird in den
+  Messwerten dieser Woche gesucht. P7.11: der Fingerabdruck enthält auch die Arbeitsblöcke.
+- P1.12: für andere Einheiten „Schon erledigt bis (optional)“; keine Zahl oder mehr als der Umfang → „Sichern“ grau
+  mit oranger Zeile. §1.5.4: der Ergebnis-Editor heißt bei `requiresRef` „Konto“ mit „Bitte wählen“, ohne bekannte
+  Konten ein Textfeld mit Hinweis; ohne Konto kein Sichern; im Messwert-Editor ist der Hinweis eine orange Zeile.
+- `GoalResultRow` behält `tint` (§0.9), der Balken nimmt die Status-Farbe; `ResultStatusTag(isLimit: Bool = false)`.
+- Zusätzliche Texte für den P6.3-grep (Leerzustand der Ziele, Erklärung zum PDF-Bericht), die Grenz-Wörter und der
+  Finn-Satz in den Erklärungen, „Öffnet das Buch“. Ein entschuldigter Live-Punkt bleibt blasse Säule (nicht `isLive`).
+- P7.3: die gestrichelte letzte Strecke ist gebaut (`GoalScoreSparkline.liveStep`). P7.10: entschuldigte Wochen und
+  Verläufe kommen aus den beobachteten Plänen (`GoalsContent.excusedWeeks`, `goalScores`) – „excusedWeeks bleibt“ als
+  „das Verhalten bleibt“ gelesen (mit dem Store verglichen).
+
+### P8 Watch, Widgets, Siri (Runde 3b)
+- P1.7: der Schnappschuss trägt nur die Zielzahl; `WidgetText.targetAmount` rundet sie wie ein ≥-Ziel (obere Grenze
+  eines Bereichs auf); € bleibt `Format.euro`; ohne Einheit kein Leerzeichen. Kein Formatwechsel (P8.12).
+- P8.8: „nur nach Drehen“ gilt im Health-Editor (`requiresChange`, „Sichern“ grau bis bewegt); eigene Wertzeilen
+  bleiben bei R81; der letzte Wert wird in `.task(id: today)` gelesen. P8.9: Wochenziele „Ziel ≥ 20 pro Woche“. P8.10
+  über `Format.amount`.
+- P8.11: nur die mittlere Überschrift wird „Kein Plan – tippen“. P8.12: keine Chips an einem neuen Tag, ohne Plan oder
+  abgeschlossen; eine offene Zeile weniger nur mit Chips; die mittlere Überschrift darf zwei Zeilen haben.
+- P6.5: auch „Heute ist nichts fällig.“ bekommt die PH des Tags („… 0 PH.“); die Krank-Zeile kommt vor der
+  Abschluss-Zeile. P8.17: `MeasureOptions` bietet Titel (ohne Doppelte), der Kurzbefehl nimmt Code oder Titel;
+  Intents.swift hat ein ausdrückliches `import Foundation`. P8.7: das Banner darf zwei Zeilen haben, „Power-Hours
+  gelöscht“ steht ebenfalls 4 s.
+
+### Querverweise nach Runde 3
+- §2.10 P4–P2.5: die Tupel-Fassung `restoreMarks(_:day:)` und die Brücke mit Schnappschüssen sind aus
+  Shared/TrackerStore.swift entfernt (P4 besitzt die Datei nicht); nur `restoreMarks(_ snapshots:)` bleibt.
+- P5.9 ohne Wortlaut im Plan: ImportView sagt „die Messwerte mit ihren IDs“ und „zurück kommt eine CSV.“; PastImport
+  unverändert. P6.3: ImportView „deine Jahresziele mit Kategorien“, Style.swift-Kommentare „light tint (opacity 0.1)“.
+
+### P9 Health teilen (Runde 4)
+- Namen über den Vertrag hinaus: `HealthShareGate.verdict(for:)`, `thisDevice`, `switchIsOn`, `endedElsewhere`,
+  `setSwitch(_:endedElsewhere:)`, die Schlüssel `thalia.health.share`, `thalia.health.shareEndedElsewhere`,
+  `thalia.health.shareCleaned`, die Startoption; `HealthShareWeek`; an TrackerStore `readHealthShareState`,
+  `sharedHealthEntries`, `writesHealthShare`, `startHealthShare(today:read:now:)`, `removeAllHealthShare(now:)`; an
+  WeekContext `healthShare`, `sharedHealthValue(_:on:)`; App `HealthShareController` (mit `syncArrived(store:)`),
+  `HealthShareSection`, `SharedHealthInput`, `AppModel.healthShare`.
+- Signaturen: `writeHealthShare(day:counted:read:now:) -> Bool`, `writeHealthShareWindow(today:days:read:now:)` mit
+  zusätzlichem `read` (gibt die Zahl der geschriebenen Datensätze), `healthShareCovers(_:today:)` (jeder Tag der Woche
+  bis heute liegt im Fenster des Schreibers), `cleanUpHealthShare(gate:today:now:)` gibt die Zahl der gelöschten zurück,
+  `readValues(days:measures: [WeekKey: [MeasureRecord]])`. Das Fenster des Zustands wandert mit dem Tag.
+- Ein Tag ohne `counted` und `read` verliert seinen Datensatz. Die App-Store-Bereinigung schreibt den Zustand nur aus,
+  wenn etwas geteilt war – eine App-Store-Installation, die nie teilte, schreibt nichts. In `-Demo` steht der Schalter
+  an (nur im Speicher).
+- Geänderte markierte Stellen außerhalb der §2.0-Liste (wie der P9-Kopf erlaubt): CloseWeekView `healthNote`, Glance
+  `valueLines`, CloseDayView `healthElsewhereMeasures`, V11Tests C14; in MeasureForm die Zeile zum geteilten Wert, in
+  MeasureMenu kein „Wert leeren“ dafür; ThaliaWatchApp `import ThaliaCore`. Segments, WeekTable und
+  TrackerStore+Range brauchten keine Änderung (sie folgen über `canScore`, `isHealthElsewhere(_:on:)`,
+  `weekContext(for:)`).
+- Die Watch zeigt auch „Health am iPhone: … – dort übernehmen“; ein Wechsel des Tors baut ihre Startseite neu
+  (`.id(gateTick)`). Nach einem Abgleich schaltet sich ein übernommener Schreiber gleich ab (nicht erst beim Aktivieren),
+  und die Datenschutz-Texte der Leser folgen sofort; die tägliche Bereinigung auf der Watch läuft auch beim Aktivieren.
+- Bericht und Planungs-Prompt nennen am Mac, auf der Watch und am iPad unter „Messwerte“ die geteilten Werte – genau wie
+  der Bericht am iPhone die übernommenen schon in 1.9.0 nennt (§1.4.7); Ergebnis-Zeilen verbergen Health weiter
+  (`hidesHealth`). Ob Health-Werte überhaupt in einen Prompt dürfen, ist eine Frage an das iPhone-Verhalten (nicht in
+  v11 geändert). Nachtrag: der Planungs-Prompt und die Kopie der Zielüberprüfung nehmen die geteilten Werte seit dem
+  Lückenschluss nicht mehr mit (unten „Lückenschluss nach der Prüfung“); der Wochenbericht nennt sie weiter.
+
+### P1 Abschluss (Runde 5)
+- `MARKETING_VERSION = 1.10.0`. `SyncDevice.firstV11Build = 58` ist die nächste TestFlight-Build-Nr. (STATUS v10:
+  „Nächste Build-Nr.: 58“); das Tor verlangt ≥ 58 – jede höhere Nummer passt, eine kleinere ließe 1.10.0 als alt
+  gelten (Mac, Watch und iPad werteten nie selbst). Ein Build aus Xcode meldet Build 1 und zählt wie eine alte Version
+  (STATUS, SYNC).
+- SYNC.md „Stand 1.10.0“ – jede Zeile am Code abgeglichen (Auslöser des Eingangs in `ExchangeMonitor`, Mac-Takt in
+  `AppModel.startConnectedApps`, Import-Beobachter in `WidgetPublisher`, `ThaliaWatchApp`, `scoringDecision`,
+  `closeWeek`, `SyncProgress`, `maintenance(today:)`, `BackupWriter`, Erinnerungen); dazu ein Abschnitt „1.10.0 – was
+  sich am Abgleich geändert hat“ und ein entfernbarer Abschnitt „Health teilen (nur TestFlight)“. Die Siri-Grenze bleibt
+  bis zum Gerätetest von P4.14; die alte Zeile 32 hat den F1-Zusatz.
+- TESTING.md „v11 (ab Version 1.10.0)“ aus §3.4 und den Berichten aller Pakete samt Pflicht-Checkliste „Vor App-Store
+  entfernen“ mit den gezählten Stellen (172 Zeilen `HEALTHSHARE` – P9s Bericht nannte als Summe 170, seine Liste je
+  Datei ergibt 172, und so viele findet `grep`). Ältere Zeilen nachgezogen: ⇧⌘T → ⌘T, Menüleiste
+  (R96), Tasten ohne Klick (:176), Spalte oder Blatt (:177), Woche-Leiste (:180), Health am Mac (:16), „Alles als CSV“
+  → „Sicherung erstellen…“ (v9/v10), „im Rückstand“ (v10), :467 nach P3.2 (4).
+- STATUS „Stand v11“ über v10; STATUS:89 (entschieden), :92-94 (P7.12), :195 (P4.1), :234-235 (Architektur ohne
+  WorkActivity/Live Activity, mit WidgetPublisher, WidgetActions, neuen Dateien; „ThaliaTips“ gab es nicht mehr). Die
+  Prüf-Hinweise der Pakete stehen ohne die Pfade der Prüf-Ordner (die lagen nur in der Sitzung).
+- ARCHITECTURE (neue Dateien, Schlüssel, UserDefaults, wer wertet, Startoptionen), TOUR.md (Tour 11, 23 bzw. 24 Karten),
+  HANDBOOK_PROPOSALS 36–40, TASKS-v10 §1.2.1 und Nachträge zur neuen „zählt für“-Regel, README und WORKFLOW „equally
+  weighted“ (P6.3). Config/ci.env von P4/P9 geprüft: iPhone + `goals review close-week settings backup health`, Mac +
+  `review settings`; AppModel kennt alle diese Bildschirme.
+- Doku-Greps (§3.5, ohne alte TASKS-Dateien): „8,01“ nur im Entscheidungssatz (CONNECTED_APPS); „Live
+  Activity|WorkActivity|Timer“ nur im „entfällt“-Vermerk; „10 %|10 Prozent|zehn Jahresziele“, `flag.checkered`,
+  „hinten“ und „Alles als CSV“ leer.
+
+### Lückenschluss nach der Prüfung
+Die Prüfung nach Runde 5 (Code, Verhaltensszenarien, Typprüfung) fand diese Lücken; geschlossen (Core-Tests in V11 C3,
+C10, C11, C14, C16; Szenarien und Typprüfung im Prüf-Ordner der Sitzung):
+- P1.16 „Bericht und App gleich“: neu `PaceStatus.of(target:value:pace:)` (die Regel des Berichts: Grenze → im Rahmen /
+  überschritten; Ziel erfüllt → erreicht; vom Tempo „erreicht“, aber nicht erfüllt – über einem Bereich, „= 3“ mit 4 →
+  nach dem Wochenende „nicht erreicht“, sonst „im Plan“; sonst das Tempo). `WeekReport.targetStatus`,
+  `WeeklyTarget.shownStatus` (Woche, Mac-Spalte, Heute im Blick, Wochen-PDF), WeeklyGoalRow (Chip, „erreicht“ aus
+  `target.isMet`) und der Fokus nehmen sie. Vorher zeigte die App bei „150–180“ mit 160 „nicht erreicht“, mit 200
+  „erreicht“.
+- P1.3: eine Einheit mit Punkt am Ende („≤ 6 Stk.“, „bis zu 6 Stk.“) ist lesbar – nach der letzten Ziffer fällt alles
+  weg (1.9.0 las das nicht).
+- P6.15/P1.19: Tour-Schritt `day` (Mac) sagt „⌘T führt zu heute“ (nur Text, `since` bleibt). P6.3: im Planungs-Prompt
+  „Die Jahresziele sind die Grundlage.“ ohne „zehn“.
+- P9.3: WeeklyGoalRow zeigt unter „Heute eintragen“ einen geteilten Wert als `SharedHealthInput` (kein Feld, kein −/+).
+  Die Zielüberprüfung zeigt am Mac mit abgedeckter Woche die geteilten Werte (`hidesHealth` nur ohne Health und ohne
+  Teilen). Die Texte nennen das teilende Gerät: `HealthShareState.device` (neues JSON-Feld, Geräteart, nie der Name;
+  ohne Feld „iPhone“), `HealthShare.sharedCaption`/`suggestionText`, an `HealthShareWeek` `sharedCaption` und
+  `suggestionText(_:unit:)` – „aus Health am iPad“, „Health am iPad: … – dort übernehmen“. Neben einem eigenen
+  Health-Vorschlag des Geräts steht kein zweiter vom anderen Gerät. Das Messwert-Fenster zeigt dazu das Symbol des
+  teilenden Geräts (`HealthShareWeek.writerSymbol`); die nicht mehr benutzte `HealthShareController.phoneSuggestionText`
+  ist entfernt (§0.9).
+- Prompts ohne geteilte Health-Werte (§1.4.7, §1.4.8, Regel der Aufgabe): `WeekContext.sharedHealthKeys`,
+  `reportInput(results:sharedHealth: Bool = true)`, `periodReport(…, sharedHealth: Bool = true)`. Der Planungs-Prompt
+  und „Bericht kopieren“ der Zielüberprüfung nehmen `false` – am Mac, auf der Watch und am iPad wie in 1.9.0 ohne
+  Health-Werte. Der Wochenbericht („Bericht kopieren“ im Abschluss, Rückblick, Import) zeigt sie weiter wie am iPhone
+  (§1.4.7). Die eigenen übernommenen Werte des iPhones stehen dort wie seit 1.9.0 im Prompt (nicht geändert – Frage an
+  Bini, ob Health-Werte überhaupt in Prompts sollen).
+- P9.1 (§1.4.6): ein Leser zählt das Fenster des Schreibers nur bis 34 Tage vor dem eigenen heute
+  (`HealthShareState.readable(today:)`, `HealthShare.covers(_:state:today:)`; `HealthShareWeek(settings:week:today:)`,
+  `healthShareCovers`, `sharedHealthEntries(…, today:)`) – Tage, die die tägliche Bereinigung schon löschen darf, gelten
+  nicht als abgedeckt, `canScore` lässt den Mac eine solche Woche nicht werten.
+- §1.4.3: ein in diesem Start bestätigter App-Store-Build (`HealthShareGate.isConfirmedDenied`) bereinigt auch nach
+  jedem Abgleich (AppModel `afterSync`, Watch bei `.active`) – Datensätze, die erst mit dem ersten Abgleich kommen,
+  gehen, und das teilende Gerät schaltet sich beim nächsten Abgleich ab. Bleibt mit der Bereinigung. `resolve(timeout:)`
+  nimmt `Swift.Duration` (am Mac kann der C-Typ `Duration` aus MacTypes sichtbar sein).
+- P2.1 (b)/P3.3: `closeImportedWeek(_:fillsIn:)` statt `closeWeek` für die Wochen, die ein Import schließt (auch
+  „Widerrufen“): Mac, Watch und iPad geben einer Woche, die sie nicht werten können (`canScore`), keine eigene Note,
+  nur die Anfrage mit `force`; das iPhone wertet keine Woche vor seiner Installation, die Health liest (P2.2). Wochen
+  ohne Health-Punkt wertet der Abschluss wie bisher auf jedem Gerät. Vorher speicherte der Mac seine Note ohne Health,
+  die überall galt.
+- P3.7: was eine Sicherung nur auffüllt – die einfachen Einstellungen (Zieljahr, Katalog-Schalter) und eine Woche, die
+  das Einspielen erst anlegt (`wertung`, Abschluss) –, trägt den Zeitstempel 1970: eine später über iCloud ankommende
+  echte Kopie gilt (`goalPeriod(from:)`, `writeSetting`, `DuplicateMerge.week`).
+- P3.13: `BackupWriter.isDue` gilt auch, wenn `backup.lastAuto` in der Zukunft liegt (eine einmal vorgehende Uhr hielt
+  die Sicherung sonst bis dahin an). §1.8.2: Demo und Übung (In-Memory) zeigen in „Sicherungen“ keine echten Dateien und
+  im Fuß kein „automatisch: …“ (`BackupWriter.showsSmallNotice(store:)`, `statusLine` ohne `lastAuto`).
+- P4.5/P4.6/P4.21: ⌘1–⌘4, ⌥⌘0 „Wochenübersicht“ und ⌘T „Zu heute“ sind grau, solange ein lokales Fenster Eingaben
+  hält (`isBlocked`); ⌘0 außerhalb von Heute ebenso (der Seitenwechsel schlösse das Fenster).
+- `HEALTHSHARE` steht jetzt in 196 Zeilen (TESTING und STATUS nennen die Stellen je Datei); jede Fundstelle des
+  §3.5-greps hat die Marke höchstens drei Zeilen darüber.
+
+### Offen nach Runde 5
+- CI am Mac (Typprüfung, Build gegen das echte SDK), `[screenshots]` mit den neuen Bildschirmen und `[testflight]`
+  (Build 58) – macht der Orchestrator; STATUS bekommt dann den Satz dazu. Die SDK-Stellen, die nur nachgebildet geprüft
+  sind, nennen die Paketberichte (u. a. `withoutUndo`, CloudKit-Ereignisse, `AppTransaction`, HealthKit, App Intents,
+  `onGeometryChange`, `NavigationSplitView(columnVisibility:)`).
+- Gerätetests (TESTING v11); P5.1 einen ✓ mit `os_signpost` messen; P4.1 „diag: detail check“ im Mac-Protokoll (R ≈ 0);
+  P4.2 Erinnerung bei geschlossenem Hauptfenster und offenen Einstellungen; §1.4.12 vor dem ersten App-Store-Einreichen
+  (läuft die App-Prüfung in der Sandbox?).
+- Freiwillig: `ExistingState.entries`-Kommentar in ImportPreview.swift („(`order` 0)“) an P3.9 anpassen;
+  `storeFinalScore` mit `String(value)` für bitgenaue Zielnoten in `wertung` (nicht verlangt).

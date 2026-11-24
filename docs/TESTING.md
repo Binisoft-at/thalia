@@ -13,7 +13,7 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 ## Apple Health (nur iPhone)
 - [ ] Einstellungen → Apple Health → Vorschläge einschalten → „Zugriff erlauben“ → Health-Dialog erscheint, Kategorien freigeben.
 - [ ] Bei einem Messwert mit Health-Quelle (Schlaf, Gewicht, Wasser …) erscheint ein rosa „Health: …“-Vorschlag, wenn es dort Daten gibt.
-- [ ] Vorschlag übernehmen → Wert zählt; am Mac erscheint **kein** Health-Wert (bleibt auf dem iPhone, so gewollt), deine Markierung aber schon.
+- [ ] Vorschlag übernehmen → Wert zählt; am Mac erscheint **kein** Health-Wert (bleibt auf dem iPhone, so gewollt), deine Markierung aber schon. (Ausnahme nur in der TestFlight-Version mit „Health-Werte mit Mac und Watch teilen“ – siehe „v11“.)
 - [ ] Eigener Wert eingetragen → Vorschlag verschwindet, eigener Wert hat Vorrang.
 
 ## Erinnerungen
@@ -41,7 +41,7 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 
 ## Mac
 - [ ] Heute: links Kategorien mit Prozent, rechts die Kategorie, rechts außen die Tagesübersicht (Symbolleiste blendet sie ein/aus). Wirkt es wie eine Mac-App? Was fehlt?
-- [ ] Symbolleiste: ‹ Heute › (auch ⌘[ ⌘] ⇧⌘T), „Tag abschließen“, „+“.
+- [ ] Symbolleiste: ‹ Heute › (auch ⌘[ ⌘] und „Zu heute“ ⌘T – seit 1.10.0 statt ⇧⌘T), „Tag abschließen“, „+“.
 - [ ] Menü „Gehe zu“ (⌘1–4), ⌘N (Power-Hours), ⇧⌘I, ⌘↩ (Tag abschließen).
 - [ ] Einstellungen über ⌘,.
 
@@ -172,12 +172,12 @@ Einstellungen → Diagnose → App-Protokoll → Protokoll kopieren → in den C
 - [ ] Kurzbefehle → Automation → Transaktion → „Ausgabe in Thalia“ (Betrag = Betrag, Wofür = Händler); danach eine echte Kartenzahlung: landet sie mit dem richtigen Betrag in Thalia? Wenn nicht: Protokoll kopieren (Plan B: Betrag als Währung).
 
 **Mac (R14, R15, R35, R59, R62, R96, H1)**
-- [ ] Menüleiste: „73 %“ oben rechts; das Fenster zeigt die Statuszeile, Power-Hours mit den letzten Kombinationen, eine Ausgaben-Zeile, „Thalia öffnen“ und „Tag abschließen…“. Abschaltbar in den Einstellungen.
-- [ ] Tastatur auf Heute: ↑/↓ wählt einen Punkt, 1–4 setzt Erledigt/Teilweise/Nicht erledigt/Entfällt, die Auswahl springt zum nächsten offenen Punkt; ⌥⌘↓/↑ wechselt die Kategorie. Gleiches am iPad mit Tastatur.
-- [ ] ⌘0, Klick auf den Ring und auf „HEUTE“ in der Seitenleiste blenden „Heute im Blick“ rechts ein und aus; die Spalte lässt sich ziehen (220–400 pt).
+- [ ] Menüleiste: „73 %“ oben rechts; das Fenster zeigt die Statuszeile, Power-Hours mit den letzten Kombinationen, eine Ausgaben-Zeile, „Thalia öffnen“ und „Tag abschließen…“. Abschaltbar in den Einstellungen. Seit 1.10.0: nach PH oder einer Ausgabe steht die Bestätigung mit „Widerrufen“ da (verschwindet nach ~5 s), PH gehen bis 16, dazu „Einstellungen…“.
+- [ ] Tastatur auf Heute: ↑/↓ wählt einen Punkt, 1–4 setzt Erledigt/Teilweise/Nicht erledigt/Entfällt, die Auswahl springt zum nächsten offenen Punkt; ⌥⌘↓/↑ wechselt die Kategorie. Gleiches am iPad mit Tastatur. Seit 1.10.0 ohne Klick: App aktivieren oder ⌘1 → der erste offene Punkt ist markiert → „1“ setzt ihn; ⌥⌘↓, dann „1“ ebenso.
+- [ ] ⌘0, Klick auf den Ring und auf „HEUTE“ in der Seitenleiste blenden „Heute im Blick“ rechts ein und aus; die Spalte lässt sich ziehen. Seit 1.10.0: ist das Fenster zu schmal für die Spalte, öffnen dieselben Wege „Heute im Blick“ als Blatt.
 - [ ] Abendnotiz tippen, dann ⌘N: der Befehl ist ausgegraut, nichts geht verloren. Ebenso im Punkt-Fenster: Notiz tippen, ⌘N / ⇧⌘N / ⌘↩ → nichts passiert.
 - [ ] Einstellungen → Archiv → „Wiederherstellen“ bzw. ein Import, der eine Woche ersetzt: der Hinweis mit „Widerrufen“ erscheint im Einstellungsfenster, nicht dahinter.
-- [ ] Woche: die Leiste zeigt „Vorige Woche“, „Diese Woche“ (⌘T), „Nächste Woche“ und „Wochenübersicht“ (⌥⌘0) mit Text.
+- [ ] Woche: die Leiste zeigt „Vorige Woche“, „Diese Woche“, „Nächste Woche“ und „Wochenübersicht“ mit Text; der Titel ist „KW47“ mit den Tagen darunter. Seit 1.10.0 stehen die Kürzel im Menü „Gehe zu“: „Zu heute“ ⌘T (auf Woche zur laufenden Woche) und „Wochenübersicht“ ⌥⌘0.
 - [ ] Absturz aus Build 47 behoben: Heute am Mac länger offen lassen, Tage wechseln, „Tag abschließen“, ⌘0, Fenster schmal und breit ziehen – kein Absturz (die Leiste ist nicht mehr anpassbar).
 - [ ] Ein Hauptfenster (R30): Ablage hat kein „Neues Fenster“, keine Tabs; Menüleiste → „Thalia öffnen“ und die Tour aus den Einstellungen holen das vorhandene Fenster nach vorne. Fenster schließen, dann Dock-Symbol klicken → es geht wieder auf.
 - [ ] Fenster („Tag abschließen“, PDF, Import) passen ins Hauptfenster und scrollen; das Hauptfenster lässt sich nicht kleiner als 900 × 620 ziehen.
@@ -318,7 +318,7 @@ Ziel: alte Wochen aus Scans so übernehmen, wie die Unterlagen sie überliefern 
 - [ ] `id` 9.9 (gibt es nicht) → Warnung „… ist keine Kategorie der App; die Note bleibt ohne Zuordnung im Archiv.“; die Note steht unter „Ohne Zuordnung (Archiv)“.
 - [ ] Vorschau je Woche: „12 Kategoriennoten · 10 Zielnoten · Wertung 9,28 laut Unterlagen“.
 - [ ] Dieselbe Datei zweimal importieren → beim zweiten Mal „unverändert“, nichts ändert sich. Eine geänderte Note ändert nur diese Note.
-- [ ] Einstellungen → „Alles als CSV“ enthält die `category_score`-/`goal_score`-Zeilen, die Spalte `count` und die Quelle in der `week`-Zeile; diese Datei wieder importieren → „unverändert“.
+- [ ] Einstellungen → „Sicherung erstellen…“ (bis 1.9.0 hieß der Knopf anders) enthält die `category_score`-/`goal_score`-Zeilen, die Spalte `count` und die Quelle in der `week`-Zeile; diese Datei wieder importieren → „unverändert“.
 
 **Mittelwerte (Entscheidung 4)**
 - [ ] Tagesnoten 0, 10, 10 einer Kategorie → Ø 6,67, n = 3 (die echte 0 zählt mit).
@@ -395,7 +395,7 @@ Werte aus anderen Binisoft-Apps – ohne CloudKit-Schemaänderung.
 
 **Ergebnisse (Entscheidung 1.2)**
 - [ ] Ziele → ein Ziel → „Ergebnisse“ → „Ergebnis anlegen“: abhaken (z. B. „Website online“), zählen („10 Bücher“, Ziel `>=10`) und Zielwert (Ziel `<=…` oder `>=…`, mit Startwert); Quelle „Eigene Einträge“, „Leseliste“, „Messwert“ oder „Verbundene App“.
-- [ ] Die Zeile hat „Abhaken“ (danach „Zurücknehmen“), „+1“ oder „Wert eintragen“ (nichts davon, wenn eine Quelle zählt; bei der Quelle „Leseliste“ steht dort „Leseliste“) und zeigt Stand, Ziel und Status („offen“, „auf Kurs“, „hinten“, „erreicht“, nach dem Zeitraum „nicht erreicht“), z. B. „7 von 10 · davon 4 in Abschnitt 1“; ohne Ziel nur den Stand.
+- [ ] Die Zeile hat „Abhaken“ (danach „Zurücknehmen“), „+1“ oder „Wert eintragen“ (nichts davon, wenn eine Quelle zählt; bei der Quelle „Leseliste“ steht dort „Leseliste“) und zeigt Stand, Ziel und Status („offen“, „auf Kurs“, „im Rückstand“ (bis 1.9.0 anders benannt), „erreicht“, nach dem Zeitraum „nicht erreicht“), z. B. „7 von 10 · davon 4 in Abschnitt 1“; ohne Ziel nur den Stand.
 - [ ] „Eintrag mit Datum…“ legt einen Eintrag für einen anderen Tag an; auf der Seite des Ergebnisses ändert das Antippen eines Eintrags („Einträge“) Datum, Wert und Notiz, auch rückwirkend; „Eintrag löschen“ und dann Widerrufen (⌘Z) holen ihn zurück.
 - [ ] Rückwirkend über den bekannten Weg: zu einem früheren Tag gehen, „Erfassen“ → „Jahresziel eintragen“ (auch Ziele → Jahreskarte → ••• → „Jahresziel eintragen…“): das Fenster nennt den Tag, Hinweis „Zählt für Di, 17. Nov.“; der Eintrag trägt dieses Datum.
 - [ ] Ein Ergebnis mit Quelle „Messwert“ zählt beim Zählen die Wochenwerte zusammen und nimmt beim Zielwert den letzten Wert.
@@ -461,10 +461,10 @@ Werte aus anderen Binisoft-Apps – ohne CloudKit-Schemaänderung.
 - [ ] Ergebnis, Eintrag, Buch, Stand und Abschnitt am iPhone anlegen → am Mac nach dem Abgleich da, umgekehrt ebenso.
 - [ ] Am selben Tag auf iPhone und Mac je einen Stand für dasselbe Buch eintragen (eins davon offline) → nach dem Abgleich sind beide da.
 - [ ] Ein rückwirkender Stand in einer abgeschlossenen Woche des aktuellen Abschnitts mit verknüpftem Punkt → die Woche wird neu gewertet; vor dem aktuellen Abschnitt nicht.
-- [ ] Einstellungen → „Alles als CSV“: am Ende `record`-Zeilen (`goal.…`, `list.…`, `link.rule.…`, `x.…`, `score.…`); dieselbe Datei wieder importieren → Vorschau „Datensätze“, nichts ändert sich. „Diese Woche als CSV“ und der Export für ChatGPT haben keine `record`-Zeilen.
+- [ ] Einstellungen → „Sicherung erstellen…“: am Ende `record`-Zeilen (`goal.…`, `list.…`, `link.rule.…`, `x.…`, `score.…`); dieselbe Datei wieder importieren → Vorschau „Datensätze“, nichts ändert sich. „Diese Woche als CSV“ und der Export für ChatGPT haben keine `record`-Zeilen.
 - [ ] Ein Gerät mit 1.8.0 (falls noch eins da ist): einen Messwert mit Quelle `app:…` dort sichern → die Quelle bleibt; nach dem Update wirkt sie.
 - [ ] Zwei Geräte mit verschiedenen Apps (z. B. iPhone mit Theo, Mac mit Finn), beide vor dem Abgleich geöffnet → danach kennt jedes Gerät beide Quellen (Verbundene Apps), und die Werte beider erscheinen in der Woche.
-- [ ] Einen abgeleiteten Haken „⇄ George · …“ leeren, „Alles als CSV“ sichern und in einen frischen Speicher (zweites Gerät, Demo nicht) einlesen → der Haken bleibt leer. Ein älteres Backup einlesen → später verbundene Apps bleiben bekannt.
+- [ ] Einen abgeleiteten Haken „⇄ George · …“ leeren, mit „Sicherung erstellen…“ sichern und auf einem zweiten Gerät einlesen, dessen erster iCloud-Abgleich fertig ist (Demo nicht) → der Haken bleibt leer. Ein älteres Backup einlesen → später verbundene Apps bleiben bekannt. Nie in ein Gerät einlesen, dessen erster iCloud-Abgleich noch läuft.
 - [ ] Abschnitt für nächste Woche beginnen → im Ergebnis-Fenster „Ziel in Abschnitt 2 (ab KW…, optional)“; ein neues Ergebnis erscheint auf der Zielseite mit „Gilt ab Abschnitt 2 (KW…)“. „Neuen Abschnitt beginnen…“ noch einmal → frühestens die Woche danach, Titel „Abschnitt 3“.
 - [ ] Mac schließt die Woche am Sonntag ab (mit Schritten aus Apple Health im Ziel), am Montag beginnt ein neuer Abschnitt → das iPhone wertet die Woche nach dem Abgleich noch mit den Health-Werten (erst ab der zweiten Woche des Abschnitts eingefroren).
 - [ ] Watch: ein Messwert mit Quelle Leseliste zeigt nur den Wert und „mit „Lesen“ am iPhone eintragen“; am iPhone führt „Messwert eintragen“ für ihn zu „Lesen“, der Kurzbefehl „Messwert eintragen“ lehnt ab.
@@ -473,3 +473,203 @@ Werte aus anderen Binisoft-Apps – ohne CloudKit-Schemaänderung.
 - [ ] CI-Screenshots enthalten „goal-detail“, „reading“ und „connected-apps“ für iPhone und Mac: zwei Abschnitte (Abschnitt 2 seit fünf Wochen), die Ergebnisse „Bücher gelesen“, „Website online“ und einen Zielwert, drei Bücher („Kleine Schritte“ fertig, „Klarer Kopf“ läuft, „Lange Wege“ geplant), die Quelle „Demo“ mit dem Workout „Push“, zwei Power-Hours (eine „ohne Zuordnung“ – im Screenshot „connected-apps“ unter „Ohne Zuordnung · Demo“), Kalorien und Protein. Der Fußtext unter „Auf diesem Gerät“ sagt dort „Beispieldaten der Quelle „Demo“ – hier liest Thalia keine anderen Apps.“
 - [ ] Einstellungen → Version zeigt 1.9.0 (`Config/Base.xcconfig`).
 - [ ] Nach der Tour hat der echte Speicher keine Beispieldaten: keine Quelle „Demo“ unter Verbundene Apps, keine Demo-Bücher, keine Demo-Ergebnisse.
+
+## v11 (ab Version 1.10.0)
+
+Plan und Regeln: [TASKS-v11.md](TASKS-v11.md) – bei Abweichungen gilt dort „Nachträge“. Abgleich: [SYNC.md](SYNC.md)
+„Stand 1.10.0“. Sicherung und CSV: [IMPORT.md](IMPORT.md). Finn: [CONNECTED_APPS.md](CONNECTED_APPS.md) Auftrag 3.4.
+Ziel: Befunde der Prüfung nach 1.9.0 beheben, Sicherungen, Finn mit Kontoständen und – nur in TestFlight – Health-Werte
+am Mac und auf der Watch. Ohne CloudKit-Schemaänderung.
+
+**Nach dem Update zuerst: alle Geräte auf 1.10.0**
+- [ ] **Zuerst alle Geräte auf 1.10.0** (iPhone, Mac, Watch, ggf. iPad). Vorher prüfen: solange ein Gerät noch 1.9 hat, zeigt Einstellungen → iCloud & Daten → „Geräte im Abgleich“ bei ihm „Thalia 1.9 – bitte dort aktualisieren. Bis dahin werten Mac und Watch abgeschlossene Wochen nicht selbst.“, und der Mac wertet abgeschlossene Wochen nicht selbst. Danach steht bei jedem Gerät die Version („iPhone · 1.10.0“); Einstellungen → Version zeigt 1.10.0.
+- [ ] Die Tour bietet „Neu in Thalia“ an: in der TestFlight-Version mit drei Karten („Sicherung“, „Genauer gerechnet“, „Health am Mac und auf der Watch“), im App Store mit zwei.
+- [ ] Vor dem Update die Noten der letzten drei abgeschlossenen Wochen notieren (Rückblick). Nach dem ersten Abgleich am iPhone dürfen sie sich einmal leicht ändern (die Regeln aus „Genauer gerechnet“); eingefrorene Wochen bleiben, bis jemand „Neu berechnen“ drückt. Ältere Wochen ändern sich nicht von selbst.
+- [ ] Erinnerungen nach dem ersten Start: die wiederholenden Erinnerungen von 1.9.0 sind weg, statt dessen sind Morgen, Abend und Woche je für die nächsten 7 Tage geplant. Ohne Öffnen von Thalia enden sie nach etwa 7 Tagen (wie die Abende schon in 1.9.0).
+
+**Health teilen (nur TestFlight-Version)**
+- [ ] iPhone → Einstellungen → Apple Health: Schalter „Health-Werte mit Mac und Watch teilen“ (aus), Fuß „Nur in der TestFlight-Version – Apple erlaubt Gesundheitsdaten in iCloud im App Store nicht. …“. Einschalten.
+- [ ] Mac und Watch zeigen danach Gewicht und Schlaf mit „aus Health am iPhone“; die Wochennote am Mac ist dieselbe wie am iPhone; kein „Wert aus Health auf dem iPhone“ mehr.
+- [ ] Am Mac in einen geteilten Schlafwert klicken → kein Feld, kein Eintrag. „Eigenen Wert eintragen…“ → leeres Feld; ein eigener Wert gewinnt.
+- [ ] Watch: den Editor eines geteilten Werts öffnen und „Sichern“ ohne Drehen → kein Eintrag (der Knopf bleibt grau).
+- [ ] Gewicht am iPhone übernehmen und mit ⌘Z/Schütteln widerrufen → am Mac ist der Wert nach dem Abgleich weg.
+- [ ] Etwas, das Health gelesen, aber niemand übernommen hat, steht am Mac als „Health am iPhone: … – dort übernehmen“ (nur lesen).
+- [ ] Mac, Heute: ein Fortschrittspunkt oder Wochenziel auf einem Health-Messwert (z. B. Gewicht) zeigt unter „Heute eintragen“ den geteilten Wert ohne Feld und ohne −/+, mit „Eigenen Wert eintragen…“.
+- [ ] Mac → Ziele → Zielüberprüfung: ein Ergebnis aus einem Health-Messwert zeigt den geteilten Wert (kein „Wert aus Health auf dem iPhone“); „Bericht kopieren“ und am Mac „Prompt kopieren“ (Woche) enthalten die geteilten Werte nicht (Messwerte „nicht erfasst“ wie in 1.9.0); „Bericht kopieren“ im Wochenabschluss zeigt sie wie am iPhone.
+- [ ] Nach dem Übernehmen durch das iPad heißen die geteilten Werte am Mac, auf der Watch und am iPhone „aus Health am iPad“ (bzw. „Health am iPad: … – dort übernehmen“); das Messwert-Fenster zeigt dazu das iPad-Symbol.
+- [ ] Die Datenschutz-Texte zeigen die TestFlight-Fassung: Einstellungen → iCloud & Daten → „Wo deine Daten liegen“ („Bleibt auf dem Gerät – außer beim Teilen (TestFlight)“), Einstellungen → Apple Health, Messwert → Apple Health („Übernehmen“), Messwert-Editor → Quelle Apple Health. Am Mac ist „Wo deine Daten liegen“ offen, am iPhone wird eingeschaltet → nach dem Abgleich zeigt der Mac die neue Fassung, ohne den Bildschirm neu zu öffnen; ausschalten → die alte kommt zurück.
+- [ ] iPhone im Flugmodus starten → nichts wird gelöscht, die geteilten Werte bleiben.
+- [ ] Am iPad einschalten, während das iPhone teilt → Rückfrage „Teilen läuft schon auf einem anderen Gerät (iPhone, zuletzt …). Hier übernehmen?“ → „Übernehmen“ → nach dem Abgleich ist der Schalter am iPhone aus, Fuß „Teilen wurde auf einem anderen Gerät beendet oder übernommen.“ – auch wenn Thalia am iPhone vorne blieb.
+- [ ] Schalter aus → der Mac zeigt wieder „Wert aus Health auf dem iPhone“; das App-Protokoll meldet „Health sharing off: n shared day(s) deleted“.
+- [ ] Debug-Build am Mac mit `-HealthShareGate denied` starten → alle `hshare.`-Datensätze sind weg, das iPhone schaltet sich ab.
+- [ ] Den Mac mit `-HealthShareGate denied` offen lassen und am iPhone wieder einschalten → nach dem nächsten Abgleich am Mac sind die Datensätze wieder weg und das iPhone schaltet sich ab (ohne Neustart des Macs).
+- [ ] Erster Start nach der Installation → die Tour hat die Karte „Health am Mac und auf der Watch“ (nur TestFlight).
+- [ ] Die Checkliste „Vor App-Store entfernen“ steht unten in diesem Abschnitt und in STATUS.md.
+
+**Wer wertet abgeschlossene Wochen**
+- [ ] Mac: eine abgeschlossene Woche 5 Wochen zurück mit einem Health-Fortschrittspunkt ändern → der Mac speichert keine Note; nach dem Abgleich zeigt das iPhone (Rückblick) die neue Note.
+- [ ] Mac: eine alte Woche abschließen → das iPhone wertet sie nach dem Abgleich nach (auch in einem früheren Abschnitt).
+- [ ] Solange ein Gerät 1.9 hat: der Mac wertet nicht selbst (nur das iPhone).
+- [ ] Mac, eingefrorene Woche mit Health-Punkt: „Hier fehlen die Werte aus Apple Health.“ und „Am iPhone neu berechnen“ → Hinweis „KWnn wird nach dem Abgleich am iPhone neu berechnet.“, keine Note am Mac; nach dem Abgleich zeigt das iPhone die neue Note.
+- [ ] iPhone: „Neu berechnen“ → Hinweis „KWnn: 7,84 → 8,02“ (Beispiel) → „Widerrufen“ stellt die alte Note und die Kategorie-Noten wieder her.
+- [ ] Eine eingefrorene Woche, deren Note heute anders wäre, zeigt die gespeicherte Note überall (Woche, Mac-Spalte, Abschluss, Bericht, PDF, Teilen-Bild) und darunter „Nach heutigem Stand: …“.
+- [ ] Frisch installiertes iPhone: alte Health-Wochen behalten ihre Note, auch wenn der Mac „Am iPhone neu berechnen“ geschickt hat – Hinweis „KWnn: Auf diesem iPhone fehlen die Health-Werte von damals – die Wertung bleibt.“
+- [ ] „Woche wieder öffnen“ einer eingefrorenen Woche fragt zuerst („KWnn wieder öffnen?“); danach „Widerrufen“ im Hinweis „KWnn wieder geöffnet“ stellt die Note genau wieder her.
+- [ ] Mac oder schmales iPad, Woche mit Health-Fortschrittspunkt: unter der Note „Ohne Werte aus Apple Health – am iPhone kann die Wertung höher sein.“, in „Werte“ „aus Health am iPhone“; beim Abschluss „Hier ohne Werte aus Apple Health gewertet – das iPhone rechnet nach dem Abgleich nach.“
+- [ ] Mac, ⌘Z nach 10 Minuten oder nachdem der Eingang gelesen wurde → nimmt nur den letzten Haken zurück, nicht die Wartung. ⌘Z nach einem Vereinen (Haken am Mac, Notiz am iPhone zum selben Punkt) tut nichts und stürzt nicht ab.
+- [ ] Einen Tag auf zwei Geräten abschließen, dann an einem wieder öffnen → nach dem Abgleich bleibt er offen.
+- [ ] Einen doppelten Punkt löschen → beide Kopien liegen in „Zuletzt gelöscht“. Wiederherstellen, während es den Punkt in der Woche noch gibt → Rückfrage („„…“ gibt es in KWnn schon.“ / „Trotzdem wiederherstellen“).
+
+**Mac**
+- [ ] Fenster 1180 und 900 pt breit, je mit und ohne „Heute im Blick“ bzw. „Wochenübersicht“; die Seitenleiste ziehen und ausblenden → kein Flackern, die Seitenleiste nie verdeckt, alle vier Markierknöpfe sichtbar.
+- [ ] Bei 1024 pt: ⌘0, Symbolleistenknopf, Tagesring und Seitenleisten-Karte öffnen „Heute im Blick“ als Blatt; ⌥⌘0 öffnet die „Wochenübersicht“ als Blatt, auch von Heute aus. Tooltip „Fenster breiter ziehen, um die Spalte zu zeigen“.
+- [ ] ⌘W, dann ⌘N → das Hauptfenster kommt mit „Power-Hours erfassen“. Einstellungen vorne, ⌘↩ → das Hauptfenster mit „Tag abschließen“ (ist „Tag abschließen“ schon offen, holt ⌘↩ es nur nach vorn – abgeschlossen wird nie aus einem Fenster dahinter).
+- [ ] Hauptfenster zu, Einstellungen offen, eine Abend-Erinnerung tippen → das Hauptfenster öffnet mit „Tag abschließen“.
+- [ ] App aktivieren, ⌘1 → der erste offene Punkt ist markiert → „1“ setzt ihn ohne Klick; ⌥⌘↓, dann „1“ ebenso.
+- [ ] Kürzel: ⌥⌘J „Jahresziel eintragen…“, ⌥⌘L „Lesen…“ (Buch vorgewählt, Zahl, ↩ trägt ein), ⌥⌘0 „Wochenübersicht“, ⌘T „Zu heute“ (auf Woche zur laufenden Woche; ⇧⌘T gibt es nicht mehr), Darstellung → „Seitenleiste ausblenden“, Ablage → „Sicherung erstellen…“.
+- [ ] Auf Heute verschieben ⇧⌘[ / ⇧⌘] den gezeigten Tag um eine Woche (auf Ziele und Rückblick grau); ⇧⌘↩ öffnet die Woche des gezeigten Tags; ⌘6 die Ausgaben des gezeigten Tags. Ein Klick in die leere Seitenleiste lässt die Seite stehen.
+- [ ] Woche: Titel „KW47“ mit den Tagen darunter; die Knöpfe zeigen ihren Text, „Wochenübersicht“ ist bei 1024 pt sichtbar.
+- [ ] Rechtsklick auf eine Notiz → „Löschen“ mit „Widerrufen“. Eine vollständige Kategorie ohne Wertung zeigt ✓ statt „100 %“.
+- [ ] Menüleiste: PH oder eine Ausgabe → „Widerrufen“ in der Bestätigung (nach ~5 s weg); PH bis 16; „Einstellungen…“. Nur über die Menüleiste benutzt → am iPhone steht beim Mac unter „Geräte im Abgleich“ eine aktuelle Zeit.
+- [ ] Theo (oder eine andere App) im Vordergrund, Thalia im Hintergrund → Thalia liest spätestens nach 5 Minuten (Menüleiste aktuell).
+- [ ] Ziele → Jahresziel eintragen: einen Wert tippen → ⌘N, ⌘↩, ⇧⌘N sind grau, bis gesichert oder abgebrochen ist; ebenso ⌘1–⌘4, ⌘T, ⌥⌘0 (und ⌘0 außerhalb von Heute) – der getippte Wert geht nicht verloren.
+- [ ] Energieverbrauch von „Woche“ im Hintergrund ≈ 0 (der bewegte Verlauf pausiert).
+
+**Erinnerungen**
+- [ ] Ein Krank- oder Urlaubstag bekommt keine Morgen-Erinnerung.
+- [ ] Woche am Sonntagvormittag am Mac abschließen → am iPhone keine 17-Uhr-Erinnerung „Wochenabschluss“. Ist die nächste Woche ohne Plan, kommt statt dessen „Nächste Woche planen“.
+- [ ] Am Montag die Sonntags-Erinnerung tippen → öffnet die Vorwoche, nicht die neue leere.
+- [ ] iPhone gesperrt, Tag am Mac kurz vor der Abend-Erinnerung abschließen → keine Abend-Erinnerung.
+
+**Siri, Widgets, Watch**
+- [ ] „Messwert eintragen“ → Gewicht → Siri fragt „Welcher Wert für „Gewicht“ (kg)?“; ein Zähler ohne Einheit (oder „Stück“) speichert 1; Siri bietet die Messwerte der Woche zur Auswahl.
+- [ ] Ausgabe per Kurzbefehl bei gesperrtem iPhone → am Mac sichtbar, ohne dass die App offen war (sonst bleibt die Grenze in SYNC.md).
+- [ ] Krank-Tag: „Stand des Tages“ sagt „Heute: Krank – der Tag zählt nicht. … PH.“; das Teilen-Bild des Tages zeigt „–“ mit „Krank“.
+- [ ] Großes Widget: bis zu 3 Messwert-Chips und „Alles Wichtige erfasst · diese Woche noch n“; mittleres Widget dieselbe Zeile (bis zu zwei Zeilen) und ohne Plan „Kein Plan – tippen“; Woche-Widget „Alle Jahresziele gleich gewichtet“.
+- [ ] Watch: ein Punkt mit Haken aus einer verbundenen App zeigt „⇄ …“; Tippen blendet den Haken aus (im Auswahlfenster „Haken der App ausblenden“). Ein Wert aus einer App ist nur zum Lesen („aus <Quelle>“).
+- [ ] Watch: PH sichern → „+1 PH · <Bereich> – Widerrufen“ für 4 s; Tippen → „Power-Hours gelöscht“, der Block liegt in „Zuletzt gelöscht“. Die PH-Auswahl zeigt „Heute erfasst“ (wischen → „Löschen“) und je Bereich „6/8 PH · Woche“.
+- [ ] Watch: Sonntag oder arbeitsfreier Tag → „Arbeitsfrei“, Krank-Tag → „Krank“ statt „Noch keine PH“. Beantwortete Zeilen sind blasser. Wertzeilen zeigen „Ziel …“ und ein grünes ✓, wenn erreicht; Wochenpunkte „2/3×“.
+- [ ] Watch: Gewicht ganz ohne Wert → kein Editor; mit Wert → die Krone startet dort; Editor öffnen und „Sichern“ ohne Drehen → kein Eintrag.
+- [ ] Watch ohne Plan: Seite 1 sagt „Wochenplan am iPhone oder Mac importieren – danach kommt er über iCloud.“; leere PH-Auswahl „Noch keine Bereiche. Öffne Thalia am iPhone und warte kurz auf iCloud.“ Eine Watch ohne iCloud zeigt orange „Nur auf der Watch gespeichert – iCloud nicht verfügbar“.
+- [ ] Tag am iPhone abschließen → die Komplikation zeigt „Abgeschlossen“, ohne die Watch-App zu öffnen. Sonntag vor dem Import → Montag früh „Neuer Tag“ statt „Kein Plan“. Arm heben und senken ohne Änderung → kein neuer Schnappschuss (Protokoll).
+
+**Sicherung und Import**
+- [ ] Einstellungen → Deine Daten: erste Zeile „Sicherung erstellen…“ (Fortschritt „Sicherung wird erstellt …“, Hinweis „Sicherung gespeichert“); darunter „Letzte Sicherung: … am iPhone (vor … Tagen) · automatisch: …“. Am iPhone sichern → am Mac steht nach dem Abgleich „… am iPhone“.
+- [ ] Nach einer Woche mit Thalia im Hintergrund liegt eine datierte Datei „Thalia Sicherung JJJJ-MM-TT.csv“ in Application Support/Sicherungen; Einstellungen → Deine Daten → „Sicherungen“ listet sie mit Größe und „Teilen…“. Nach der achten Woche räumt sie richtig auf (4 neueste + je Monat eine).
+- [ ] Wochenabschluss: wenn seit 30 Tagen kein Gerät von Hand gesichert hat, steht nach den Berichtsknöpfen „Letzte Sicherung vor … Tagen – jetzt sichern?“ (ohne jede Sicherung „Noch keine Sicherung – jetzt sichern?“).
+- [ ] Sicherung einlesen: Kopf „Sicherung vom 22.11.2026, 18:03 · Thalia 1.10.0 (58) · iPhone“ (Beispiel); ist sie älter als einen Tag, sagt eine orange Zeile, wie viele Markierungen und Werte auf den Stand der Sicherung gesetzt werden.
+- [ ] Frisches Gerät: der Import warnt „iCloud lädt noch deine Daten. …“, bis der ganze erste Abgleich fertig ist (erst 60 s nach dem letzten Import); „Trotzdem einlesen“ fragt.
+- [ ] Jahres-Sicherung (52 Wochen) einlesen: die Datei steht als eine Zeile mit Größe und „Datei entfernen“, „Sicherung wird gelesen …“, dann „Sicherung wird eingespielt – bitte warten“ – kein Einfrieren.
+- [ ] Original nach der Sicherung bearbeiten, dieselbe Sicherung auf zwei Geräten einspielen → nach dem Abgleich zählen PH, Notizen und Werte einmal, die Änderung am Original bleibt.
+- [ ] Eine Sicherung am Mac einspielen → keine Wochennote ändert sich (die `wertung`-Zeilen behalten die gespeicherten Noten). Eine Datei, die Noten einer abgeschlossenen Archivwoche ändert → der Mac behält seine Note, das iPhone wertet nach dem Abgleich.
+- [ ] Mac: „Diese Woche als CSV“ einer abgeschlossenen Woche mit Health-Fortschrittspunkt ändern und wieder importieren (die Woche wird ersetzt), dann „Widerrufen“ → der Mac speichert keine eigene Note (bis zum Abgleich zeigt er die Note nach heutigem Stand), das iPhone wertet die Woche nach dem Abgleich.
+- [ ] Frisches Gerät, Sicherung früh einlesen („Trotzdem einlesen“) → kommt danach das echte Zieljahr (oder eine abgeschlossene Woche mit späterer Note) über iCloud, gilt das echte.
+- [ ] Demo (`-Demo`): Einstellungen → Deine Daten zeigt kein „automatisch: …“ und „Sicherungen“ keine echten Dateien dieses Geräts.
+- [ ] Eine Woche neu importieren, dann „Widerrufen“ → „Auch in den nächsten Wochen“ (Planänderung) ist wieder da. „Vergangene Woche nachtragen“, dann „Widerrufen“ → eingefügte Notizen, PH und Reflexionen sind weg, Tagestypen zurück, die betroffenen abgeschlossenen Wochen neu gewertet.
+- [ ] Eine Datei nennt einen Urlaubstag „Arbeitstag“ → der Tag bleibt „Urlaub“, Zeile „Fr 27.11.: bleibt „Urlaub“ – die Datei sagt „Arbeitstag“.“ (Beispiel). Dieselbe Datei noch einmal → „unverändert“.
+- [ ] „1,125“ übersteht Sichern und Einlesen (in der Datei „1.1250“); ein einzelner Wert behält seine Uhrzeit; „8.000“ in einer ChatGPT-CSV wird als 8 gelesen, mit dem Hinweis „… Tausenderpunkt? Bitte 8000 schreiben“.
+- [ ] Eine CSV für KW49, während KW48 gewählt ist → orange „Die CSV ist für KW49 – gewählt ist KW48.“, Importieren fragt „Trotzdem KW49 importieren“.
+- [ ] Ein Plan kommt vom iPad, nachdem die Vorschau gebaut war → beim Importieren „KW48 ersetzen?“ statt einer stillen Mischung.
+- [ ] Nie in ein Gerät einlesen, dessen erster iCloud-Abgleich noch läuft.
+
+**Heute, Erfassen, Tag abschließen**
+- [ ] Erfassen → „Messwert eintragen“ zeigt „Heute“ und „Diese Woche“; nach der Wahl hat das Feld den Fokus (Mac ⇧⌘E ebenso).
+- [ ] Erfassen: Reihenfolge Lesen, Tag abschließen, Jahresziel eintragen (Pokal), Punkt anlegen, Messwert anlegen, Wochenplan importieren, Fokus ansehen; die vier Kacheln bleiben.
+- [ ] Wochenziele in Heute in der Farbe ihres Stands, neben „x von y“ das kurze Wort („im Plan“, „hinter dem Plan“, „noch offen“); Grenzen „im Rahmen“ / „überschritten“, nie „erreicht“. Anteilige Ziele ohne Hundertstel („150 von 86 Stk.“, „Ziel 86 statt 100 Stk. – 1 Tag krank“).
+- [ ] Fokus: „noch 0,8 PH offen“ und „6 / 8 PH“, in vergangenen Wochen „Wochenziel“; an einem Erholungstag „heute frei“, krank „heute krank“.
+- [ ] Wochenziel mit Bereich (z. B. „150–180“) oder „= 3“: im Bereich „erreicht“ (grün), darüber nach dem Wochenende „nicht erreicht“ – in Woche, Heute, Fokus, Wochen-PDF und Bericht gleich.
+- [ ] „Heute im Blick“ → „Diese Woche noch“: Titel und darunter „0 von 1“ bzw. „0 von 1 · Rest zählt halb (krank)“.
+- [ ] Tag abschließen: Titel „Sonntag, 22. November“ (Jahr nur in einem anderen Jahr), „Noch 3 offen – zählen nicht mit“, unten „Tag abschließen · 3 bleiben offen“; „Arbeitsfrei – keine PH nötig“.
+- [ ] Eigene Wertung entfernen → „Widerrufen“ bringt Note und Grund zurück. Vergangene Woche → „Wertung entfernt“ → „Widerrufen“ ebenso.
+- [ ] Tagebuch am iPhone schreiben, während am Mac „Tag abschließen“ offen ist → der Mac folgt, oder zeigt bei einem dort getippten Feld „Am anderen Gerät geändert“ mit „Übernehmen“. Ebenso im Wochenabschluss.
+- [ ] Zu morgen blättern, Mond tippen → der heutige Tag; ein Link auf einen künftigen Tag zeigt „Abschließen geht erst am …“.
+- [ ] In ein Feld mit einem Health-Wert klicken und wieder heraus → kein Eintrag.
+- [ ] Ausgaben „< 50 €“ mit 20,10 + 29,90 → „nicht unter 50 €“; „≤ 50 €“ → „Limit ausgeschöpft“.
+- [ ] Der Heute-Titel zeigt einen langen Kategorie-Titel ganz (zwei Zeilen). VoiceOver auf Notiz- und Ausgaben-Zeilen: ein Knopf mit Hinweis; das Messwert-Feld heißt „<Titel> in <Einheit>“.
+
+**Woche, Abschluss, Rückblick, PDF**
+- [ ] Mittwoch die Woche teilen → „Zwischenstand“, Ring „bisher“.
+- [ ] Woche als PDF → „PDF wird erstellt … Seite x von y“; Schließen bricht ab.
+- [ ] PDF-Bericht über eine abgeschlossene Archivwoche und eine Woche mit abgeschlossenem Krank-Donnerstag → „n/n Wochen abgeschlossen“ (die laufende Woche zählt offen), die Tage ohne den Krank-Tag; Noten mit bis zu zwei Stellen; Trend erst ab 4 gewerteten Wochen („steigend (je k)“, sonst „Trend –“).
+- [ ] Wochenabschluss einer längst vergangenen Woche bietet keine Planung an; in der laufenden Woche vor Sonntag steht „Diese Woche läuft noch bis Sonntag.“
+- [ ] Rückblick zeigt „n/total Ziele bewertet“ nur, wenn Ziele fehlen. Texte sagen „gleich gewichtet“ statt einer festen Prozentzahl.
+
+**Ziele und Leseliste**
+- [ ] Ergebnisse sagen „auf Kurs“ / „im Rückstand“, Grenzen „im Rahmen“ / „zu schnell“ / „überschritten“ / „eingehalten“ – Farbe nur nach Stand; „5 von höchstens 20 Packungen“. Ergebnisse haben das Pokal-Symbol; die Zielflagge gibt es nur noch beim Wochenabschluss.
+- [ ] „10 Bücher“ zählt alle fertigen Bücher; ein Hörbuch mit „Zählt für“ kommt dazu (2 Bücher + 1 Hörbuch → 3), ohne die Bücher hinauszuwerfen.
+- [ ] Buch-Fenster „Schon gelesen bis Seite 120“, dann „+ Seiten 20“ → Stand 140, gezählt werden 20 Seiten (Fuß „Zählt nicht als gelesen – nur was danach dazukommt.“).
+- [ ] Leseliste: Tippen auf ein laufendes Buch trägt Fortschritt ein, Wischen bietet „Bearbeiten“; Zusammenfassung „Gelesen in Abschnitt 2: …“ bzw. „Gelesen im Zieljahr: …“.
+- [ ] Erfassen → Lesen: das zuletzt gelesene laufende Buch ist gewählt, die Zahl hat den Fokus, „Eintragen“ (Mac: ↩) sichert. „Jahresziel eintragen“ wählt das Ergebnis, wenn es genau eins gibt.
+- [ ] Zielkarte: der Schritt zur laufenden Woche ist gestrichelt und blasser. Zielüberprüfung zeigt am iPhone den Gewichtswert, am Mac „Wert aus Health auf dem iPhone“; Trend „erste k Wo. … → letzte k Wo. …“ bzw. „noch zu wenige Wochen für einen Trend“.
+- [ ] Gewicht am iPhone ändern, Ziele am Mac offen → das Ergebnis zeigt nach dem Abgleich den neuen Wert.
+- [ ] Zeitziele über Mitternacht: „≤ 00:30“ – 23:30 erreicht, 00:45 nicht; „23:00–00:30“ – 23:30 und 00:15 erreicht; ein Wochenmittel aus 23:30 und 00:30 ist 00:00. „spätestens 23:00“ zählt als ≤ 23:00.
+- [ ] Eine verpasste Wochenquote mit leerem Sonntag senkt die Note (vorher konnte ein leerer letzter Tag sie auf 10 heben).
+
+**Einstellungen, iCloud und Übung**
+- [ ] Einstellungen → iCloud & Daten: „Gesendet: vor … · Empfangen: vor …“; 20 Minuten Flugmodus mit einer Änderung → orange „Letzte Änderung noch nicht an iCloud gesendet“.
+- [ ] „Geräte im Abgleich“: Version je Gerät; Geräte, die 60 Tage nicht gesehen wurden, unter „Früher“ mit „Entfernen“ → „Widerrufen“.
+- [ ] Debug-Startoptionen `-FakeSyncProblem local`, `memory` und `quota` zeigen je ihre Zeile (iPhone über dem Inhalt, Mac unten in der Seitenleiste und im Menüleisten-Fenster); `memory` ist rot und bleibt, die anderen lassen sich bis zum nächsten Start ausblenden. Tippen öffnet die Einstellungen.
+- [ ] Ein Speicherfehler zeigt höchstens alle 10 Minuten „Konnte nicht speichern – Details unter Einstellungen → iCloud & Daten“ und dort „Letzter Speicherfehler: …“.
+- [ ] Während der Tour ist ⇧⌘I grau; Mehr → Import (und Nachtragen, PDF, Papierkorb, Einstellungen) gibt es in der Übung nicht bzw. zeigt „In der Übung nicht verfügbar – nach der Tour mit deinen eigenen Daten.“
+- [ ] Einstellungen → Jahresziele: Beginn, Ende und Zielüberprüfung speichert erst „Zieljahr sichern“; das Motto erst mit ↩ oder beim Verlassen. Neuer Beginn, während Ergebnisse dem alten gehören → „Beginn des Zieljahrs ändern?“ → „Neues Zieljahr beginnen“ → der Hinweis „Neues Zieljahr ab …“ hat „Widerrufen“ und bringt den alten Beginn samt Ergebnissen zurück.
+- [ ] Mac-Einstellungen: der Text zu Kartenzahlungen nennt den Weg am iPhone (Kurzbefehle → Automation → Transaktion).
+
+**Schonfrist und Notiz am abgeleiteten Haken (von Bini bestätigt, 23. Nov. 2026)**
+- [ ] Eine Notiz an einem abgeleiteten ✓ („⇄ George · …“) macht ihn zum eigenen – er bleibt, auch wenn die Tatsache der App später verschwindet.
+- [ ] Die Woche direkt vor einem neuen Abschnitt friert erst nach dessen erster Woche ein (Schonfrist): eine Änderung in der ersten Woche des Abschnitts wertet sie noch neu.
+
+**Finn (nach Finns Build, CONNECTED_APPS.md Auftrag 3.4)**
+- [ ] In Finn ist jede Zeile einzeln schaltbar (Standard aus), daneben „→ Thalia: …“ bzw. „noch nicht in Thalia verknüpft“.
+- [ ] Vermögen ändert sich → das Thalia-Ergebnis „Vermögen“ zeigt am selben Tag den neuen Stand.
+- [ ] Ein Konto eingeschaltet → ein Ergebnis mit Quelle „Finn · Kontostand · <Konto>“ zeigt seinen Stand; der Ergebnis-Editor verlangt ein Konto (kein „alle“).
+- [ ] Der Messwert-Editor bietet Vermögen, Sparquote und Kontostand nicht an; ein vorhandener Messwert mit einer davon zeigt „Für ein Jahresziel-Ergebnis gedacht – ein Messwert in € zählt als Ausgabe.“
+
+**Demo und Screenshots**
+- [ ] CI-Screenshots zusätzlich iPhone `goals`, `review`, `close-week`, `settings`, `backup`, `health` und Mac `review`, `settings`; kein leeres Bild. Im Demo zeigt `close-week` „Noch keine Sicherung – jetzt sichern?“ – so gewollt (der Demo-Speicher hat keine Sicherung).
+- [ ] Mac `today` und `week` bei 1024 × 768: ganze Seitenleiste, vier Markierknöpfe, „Wochenübersicht“ sichtbar; `mac-goal-detail` und `mac-reading` zeigen die Zielseite bzw. die Leseliste (nicht die Ziele-Seite).
+- [ ] Komplikation und Widget-Zeilen fassen „12,75 PH“; `weekly-goals` zeigt keine Hundertstel.
+- [ ] Die Demo-Noten sind dieselben wie in 1.9.0 (nur Texte, Rundung der Anzeige und Status-Wörter sind neu).
+
+**Vor App-Store entfernen – Pflicht vor jedem Einreichen eines Builds zum App Store (TASKS-v11 §1.4.12)**
+
+Solange das Teilen im Build ist, geht er nur an interne TestFlight-Tester. TestFlight und App Store nutzen dieselbe
+hochgeladene Datei; die App-Prüfung läuft laut Apple in der Sandbox – vor dem ersten Einreichen bestätigen, ob das
+Tor dort offen wäre.
+- [ ] (a) `grep -rn HEALTHSHARE App Shared Watch Packages Config` (196 Zeilen, Stand 1.10.0) – jede markierte Stelle entfernen:
+  `Shared/WeekReader.swift` (2: die `hshare.`-Schlüssel in `keys`); `Shared/WeekContext.swift` (13: `healthShare`, die
+  geteilte Health-Eingabe im init → wieder `self.health.compactMap(\.record)`, `sharedHealthKeys` und der Filter in
+  `reportInput(sharedHealth:)` (der Parameter darf bleiben), die Ausnahme in `isHealthElsewhere(_:on:)`,
+  `sharedHealthValue`, `sharedHealthSuggestion`); `Shared/TrackerStore.swift` (7:
+  `shareKeys` in `weekSettings`, `shared` in `lastValue` und `measureSeries`, `|| healthShareCovers(week)` in
+  `canScore`, der Kommentar zu `reportInput(sharedHealth: false)` im Planungs-Prompt); `App/Sources/AppModel.swift` (18: `healthShare` und sein init, `startHealthShare()` – nur Tor-Prüfung
+  und `cleanUpHealthShare(gate:)` für `.denied` bleiben, ebenso die Bereinigung nach jedem Abgleich in `afterSync`
+  (`isConfirmedDenied`) –, `healthShareGateChanged`, `healthValuesSaved` und sein
+  didSave-Haken, der Aufruf in `refreshToday`, `healthShare.syncArrived(store:)` in `afterSync`, `tourCatalog` →
+  `ThaliaTour.catalog`, die 2-s-Wartezeit in `offerTourIfNeeded`, `-DemoScreen health`); `App/Sources/SettingsView.swift`
+  (7: `ThaliaDataLocationView.sections`, `ThaliaDataFacts.sections(sharingHealth:)` und `sharedHealthFact`, die
+  `app`-Umgebung, `storageText` und `HealthShareSection()` in HealthSettingsView); `App/Sources/Services.swift` (2:
+  `readValues`, iOS und macOS); `App/Sources/TodayView.swift` (8: MeasureRow `sharedValue`, `phoneSuggestion`, der
+  Zweig SharedHealthInput, die Zeile unter dem Titel; WeeklyGoalRow der Zweig SharedHealthInput; MeasureMenu
+  `hasOwnValue`); `App/Sources/GoalsView.swift` (2: GoalReviewView `showsHealth` → wieder `HealthDevice.readsHealth`,
+  `copyReport` → wieder `report`); `App/Sources/Editors.swift` (7:
+  MeasureForm `sharesHealth`, `adoptTitle`, `adoptFooter` → die festen Texte, die Abschnitte für den geteilten Wert und
+  den Vorschlag vom iPhone); `App/Sources/ConnectedApps.swift` (2: `app` und der `.health`-Fuß in
+  MeasureSourceSection); `App/Sources/GoalResults.swift` (1: `shared` in `loadKey`); `App/Sources/CloseWeekView.swift`
+  (1: die `healthShareCovers`-Bedingung in `healthNote`); `App/Sources/Glance.swift` und `CloseDayView.swift` (je 1:
+  `(…, on: day)` – darf bleiben); `Watch/Sources/WatchValues.swift` (6: Kommentar und `healthCaption` → wieder
+  `WeekContext.healthElsewhereHint`); `Watch/Sources/ThaliaWatchApp.swift` (7: `gateTick`, `.id`, `.onReceive` und die
+  tägliche Bereinigung bei `.active` weg; die `.task` mit `resolve()` + `cleanUpHealthShare(gate:)` für `.denied`
+  und die `.denied`-Bereinigung bei `.active` (`isConfirmedDenied`) bleiben); `Packages/ThaliaCore/Sources/ThaliaCore/ThaliaTour.swift` (2: `healthShareStep`, `catalog(healthShare:)` →
+  `catalog`); `Config/ci.env` (1: `health`). Ohne eigene Marke, nichts zu tun: FrozenWeekNote (über `canScore`), die
+  Mac-Hinweise (über `isHealthElsewhere(_:on:)`), `resultSeries` (über `measureSeries`).
+- [ ] (b) `App/Sources/HealthShareSettings.swift` ganz löschen. In `Shared/HealthShareStore.swift` nur HealthShareGate
+  (Zustände, Cache, `verdict(for:)`, `resolve(timeout:)`, `isConfirmedDenied`) und `TrackerStore.cleanUpHealthShare(gate:)` mit dem
+  `.denied`-Zweig samt `removeAllHealthShare()` behalten – die **Bereinigung bleibt dauerhaft** (eine Präfix-Abfrage
+  beim Start). In `Packages/ThaliaCore/Sources/ThaliaCore/HealthShare.swift` nur `prefix`, `stateKey`, `isKey` und
+  `HealthShareState` (`newest`, `stopped`) behalten.
+- [ ] (c) Tests: in V11Tests C14 nur die Schlüssel- und Bereinigungs-Tests behalten; die Schlüssel-Tests in
+  V11BackupTests bleiben.
+- [ ] (d) Die Absätze zum Teilen streichen: hier („Health teilen“ und diese Checkliste nach dem Entfernen), STATUS.md,
+  SYNC.md („Health teilen (nur TestFlight)“ und die Ausnahme in der Health-Zeile), TOUR.md (Zeile `health-share`).
+- [ ] (e) App-Review-Notiz: keine Gesundheitsdaten in iCloud.
+- [ ] Danach: `grep -rn HEALTHSHARE` findet nur noch die Bereinigung; `scripts/ci/local-check.sh` grün.

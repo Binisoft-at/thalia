@@ -1,6 +1,166 @@
 # Thalia – Stand (zum Wiedereinstieg nach Kontext-Kompaktierung)
 
-Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) · Verbundene Apps: [CONNECTED_APPS.md](CONNECTED_APPS.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+Letzte Aktualisierung: 2026-11-24 · Arbeitsliste: [TASKS-v11.md](TASKS-v11.md) · Verbundene Apps: [CONNECTED_APPS.md](CONNECTED_APPS.md) · Sync: [SYNC.md](SYNC.md) · Durchsicht v7: [REVIEW-v7.md](REVIEW-v7.md) · Bini-Testliste: [TESTING.md](TESTING.md)
+
+## Stand v11 (Version 1.10.0, Tour-Version 11)
+- Anlass: Gesamtprüfung nach 1.9.0 (57) am 23. Nov. 2026 (Code, CI-Screenshots von Lauf 37, Startprotokolle) – 136
+  Befunde, je zweimal gegengelesen, dazu Binis Entscheidungen: „über 8“ zählt ab 8,00; Schonfrist-Woche und Notiz am
+  abgeleiteten Haken bestätigt; Finn liefert Vermögen bei jeder Änderung und alles einzeln wählbar (auch Kontostände);
+  Health am Mac und auf der Watch als „Variante B“ – nur in der TestFlight-Version. Plan, Regeln und alle Abweichungen:
+  [TASKS-v11.md](TASKS-v11.md) („Nachträge“ am Ende).
+- **Keine CloudKit-Schemaänderung** (`Shared/Models.swift` und `tools/schema-from-models.py` unverändert): neue
+  JSON-Schlüssel in `AppSetting` – `rescore.<Woche>` (Bitte ans iPhone, neu zu werten), `sync.build.<installID>`
+  (Version je Gerät), `backup.last` (letzte Sicherung von Hand, alle Geräte), `hshare.state` / `hshare.<Tag>` (nur
+  TestFlight) –, keiner in `SettingKeys.all` (nie in Sicherung, `record`-Zeilen oder den Präfix-Abfragen der Woche);
+  neues JSON-Feld `list.item` → `startAt`; neue CSV-Zeilen `sicherung`, `wertung`, `change`; das Austauschformat bleibt
+  v1 und wächst nur (Kennzahl `account_balance`, Katalog-Feld `source`). Ältere Builds übergehen alles davon.
+- **Alle neun Pakete umgesetzt** (Runden 1–4; Einzelheiten und Abweichungen in TASKS-v11 „Nachträge“):
+  **P1 Core** (strenge Zahlen ohne Absturz, Zeitziele über Mitternacht, Zielwörter wie „spätestens“, PH in Minuten,
+  Stellen je Einheit, Anzeige-Rundung in Richtung des Vergleichs, verpasste Wochenquote am leeren letzten Tag,
+  Grenz-Ergebnisse, Leseliste „zählt für“ und „Schon gelesen bis Seite“, Tempo-Status `PaceStatus`, Trend ab 4 Wochen,
+  datierte Erinnerungen, Versions-Tor, Tour 11, Finn-Kennzahl `account_balance`, neue Datei `HealthShare.swift`);
+  **P2 Shared** (wer wertet, Anfragen ans iPhone, Schutz frisch installierter Geräte, Wartung ohne Undo, Zusammenführen
+  begrenzt, erster Abgleich `SyncProgress`, Speicherfehler sichtbar, schnellere Wochen-Leser);
+  **P3 Sicherung und Import** (Zeilen `sicherung`/`wertung`/`change`, Zieljahr in der Sicherung, ein Zahlenleser,
+  Urlaub bleibt, Widerrufen nach dem Nachtragen, große Dateien abseits gelesen, „Sicherung erstellen…“, wöchentliche
+  automatische Sicherung, neue Datei `App/Sources/Backups.swift`);
+  **P4 App-Rahmen, Mac, System** (Inspektoren nur, wenn sie passen, Hauptfenster für Menübefehle und Erinnerungen,
+  Kürzel, Menüleiste mit „Widerrufen“, Sicherung im Ablage-Menü, Gesendet/Empfangen, Geräte mit Version, Sync-Zeile,
+  Übung ohne Echtes, Zieljahr mit „Zieljahr sichern“, neue Datei `App/Sources/BackgroundGrace.swift`);
+  **P5 Heute, Erfassen, Tag abschließen**; **P6 Woche, Abschluss, Rückblick, PDF**; **P7 Ziele, Leseliste, Verbundene
+  Apps**; **P8** Finn-Auftrag und Doku (Runde 1), Watch, Widgets, Siri (Runde 3b); **P9 Health teilen** (nur TestFlight,
+  neue Dateien `Shared/HealthShareStore.swift`, `App/Sources/HealthShareSettings.swift`).
+- **Wer wertet abgeschlossene Wochen** (§1.3, [SYNC.md](SYNC.md)): das iPhone wertet nach seinem ersten Abgleich wie
+  bisher. Mac, Watch und iPad werten selbst nur nach eigener Eingabe, nur Wochen ohne Health-Fortschrittspunkt (oder
+  geteilt abgedeckt), nur nach ihrem ersten Abgleich und nur, wenn jedes Gerät der letzten 30 Tage 1.10.0 hat – und
+  schicken dem iPhone immer eine Anfrage `rescore.<Woche>` (höchstens 8 je Lauf, nach 10 Minuten gelöscht). Abschließen
+  dort schickt eine Anfrage mit `force` (auch für eingefrorene Wochen), ebenso „Am iPhone neu berechnen“. Eingang,
+  Zusammenführen, Nachtragen und Import werten dort nie; schließt ein Import eine Health-Woche ab, bleibt sie dort ohne
+  eigene Note, bis das iPhone sie wertet. Eine frische Installation wertet Health-Wochen, die vor ihr
+  endeten, nicht neu – auch nicht auf Anfrage oder beim Einspielen einer Sicherung („Neu berechnen“ von Hand geht weiter). Vor dem ersten Abgleich wertet kein
+  Gerät von selbst und trägt keine Kategorie-Noten nach. Das iPad wertet wie der Mac (§4 F1 ohne Antwort).
+  `SyncDevice.firstV11Build = 58` – die nächste TestFlight-Build-Nr. von 1.10.0; ein Build aus Xcode meldet Build 1 und
+  zählt wie eine alte Version.
+- **Einmaliges Neuwerten:** P1.2, P1.3, P1.9, P1.11 und P1.12 ändern Regeln. Nicht eingefrorene abgeschlossene Wochen
+  bekommen die neue Note beim nächsten regulären Neuwerten (das iPhone nach dem Abgleich, die letzten drei abgeschlossenen
+  Wochen) – sie können sich einmal leicht ändern; eingefrorene bleiben, bis jemand „Neu berechnen“ drückt. Der
+  Tour-Schritt „Genauer gerechnet“ sagt das. Die Demo-Noten sind dieselben wie in 1.9.0 (Test V11 C6).
+- **Was 1.9.0 anders rechnet** (§0.2): Nacht-Zeitziele („≤ 00:30“, „23:00–00:30“ – 1.9.0 rechnet sie verkehrt);
+  „spätestens 23:00“ (1.10.0 ≤, 1.9.0 ≥); eine verpasste Wochenquote, deren letzter Tag leer blieb (1.9.0 lässt sie
+  fallen); „10 Bücher“ mit einem zugeordneten Hörbuch (1.9.0 zählt nur das zugeordnete); „Schon gelesen bis Seite“
+  (1.9.0 behält das Feld, rechnet ohne); Zähl-Ergebnisse mit „höchstens“ (1.9.0 zeigt „erreicht“ zu früh). 1.9.0
+  speichert außerdem nach jedem Import die Note der letzten 3 abgeschlossenen Wochen neu – darum werten Mac, Watch und
+  iPad erst, wenn alle Geräte 1.10.0 haben, und TESTING v11 beginnt mit „alle Geräte auf 1.10.0“.
+- **Was 1.9.0 anders liest** (P3): die Zeilen `sicherung`, `wertung`, `change` und die `record`-Zeilen für Zieljahr
+  und Katalog-Schalter stehen dort unter „Nicht gelesen“; die Uhrzeit eines einzelnen Werts übergeht 1.9.0, „1.1250“
+  liest es richtig. Neu in 1.10.0: „8.000“ in einer CSV heißt 8 (mit Hinweis „Tausenderpunkt?“), 1.9.0 las 8000.
+  Kontostände aus Finn behält 1.9.0 als „nicht verwendet“ im Eingang.
+- **Was 1.10.0 anders zeigt** (nur Anzeige, keine Note): Wochenziele und Ergebnisse in einer Farbe je Stand
+  (`StatusTint`) mit „im Plan“, „hinter dem Plan“, „noch offen“, „nicht erreicht“, Grenzen „im Rahmen“ / „überschritten“
+  (nie „erreicht“), Ergebnisse „auf Kurs“ / „im Rückstand“ / „zu schnell“ / „eingehalten“; anteilige Ziele ohne
+  Hundertstel („150 von 86 Stk.“); Stellen je Einheit („0,25 PH“, „6 Stk.“); der Bericht nennt dieselben Wörter wie die
+  App; Trend erst ab 4 gewerteten Wochen; „gleich gewichtet“ statt einer festen Prozentzahl je Ziel; eingefrorene Wochen zeigen überall ihre
+  gespeicherte Note („Nach heutigem Stand“ nur als zweite Zeile); Ergebnisse mit Pokal statt Zielflagge; das Teilen-Bild
+  einer laufenden Woche sagt „Zwischenstand“ (Ring „bisher“), ein Krank-Tag „–“ mit „Krank“; Fokus „noch 0,8 PH
+  offen“ und „6 / 8 PH“, in vergangenen Wochen „Wochenziel“; „Tag abschließen · n bleiben offen“, der Titel ohne Jahr
+  („Sonntag, 22. November“); „Diese Woche noch“ mit „0 von 1 · Rest zählt halb (krank)“; Wochenziele mit Bereich oder „=“ „erreicht“ genau dann,
+  wenn der Wert im Ziel liegt (wie der Bericht); eine vollständige Kategorie
+  ohne Wertung zeigt ✓; ein Klick in ein Wertfeld schreibt keinen Wert mehr. PDF-Bericht: „Wochen abgeschlossen“ n/n
+  über alle Wochen (die laufende zählt offen), „Tage abgeschlossen“ ohne Krank- und Urlaubstage, Noten mit bis zu zwei
+  Stellen. „Woche wieder öffnen“ hat „Widerrufen“ und fragt bei einer eingefrorenen Woche zuerst; der Wochenabschluss
+  hat die Sicherungs-Zeile und „Diese Woche läuft noch bis Sonntag.“; der Rückblick zeigt „n/total Ziele bewertet“ nur,
+  wenn Ziele fehlen; der bewegte Verlauf pausiert im Hintergrund, das Feiern endet nach 2,3 s. Leseliste „Gelesen in
+  Abschnitt 2: …“; auf den Zielkarten ist der Schritt zur laufenden Woche gestrichelt und blasser. Watch mit „⇄ …“,
+  Zielen und „Arbeitsfrei“; Widgets mit Messwert-Chips.
+- **Mac-Layout** (P4.1, löst die Notiz aus v7 unten): „Heute im Blick“ und „Wochenübersicht“ zeigen sich als Spalte nur,
+  solange sie passen – gemessen wird der Platz neben der sichtbaren Seitenleiste (`AppModel.roomWidth`), Heute braucht
+  900 pt, Woche 750 pt, je ±20 pt; die gespeicherte Wahl bleibt. Passt die Spalte nicht, öffnen ⌘0, Symbolleistenknopf,
+  Tagesring, Seitenleisten-Karte und ⌥⌘0 sie als Blatt. Die Heute-Liste hat höchstens 340 pt, das Mindestfenster bleibt
+  900 pt. Ob der Inspektor in der Detailspalte sitzt, zeigt im nächsten CI-Lauf `mac-log.txt`
+  („diag: detail check at 8 s: window W − sidebar S − detail D = R“, R ≈ 0 erwartet). Dazu: Menübefehle, Erinnerungen
+  und Kurzbefehle holen das Hauptfenster (auch wenn nur Einstellungen offen sind), ein „Zu heute“ ⌘T (⇧⌘T entfällt),
+  ⌥⌘J, ⌥⌘L, ⌥⌘0, Darstellung → „Seitenleiste ausblenden“, Ablage → „Sicherung erstellen…“, Tasten 1–4 ohne Klick.
+- **Erinnerungen** (P4.17): Morgen, Abend und Woche sind datierte Mitteilungen für die nächsten 7 Tage; die
+  wiederholenden aus 1.9.0 gehen beim ersten Start. Kein Morgen an Krank-/Urlaubstagen; eine abgeschlossene Woche
+  bekommt keinen „Wochenabschluss“ (ohne Plan der nächsten Woche statt dessen „Nächste Woche planen“); die Erinnerung
+  am Montag öffnet die Vorwoche. Alle enden nach etwa 7 Tagen ohne Öffnen von Thalia.
+- **Sicherung** (§1.6, P3.13): „Sicherung erstellen…“ (Einstellungen → Deine Daten, Mac: Ablage) baut die CSV abseits
+  des Hauptthreads; „Letzte Sicherung … am iPhone“ gilt für alle Geräte (`backup.last`). iPhone und Mac legen jede Woche
+  selbst „Thalia Sicherung JJJJ-MM-TT.csv“ in Application Support/Sicherungen ab (nur iCloud/lokal, nach dem ersten
+  Abgleich, nie Demo/Übung – die zeigen auch keine echten Dateien und kein „automatisch: …“; 4 neueste + je Monat eine für 6 Monate; nach einer auffällig kleinen Datei wird nicht
+  aufgeräumt). Der Wochenabschluss mahnt, wenn 30 Tage kein Gerät von Hand gesichert hat. Ein Import ist eine
+  Speicherung und zählt als Wartung: das iPhone wertet die abgeschlossenen Wochen, die er ändert (auch Archiv-Noten),
+  Mac, Watch und iPad fragen nur das iPhone (`rescore.<Woche>`); die `wertung`-Zeilen behalten die gespeicherten Noten,
+  das Zieljahr füllt nur auf (mit sehr altem Zeitstempel – ein später über iCloud ankommendes echtes Zieljahr gilt). „Widerrufen“ gibt es auch nach „Vergangene Woche nachtragen“ (abgeschlossene Wochen,
+  deren Tage oder PH zurückgehen, werden neu gewertet). „Diese Woche als CSV“ und der Planungs-Prompt lesen nur diese
+  Woche; Dateien über 200 KB stehen im Import als eine Zeile, die Vorschau entsteht abseits des Hauptthreads.
+- **Health teilen (nur TestFlight):** Am iPhone (oder iPad) schaltet Einstellungen → Apple Health → „Health-Werte mit
+  Mac und Watch teilen“ das Teilen ein (Standard aus, je Gerät, nur sichtbar, wenn das Tor `.allowed` ist: Debug oder
+  TestFlight). Dann schreibt genau ein Gerät `hshare.state` und je Tag `hshare.<Tag>` (JSON in `AppSetting`, keine
+  Schemaänderung, nie in `SettingKeys.all`, nie in Sicherung, Austausch, Katalog). Geteilt werden die übernommenen
+  Health-Werte (`counted`) von heute und den 34 Tagen davor und die Health-Vorschläge (`read`) nur für heute und die 2
+  Tage davor. Geschrieben wird nach jedem Übernehmen oder Entfernen (auch ⌘Z/Schütteln), bei jedem Aktivieren und beim
+  Tageswechsel, nur bei Änderung und ohne Undo; `read` höchstens alle 30 min. Mac, Watch und iPad zählen die geteilten
+  Werte wie übernommene (eigene Werte gehen vor), werten abgedeckte Wochen selbst wie das iPhone und zeigen sie nur
+  lesend mit „aus Health am iPhone“ (bzw. „am iPad“, wenn das iPad teilt) – auch unter „Heute eintragen“ der
+  Wochenziele; die Zielüberprüfung am Mac zeigt die geteilten Werte. Prompts (Planungs-Prompt, „Bericht kopieren“ der
+  Zielüberprüfung) nehmen geteilte Werte nicht mit; der Wochenbericht zeigt sie wie am iPhone. Abgedeckt ist ein Tag
+  nur bis 34 Tage vor dem eigenen heute. Ein zweites Gerät, das einschaltet, übernimmt nach Rückfrage; das erste schaltet
+  sich selbst ab. Ausschalten löscht alle geteilten Tage. Das Tor hat drei Zustände (App-Transaktion: Sandbox/Xcode →
+  erlaubt, App Store → verweigert, sonst unbekannt); ein App-Store-Build löscht beim Start und nach jedem Abgleich alle
+  `hshare.`-Datensätze und schreibt den Zustand aus, ein offline gestartetes TestFlight-iPhone löscht nichts. Kommt der Zustand per Abgleich, folgen die Datenschutz-Texte am
+  Mac, auf der Watch und am iPad sofort; ein Gerät, dessen Teilen anderswo übernommen oder beendet wurde, schaltet sich
+  gleich nach dem Abgleich ab. Mac, Watch und iPad löschen höchstens einmal am Tag geteilte Tage, die älter als 35 Tage
+  sind – die Watch auch, wenn sie im Hintergrund weiterläuft. Solange das Teilen im Build ist, geht der Build nur an
+  interne TestFlight-Tester.
+- **Vor App-Store entfernen – Pflicht vor jedem Einreichen eines Builds zum App Store** (§1.4.12; die Liste mit allen
+  Stellen steht in [TESTING.md](TESTING.md) am Ende von „v11“): (a) `grep -rn HEALTHSHARE App Shared Watch Packages
+  Config` – 196 Zeilen (Stand 1.10.0) in SettingsView 7, AppModel 18, Editors 7, CloseDayView 1, TodayView 8,
+  GoalsView 2, GoalResults 1, ConnectedApps 2, CloseWeekView 1, Glance 1, Services 2, HealthShareSettings 14,
+  HealthShareStore 39, WeekReader 2, WeekContext 13, TrackerStore 7, ThaliaWatchApp 7, WatchValues 6, Core
+  HealthShare.swift 13, ThaliaTour.swift 2, V11Tests 40, V11BackupTests 2, Config/ci.env 1 – jede Stelle entfernen bis auf die Bereinigung;
+  (b) `App/Sources/HealthShareSettings.swift` löschen, in `Shared/HealthShareStore.swift` und
+  `Packages/ThaliaCore/Sources/ThaliaCore/HealthShare.swift` nur Tor und Bereinigung behalten (eine Präfix-Abfrage
+  beim Start, bleibt dauerhaft); (c) Core-Tests bis auf Schlüssel- und Bereinigungs-Tests löschen; (d) die Absätze in
+  TESTING, STATUS, SYNC und TOUR streichen; (e) App-Review-Notiz: keine Gesundheitsdaten in iCloud. Vor dem ersten
+  Einreichen klären, ob die App-Prüfung in der Sandbox läuft (dort wäre das Tor offen).
+- **Offene Fragen an Bini** ([TASKS-v11.md](TASKS-v11.md) §4) – jede hat eine Regel, die ohne Antwort gilt; v11 ist so
+  gebaut:
+  F1 iPad oder zweites iPhone selbst werten lassen? – ohne Antwort: iPad wie Mac.
+  F2 „✓ über 8“ oder „ab 8“? – ohne Antwort: „✓ über 8“ bleibt, Fußnoten und Tour sagen „ab 8,00“.
+  F3 Mac „Schließen“ statt ×? – ohne Antwort: × bleibt.
+  F4 Watch direkt auf Seite 1 abhaken? – ohne Antwort: der Sprung zur Kategorie reicht (Erledigtes ist gedämpft).
+  F5 Notizen und Lesen auf der Watch? – ohne Antwort: nichts davon in v11.
+  F6 Komplikation zu alt? – ohne Antwort: kein Push vom iPhone; zwei Wochen beobachten.
+  F7 Siri für Notiz, Seiten, Abhaken? – ohne Antwort: nichts davon in v11.
+  F8 Titel und Notizen auf dem Sperrbildschirm ausblenden? – ohne Antwort: wie bisher sichtbar.
+  F9 Größere Schrift? – ohne Antwort: bleibt.
+  F10 Rückgabewert von „Stand des Tages“? – ohne Antwort: bleibt, die Beschreibung erklärt ihn.
+  F11 „Jänner“ oder „Januar“? – ohne Antwort: bleibt gemischt.
+  F12 Sicherungen in „Dateien“ / iCloud Drive? – ohne Antwort: nur Application Support.
+  F13 Bewegter Verlauf nach 10 s zur Ruhe? – ohne Antwort: bleibt bewegt (im Hintergrund pausiert).
+  Entschieden (§1.1): „über 8“ zählt ab 8,00, gerundet auf zwei Stellen; Schonfrist und Notiz am abgeleiteten Haken
+  bestätigt (23. Nov. 2026). Weiter offen aus v10: die Darwin-Benachrichtigung zwischen Mac-Apps.
+- **Aufgaben für Bini:** zuerst alle Geräte auf 1.10.0, dann TESTING.md „v11“. Den neuen Finn-Auftrag
+  ([CONNECTED_APPS.md](CONNECTED_APPS.md) 3.4) erst in Finns Sitzung geben, wenn 1.10.0 auf `main` ist; Theo, George und
+  Nina ersetzen, falls schon gebaut, nur ihre kopierte `ExchangeFormat.swift` (nur Zusätze). Die Fragen F1–F13
+  beantworten, wo die Regel ohne Antwort nicht passt.
+- Geprüft lokal: Core-Tests 285 in 65 Suiten grün (Docker `swift:6.2-noble`; neu `V11Tests.swift` C1–C18 und
+  `V11BackupTests.swift`, 28 Tests in 8 Suiten; vorher 207), `swiftc -parse` aller App-, Shared-, Watch- und
+  Widgets-Dateien (`scripts/ci/local-check.sh`) und eigens `WatchWidgets/Sources/*.swift`. Jedes Code-Paket hat seine
+  Dateien gegen nachgebildete Apple-Module typgeprüft (iOS- und macOS-Zweige je eigens, Watch- und Widget-Ziele mit
+  ihrer eigenen Dateiliste) und mit einem absichtlich eingebauten Fehler gezeigt, dass die Prüfung die Dateien sieht.
+  Verhaltensprüfungen in Shared mit nachgebildetem SwiftData: P2 (wer wertet, Anfragen, Neuinstallation, Undo,
+  Zusammenführen, erster Abgleich – 222 Prüfungen samt v10), P3 (Sicherung hin und zurück auf iPhone und Mac, dieselbe
+  Datei auf zwei Geräten, Widerrufen), P7 (Zielverläufe aus den Plänen = Store), P9 (Teilen, Leser, Übernahme, Tor
+  `.unknown`/`.denied`, Undo – 55 Prüfungen); App-Verhalten von P3, P4 und P9 ebenso. Die HEALTHSHARE-Prüfung findet
+  keine unmarkierte Stelle. SwiftUI, das Aussehen, CloudKit-Ereignisse, HealthKit und `AppTransaction` sind dabei nur
+  nachgebildet – das echte SDK prüft erst CI am Mac, das Verhalten das Gerät (TESTING v11).
+- Noch offen in v11 (Einzelheiten TASKS-v11 „Nachträge“): ein ✓-Tipp auf iPhone und Mac im TestFlight-Build mit
+  `os_signpost` um `WeekContext.init` messen – einen Wochen-Speicher erst, wenn ein Tipp dann noch > 30 ms kostet (P5.1);
+  §1.4.12 vor dem App Store; nach dem nächsten CI-Lauf prüfen, ob `mac-goal-detail` und `mac-reading` die Unterseiten
+  zeigen (P7.12) und ob `diag: detail check` R ≈ 0 meldet (P4.1).
+- CI, Screenshots und TestFlight für 1.10.0: stehen noch aus. Nächste Build-Nr.: 58 (= `SyncDevice.firstV11Build`).
 
 ## Stand v10 (Version 1.9.0, Tour-Version 10)
 - Anlass: „Thalia Korrekturen v8“ vom 22. Nov. 2026 ([TASKS-v10.md](TASKS-v10.md), vor der Umsetzung von drei
@@ -86,14 +246,18 @@ Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) 
   „aktiv/inaktiv“ des Austauschs), mit nachgebildeten UIKit-/AppKit-Namen. SwiftUI ist dabei nur nachgebildet; echtes
   SwiftUI, das Aussehen und der App-Teil des Austauschs (App Group, Darwin-Benachrichtigung, `SecTask`) prüft erst CI
   am Mac bzw. das Gerät.
-- Offene Fragen an Bini ([CONNECTED_APPS.md](CONNECTED_APPS.md) §5): „über 8,0“ ab 8,00 (umgesetzt) oder ab 8,01;
-  Finn-Vermögen monatlich oder bei Änderung, Sparquote gewünscht; Darwin-Benachrichtigung zwischen Mac-Apps ungeprüft.
+- Fragen an Bini ([CONNECTED_APPS.md](CONNECTED_APPS.md) §5): „über 8,0“ – Entschieden (23. Nov. 2026): ab 8,00,
+  gerundet auf zwei Stellen; Finn-Vermögen – entschieden (23. Nov. 2026): bei jeder Änderung, jede Zeile in Finn einzeln
+  wählbar (Sparquote, Kontostände, TASKS-v11 §1.5); offen bleibt nur: Darwin-Benachrichtigung zwischen Mac-Apps
+  ungeprüft.
 - CI-Lauf 37 grün (macOS + iOS + watchOS gebaut, 207 Core-Tests); Screenshots `goal-detail`, `reading`,
   `connected-apps` (iPhone) und `goals`, `connected-apps` (Mac) angesehen. Am Mac zeigen `goal-detail` und `reading`
-  die Ziele-Seite (mit „Gerade dabei“), nicht die Unterseite – nur das Bildschirmfoto, kein App-Fehler. Kein
+  die Ziele-Seite (mit „Gerade dabei“), nicht die Unterseite – nur das Bildschirmfoto, kein App-Fehler (v11 P7.12: die
+  Unterseite öffnet jetzt 1,5 s nach der Ziele-Seite, `GoalsLaunch.handled` erst, wenn sie erschienen ist – nach dem
+  nächsten CI-Lauf prüfen). Kein
   CloudKit-Schema-Lauf nötig (`schema.ckdb` und `Shared/Models.swift` unverändert). TestFlight: **1.9.0 (57)**
   hochgeladen (iOS + watchOS + macOS, `testflight-diagnose.yml` Lauf 7); laut `asc-probe` am 22. Nov. 2026 18:35 UTC
-  iOS verarbeitet und `IN_BETA_TESTING`, macOS noch in Verarbeitung. Die Adressen in den Aufträgen (`main`) sind
+  iOS verarbeitet und `IN_BETA_TESTING`; macOS laut `asc-probe` am 23. Nov. 2026 16:38 UTC ebenso. Die Adressen in den Aufträgen (`main`) sind
   erreichbar. Nächste Build-Nr.: 58.
 - Nächste Schritte: Bini – Aufgaben aus [CONNECTED_APPS.md](CONNECTED_APPS.md) §2 der Reihe nach, TESTING.md „v10“,
   die Fragen in §5 beantworten.
@@ -175,7 +339,7 @@ Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) 
 ### Offene Punkte v8
 - Läuft CI an einem Freitag, zeigen die Demo-Screenshots „today“, „close-day“ und „overview“ den Krank-Tag statt eines
   normalen Tags (Demo-Freitag ist immer „Krank“, so verlangt in Entscheidung 11).
-- Erledigt beim Lückenschließen: Import (und Rückgängig, Archiv-Wiederherstellen) plant die Abend-Erinnerungen neu;
+- Erledigt beim Lückenschließen: Import (und Widerrufen, Archiv-Wiederherstellen) plant die Abend-Erinnerungen neu;
   `closingKnownDays`/`fillingPastBlanks` liegen jetzt in ThaliaCore (`PlanCSV.Document`) mit Repo-Tests; ein Wochenziel,
   dessen Tage alle krank/Urlaub sind, wird nicht bewertet (fehlt in „x von y erreicht“, PDF, Widgets; Hinweis „zählt
   nicht“); Wochen-Kopf und Mac-Seitenleiste zeigen „Woche zählt nicht (krank/Urlaub)“; die Ziel-Diagramme zeigen eine
@@ -193,7 +357,9 @@ Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) 
   `MenuBarExtra(isInserted:)` blockierte den Hauptthread nach dem Start (gefunden mit `LaunchDiagnostics`, nur Debug).
   Behoben in Lauf 25 (Schalter im AppModel). Dazu: Datum/Uhrzeit-Picker immer deutsch, Kategorie-Kopf einzeilig.
 - Mac-Layout nur am CI-Bildschirm (1024 × 768) gesehen: dort wird die Seitenleiste schmal und rechts abgeschnitten;
-  auf normalen Mac-Bildschirmen (Fenster 1180 pt) prüfen.
+  auf normalen Mac-Bildschirmen (Fenster 1180 pt) prüfen. – v11 (P4.1): Inspektoren zeigen sich nur noch, solange sie
+  passen, sonst als Blatt; die Heute-Liste höchstens 340 pt (siehe „Stand v11 – Mac-Layout“; bei 1024, 1180 und 900 pt
+  am Gerät prüfen).
 - TestFlight: macOS 1.6.0 (47) stürzte am Mac ab (AppKit-Toolbar bei `.toolbar(id:)`); iPhone 1.5.0 stürzte beim Tippen
   auf eine Mitteilung ab (async-Delegate). Beides behoben → **iOS + Watch + macOS 1.6.0 (52)** hochgeladen über
   `testflight-diagnose.yml` (Build-Nr. als Eingabe). Der reguläre TestFlight-Workflow hat als nächste Run-Nr. 52: für
@@ -230,9 +396,9 @@ Letzte Aktualisierung: 2026-11-22 · Arbeitsliste: [TASKS-v10.md](TASKS-v10.md) 
 - Offene A/B-Fragen aus v1 (unbeantwortet): Sprache (A Deutsch), Health-Werte nur Gerät (A), Papier-Historie importieren (A), Erinnerungszeiten (A 08:15/21:45/So 17:00).
 
 ## Architektur (Kurz)
-- `Packages/ThaliaCore` (Linux-getestet): Calendar (DayKey/WeekKey/DayMask/GoalPeriod), Vocabulary (Mark, ItemSchedule, Target, Units, MeasureSource, WorkKind, DayTypes, NoteKind, ReflectionQuestion), Records, Scoring (Scorer, Pace), Measures (+WorkTotals), PlanCSV, ImportPreview, Template, Demo, Reports (WeekReport, PlanPrompt, PastWeekPrompt, WeekLine/RangeReport), ThaliaTour (+TodaySummary, ReminderSettings), Format; v10: SettingRecord, GoalResults, GoalTrack, Lists, Segments, ExchangeFormat (Format v1 zum Kopieren), Exchange (ExchangeDerivation, LinkRule), WeekExtras, DemoV10.
-- `Shared/`: Models (SwiftData, Schlüssel statt Relationen, HealthValue device-only), TrackerStore(+Import, +Range, +Records), WeekContext/WeekReader, ExchangeInboxReader (nicht auf der Watch), Persistence, DemoData, WidgetBridge, WorkActivity.
-- `App/Sources`: AppModel, RootView, TodayView, WeekView, GoalsView, GoalResults, ReadingList, Segments, ReviewView, CloseDayView, CloseWeekView, Editors, ImportView, PastImport, PDFExport, RangePDF, SettingsView, Explainers, Services (Reminder, Health, Live Activity), Intents, TourView, Components, AppPlatform, ThaliaTips, ThaliaApp.
+- `Packages/ThaliaCore` (Linux-getestet): Calendar (DayKey/WeekKey/DayMask/GoalPeriod), Vocabulary (Mark, ItemSchedule, Target, Units, MeasureSource, WorkKind, DayTypes, NoteKind, ReflectionQuestion), Records, Scoring (Scorer, Pace, v11 PaceStatus), Measures (+WorkTotals), PlanCSV, ImportPreview, Template, Demo, Reports (WeekReport, PlanPrompt, PastWeekPrompt, WeekLine/RangeReport), ThaliaTour (+TodaySummary, ReminderSettings), Format; v10: SettingRecord, GoalResults, GoalTrack, Lists, Segments, ExchangeFormat (Format v1 zum Kopieren), Exchange (ExchangeDerivation, LinkRule), WeekExtras, DemoV10; v11: SyncDevices (SyncBuild, allCurrent), HealthShare (HEALTHSHARE).
+- `Shared/`: Models (SwiftData, Schlüssel statt Relationen, HealthValue device-only), TrackerStore(+Import, +Range, +Records), WeekContext/WeekReader, ExchangeInboxReader (nicht auf der Watch), Persistence, DemoData, WidgetBridge, WidgetPublisher, WidgetActions, RouteIntents, GoalPalette; v11 HealthShareStore (HEALTHSHARE).
+- `App/Sources`: AppModel, RootView, TodayView, WeekView, GoalsView, GoalResults, ReadingList, Segments, ReviewView, CloseDayView, CloseWeekView, Editors, ImportView, PastImport, PDFExport, RangePDF, SettingsView, Explainers, Services (Reminder, Health), Intents, TourView, Components, AppPlatform, ThaliaApp, Glance, Focus, Expenses, MenuBar, Sharing, SheetChrome, Style, ArchiveCard, ConnectedApps, WeekTable, LaunchDiagnostics; v11 Backups, BackgroundGrace, HealthShareSettings (HEALTHSHARE).
 - `Watch/Sources`, `Widgets/Sources`. Screens für CI-Screenshots: `Config/ci.env`.
 
 ## v2 – Fortschritt

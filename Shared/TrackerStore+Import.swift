@@ -399,6 +399,10 @@ extension TrackerStore {
         }
         var result = ImportResult()
         let now = Date()
+        // v11 P3.7: what a backup only fills in (plain settings, weeks iCloud hadn't brought yet) is stamped as very old –
+        // "füllt nur auf": a copy of the same record that arrives later (iCloud still loading) is the app's own value and
+        // wins wherever the newest copy counts (`goalPeriod(from:)`, `writeSetting`, `DuplicateMerge.week`).
+        let filledAt = Date(timeIntervalSince1970: 0)
 
         let goals = liveGoals().latest(by: \.key, modified: \.modifiedAt)
         for entry in preview.goals.entries where entry.action != .unchanged {
@@ -661,17 +665,22 @@ extension TrackerStore {
                 if entry.record.key == ExchangeInbox.sourcesKey {
                     value = exchangeSources().merging(ExchangeSourceList(value: value)).value
                 }
-                writeSetting(entry.record.key, value, now: now, change: &change)
+                // P3.7: a plain setting is only filled in (`filledAt`) – a real value that iCloud brings later wins.
+                let stamp: Date = PlanCSV.plainSettings.contains(entry.record.key) ? filledAt : now
+                writeSetting(entry.record.key, value, now: stamp, change: &change)
                 if entry.action == .create { result.created += 1 } else { result.updated += 1 }
             }
             for key in preview.removedRecords { writeSetting(key, nil, now: now, change: &change) }
         }
 
         // v11 P3.3: a closed week's stored score from the file (`wertung`), exactly – the week is closed if it is open,
-        // keeps the file's `score.<week>` and is neither scored here nor asked for (`keeping`).
+        // keeps the file's `score.<week>` and is neither scored here nor asked for (`keeping`). P3.7: a week this restore
+        // made (iCloud hadn't brought it yet) is only filled in (`filledAt`) – the real copy that arrives later keeps a
+        // score the iPhone gave after the backup (`DuplicateMerge.week` takes the newest closed copy).
         let kept: Set<WeekKey> = Set(preview.document.finalScores.keys)
         result.keptScores = kept
         for (week, final) in preview.document.finalScores.sorted(by: { $0.key < $1.key }) {
+            let madeHere: Bool = madePlans[week.string] != nil
             let plan = planToWrite(week)
             var changed = false
             if plan.closedAt == nil {
@@ -684,7 +693,7 @@ extension TrackerStore {
                 plan.finalGoalsScored = final.goalsScored
                 changed = true
             }
-            if changed { plan.touch(now: now) }
+            if changed { plan.touch(now: madeHere ? filledAt : now) }
         }
 
         // Closed days from the file (R27) and from the caller (demo, tour). v11 (P3.10): no save before – the
@@ -707,7 +716,7 @@ extension TrackerStore {
         // scoring it again, so this happens in an earlier segment too. Not a week whose score the file brings.
         var closedNow: Set<WeekKey> = []
         for week in preview.newClosedWeeks where !kept.contains(week) && !(plan(week)?.isClosed ?? false) {
-            closeWeek(week)
+            closeImportedWeek(week, fillsIn: madePlans[week.string] != nil)
             closedNow.insert(week)
         }
         // v9: a closed week without items whose grades changed gets its recalculation – v11: the one save above sees
@@ -724,6 +733,32 @@ extension TrackerStore {
             RestoreWindow.note(from: now, through: finished, days: restoredDays)
         }
         return result
+    }
+
+    /// A week this import closes (also "Widerrufen", which imports the snapshot again). The iPhone scores it like
+    /// `closeWeek` – except a week before this install that reads Health (P2.2: its Health values of then aren't here).
+    /// Mac, Watch and iPad score it only when they could score the week at all (`canScore`: no Health progress item, or
+    /// the sharing covers it) – an import is maintenance (P2.1 (b)): a score without the iPhone's Health values would sync
+    /// to every device and stay for good where the iPhone keeps it (`keepsScoreBeforeInstall`, 1.9.0). Such a week is only
+    /// closed (Mac, Watch, iPad: and asked for with `force`, the iPhone scores it after the sync); the screens show the
+    /// live score until then. `fillsIn`: this import made the week (iCloud may not have brought it yet) – stamped as very
+    /// old (P3.7), so a real copy that arrives later keeps its score (`DuplicateMerge.week`). In-memory stores (demo,
+    /// tour) score as before.
+    func closeImportedWeek(_ week: WeekKey, fillsIn: Bool = false) {
+        let scoresHere: Bool = isInMemory || (HealthDevice.scoresHealth ? !keepsScoreBeforeInstall(week) : canScore(week))
+        if scoresHere {
+            closeWeek(week)
+        } else {
+            let plan = ensurePlan(week)
+            plan.closedAt = Date()
+            plan.touch()
+            if !HealthDevice.scoresHealth { withoutUndo { writeRescoreRequest(week, force: true) } }
+            AppLog.info("Week closed by an import without a score of its own (reads Health)", category: "review")
+            save()
+        }
+        guard fillsIn, !isInMemory, let made = plan(week) else { return }
+        made.touch(now: Date(timeIntervalSince1970: 0))
+        saveQuietly()
     }
 
     /// "2026-W45" of an item or measurement key ("2026-W45|1.1-01").

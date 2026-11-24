@@ -1027,15 +1027,20 @@ struct GoalReviewView: View {
         }
         report = store.periodReport(period: store.goalPeriod, through: app.today.week, from: segment?.startWeek)
         results = store.resultLines(today: app.today)
-        let readsHealth: Bool = HealthDevice.readsHealth
-        screenResults = store.resultLines(today: app.today, hidesHealth: !readsHealth,
-                                          hiddenText: readsHealth ? nil : WeekContext.healthElsewhereHint)
+        // HEALTHSHARE: with the iPhone's values shared here, the screen shows them like the goal card (§3.4.2).
+        let showsHealth: Bool = HealthDevice.readsHealth || store.healthShareCovers(app.today.week, today: app.today)
+        screenResults = store.resultLines(today: app.today, hidesHealth: !showsHealth,
+                                          hiddenText: showsHealth ? nil : WeekContext.healthElsewhereHint)
         copied = false
     }
 
     private func copyReport() {
-        guard let report else { return }
-        Clipboard.copy(report.markdown(period: app.store.goalPeriod, segment: segment, results: results))
+        guard let loaded = report else { return }
+        let store: TrackerStore = app.store
+        // HEALTHSHARE: the copy is for the goal-review conversation – without the values another device shares (§1.4.7).
+        let shown: PeriodReport = store.readHealthShareState == nil ? loaded
+            : store.periodReport(period: store.goalPeriod, through: app.today.week, from: segment?.startWeek, sharedHealth: false)
+        Clipboard.copy(shown.markdown(period: store.goalPeriod, segment: segment, results: results))
         copied = true
     }
 

@@ -492,7 +492,11 @@ record,goal.start,,,,,,,,,,,,,2026-06-01,
   before: the closed weeks get their score as when closing them by hand. The preview line is „Wochenwertungen“.
 - **Who scores after an import:** an import is one save and counts as maintenance. A closed week it changes (marks,
   values, archive grades …) gets its score again on the iPhone; a Mac, Apple Watch or iPad never scores it there and asks
-  the iPhone instead (`rescore.<week>`). Weeks before the current segment keep their score, as before.
+  the iPhone instead (`rescore.<week>`). Weeks before the current segment keep their score, as before. A week the
+  import closes (also *Widerrufen*) gets the closing's score – on a Mac, Apple Watch or iPad only when it reads no Apple
+  Health values there (or the TestFlight sharing covers it); otherwise it stays without a score of its own and the
+  iPhone scores it after the sync (a request with `force`). A freshly installed iPhone doesn't score such a week from
+  before its install.
 - **`change`** – only in archive snapshots (Einstellungen → Archiv): the week's plan changes ("Auch in den nächsten
   Wochen"), so restoring the snapshot or *Widerrufen* after replacing a week brings them back; a change the week has
   again since is not doubled. A full backup has none, and the archive itself (`WeekArchive`) is not in the backup.
@@ -502,7 +506,8 @@ record,goal.start,,,,,,,,,,,,,2026-06-01,
 - **Marks of deleted items** stay out of a full backup (never out of an archive snapshot or a week's CSV).
 - **Values with three decimals** get a fourth zero (`1.1250`), see „Columns“ → numbers.
 - **The goal year** (`goal.start`, `goal.end`, `goal.review`, `goal.motto`) and „Thalia-Katalog bereitstellen“
-  (`exchange.catalog`) are `record` rows; the import only fills them in (see „Datensätze“).
+  (`exchange.catalog`) are `record` rows; the import only fills them in (see „Datensätze“) – with a very old time stamp,
+  so the real value that iCloud brings later wins. The same holds for a closed week a restore creates with its `wertung`.
 - **Never in a backup:** shared Health values, the requests to score a week again (`rescore.`), the devices' builds
   (`sync.build.`), the last backup (`backup.last`) – and, as before, values from Apple Health and the settings of this
   device.

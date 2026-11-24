@@ -703,10 +703,11 @@ struct WrapLayout: Layout {
 /// v11 P1.7, P1.16: how a weekly target reads on screen and in the PDF – one place for Week, the Mac panel,
 /// "Heute im Blick", the weekly-goals sheet and the week's PDF.
 extension WeeklyTarget {
-    /// Where the target stands: a limit "im Rahmen" / "überschritten", else the pace – "erreicht", "im Plan",
-    /// "hinter dem Plan", "noch offen" (last planned day), "nicht erreicht" (the week is over or closed).
+    /// Where the target stands, by the report's rule (`PaceStatus.of`): a limit "im Rahmen" / "überschritten"; met
+    /// "erreicht" (a range or "=" compares both ways); else the pace – "im Plan", "hinter dem Plan", "noch offen"
+    /// (last planned day), "nicht erreicht" (the week is over or closed).
     var shownStatus: PaceStatus {
-        target.isLimit ? PaceStatus.limit(isMet: isMet) : pace.status
+        PaceStatus.of(target: target, value: value, pace: pace)
     }
 
     /// The unit the amounts are rounded and written with: "PH" for work, else the measure's own (times, €).
@@ -752,14 +753,14 @@ struct WeeklyTargetRow: View {
     private var statusColor: Color { StatusTint(target.shownStatus).color }
 
     private var barColor: Color {
-        if isLimit || target.pace.isReached { return statusColor }
+        if isLimit || target.pace.isReached || target.shownStatus == .reached { return statusColor }
         return tint
     }
 
     /// Where an even pace stands today, 0…1 of the bar; nil once reached.
     private var marker: Double? {
         let pace: Pace = target.pace
-        guard pace.target > 0, pace.expected > 0, !pace.isReached else { return nil }
+        guard pace.target > 0, pace.expected > 0, !pace.isReached, target.shownStatus != .reached else { return nil }
         return min(1, pace.expected / pace.target)
     }
 

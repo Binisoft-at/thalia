@@ -16,7 +16,8 @@ enum BackgroundGrace {
     /// Fire and forget, right after saving (take `saveDate` just before the save): a background task that ends
     /// at the first CloudKit export that started at or after `saveDate` and has ended, after `timeout`, or when
     /// iOS ends the background time – whichever comes first. Several holds can run at once. macOS: nothing.
-    static func holdForExport(after saveDate: Date, timeout: Duration = .seconds(20)) {
+    /// `Swift.Duration` here and below: never MacTypes' C typedef `Duration` (SInt32), which the Mac SDK also has.
+    static func holdForExport(after saveDate: Date, timeout: Swift.Duration = .seconds(20)) {
         #if os(iOS)
         let hold = ExportHold(saveDate: saveDate)
         holds[ObjectIdentifier(hold)] = hold
@@ -102,7 +103,7 @@ private final class ExportHold {
         self.saveDate = saveDate
     }
 
-    func start(timeout: Duration) {
+    func start(timeout: Swift.Duration) {
         taskID = UIApplication.shared.beginBackgroundTask(withName: "Thalia iCloud export") { [weak self] in
             // iOS calls this on the main thread when the background time runs out.
             MainActor.assumeIsolated { self?.end("background time over") }

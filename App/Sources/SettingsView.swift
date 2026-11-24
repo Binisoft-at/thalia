@@ -124,7 +124,7 @@ struct SettingsView: View {
                 } label: {
                     Label("Sicherungen", systemImage: "clock.arrow.circlepath")
                 }
-                if BackupWriter.lastAutoWasSmall {
+                if BackupWriter.showsSmallNotice(store: app.store) {
                     Label(BackupWriter.smallNotice, systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote)
                         .foregroundStyle(.orange)

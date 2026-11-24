@@ -340,7 +340,8 @@ struct TrackerStore {
         if let source {
             let previous = weekContext(for: source, today: today)
             if measures.isEmpty { measures = previous.measures.compactMap(\.record) }
-            report = WeekReport.markdown(previous.reportInput())
+            // HEALTHSHARE: without the Health values another device shares – a prompt keeps hiding them (§1.4.7).
+            report = WeekReport.markdown(previous.reportInput(sharedHealth: false))
             changes = previous.changes.compactMap(\.record)
             currentPlan = PlanCSV.export(exportDocument(weeks: [source]).planOnly(week: source))
             trend = (0..<4).reversed().map { offset in trendLine(source.adding(weeks: -offset), today: today) }
@@ -1485,7 +1486,9 @@ struct TrackerStore {
     /// v9: a closed archive week (no items, goal values from its grades, decision 5) counts with its
     /// stored goal values too; a paper week with only a score has none and stays out.
     /// v10 (§1.4.3): `start` – from a segment's first week instead ("Abschnitt" in the goal review).
-    func periodReport(period: GoalPeriod, through week: WeekKey, from start: WeekKey? = nil) -> PeriodReport {
+    /// `sharedHealth` false (the copy for the goal-review conversation): without the Health values another device shares
+    /// (§1.4.7).
+    func periodReport(period: GoalPeriod, through week: WeekKey, from start: WeekKey? = nil, sharedHealth: Bool = true) -> PeriodReport {
         let today = DayKey.today()
         let plans = allPlans().filter { $0.deletedAt == nil }.latest(by: \.weekKey, modified: \.modifiedAt)
         var inputs: [WeekReportInput] = []
@@ -1494,7 +1497,7 @@ struct TrackerStore {
         while shown <= week {
             let scores: [String: Double] = plans[shown.string]?.finalGoalScoreMap ?? [:]
             if hasItems(shown) || !scores.isEmpty {
-                inputs.append(weekContext(for: shown, today: today, goalYear: false).reportInput())
+                inputs.append(weekContext(for: shown, today: today, goalYear: false).reportInput(sharedHealth: sharedHealth))
                 if !scores.isEmpty { goalScores[shown] = scores }
             }
             shown = shown.adding(weeks: 1)

@@ -153,6 +153,9 @@ struct WeekContext {
     // HEALTHSHARE: the Health values the iPhone shares, as this device reads them – Mac, watch, iPad (§1.4.7); empty on the
     // iPhone that writes them, without the gate or while the sharing is off.
     let healthShare: HealthShareWeek
+    // HEALTHSHARE: the code-and-day keys whose value in `entryRecords` is a shared one (no own entry, no own Health value) –
+    // prompts leave them out (`reportInput(sharedHealth: false)`, §1.4.7).
+    let sharedHealthKeys: Set<String>
     /// The goal year's records, decoded on first use (`segments`, `results`, `goalEntries`, `listItems`,
     /// `listProgress`, `storedCategoryWeeks`) – a screen that shows none of them never decodes them.
     private let records: WeekRecords
@@ -240,12 +243,15 @@ struct WeekContext {
             || itemRecords.contains { MeasureSource(raw: $0.measure).listKind != nil }
         // HEALTHSHARE: Mac, watch and iPad count the values the iPhone shares like adopted Health values – an own Health
         // value per code and day first, own entries win as always (`Measures.merged`, §1.4.7).
-        let shared: HealthShareWeek = HealthShareWeek(settings: storedSettings, week: week)
+        let shared: HealthShareWeek = HealthShareWeek(settings: storedSettings, week: week, today: today)
         healthShare = shared
         let ownHealth: [EntryRecord] = self.health.compactMap(\.record)
         let healthCodes: Set<String> = Set(ownMeasures.filter(\.isHealth).map(\.code))
         // HEALTHSHARE
-        let healthInput: [EntryRecord] = ownHealth + shared.entries(codes: healthCodes, except: Set(ownHealth.map(\.key)))
+        let sharedInput: [EntryRecord] = shared.entries(codes: healthCodes, except: Set(ownHealth.map(\.key)))
+        let healthInput: [EntryRecord] = ownHealth + sharedInput
+        // HEALTHSHARE: an own entry of the code and day wins (`Measures.merged`) – then the value isn't the shared one.
+        sharedHealthKeys = Set(sharedInput.map(\.key)).subtracting(self.entries.compactMap(\.record).map(\.key))
         let extras = WeekExtras.compute(WeekExtras.Input(
             week: week, items: itemRecords, measures: ownMeasures, categories: categoryRecords,
             ownMarks: self.marks.values.compactMap(\.record), ownEntries: self.entries.compactMap(\.record),
@@ -529,13 +535,17 @@ struct WeekContext {
     /// v10: `results` – the goals' results for the block "Jahresziel-Ergebnisse" (`TrackerStore.resultLines`);
     /// give them here or to the planning prompt, not both. The marks are the ones that count (own ones,
     /// and ✓ derived from a connected app where there is none).
-    func reportInput(results: [GoalResultLine] = []) -> WeekReportInput {
+    /// `sharedHealth` false (prompts, the goal review's copy): without the Health values another device shares – on Mac,
+    /// watch and iPad a prompt keeps hiding Health values as before (§1.4.7); no change where nothing is shared.
+    func reportInput(results: [GoalResultLine] = [], sharedHealth: Bool = true) -> WeekReportInput {
         let weekRecord = plan?.record ?? WeekRecord(week: week)
+        // HEALTHSHARE: the shared values out (`sharedHealthKeys`).
+        let entries: [EntryRecord] = sharedHealth ? entryRecords : entryRecords.filter { !sharedHealthKeys.contains($0.key) }
         return WeekReportInput(
             week: weekRecord, goals: data.goals, categories: data.categories, items: data.items,
             measures: measures.compactMap(\.record), marks: reportMarks,
             overrides: overrides.values.compactMap(\.record), days: days.values.compactMap(\.record),
-            entries: entryRecords, work: workRecords, notes: notes.compactMap(\.record),
+            entries: entries, work: workRecords, notes: notes.compactMap(\.record),
             reviews: reflections.values.map(\.record), changes: changes.compactMap(\.record),
             closedDays: Set(week.days.filter { isClosed($0) }), isClosed: isClosed, today: today, results: results
         )

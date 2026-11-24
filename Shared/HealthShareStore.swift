@@ -90,10 +90,16 @@ enum HealthShareGate {
     @MainActor private static var running: Task<State, Never>?
     @MainActor private static var confirmed: State?
 
+    /// This launch verified an App Store build (`.denied`, never only the cache) – the App Store clean-up then also runs
+    /// after each iCloud sync, so records that arrive later go too and a TestFlight device's sharing ends without waiting
+    /// for the next launch (§1.4.3; stays with the clean-up).
+    @MainActor static var isConfirmedDenied: Bool { confirmed == .denied }
+
     /// Checks the app transaction – at most `timeout`; a slower check goes on and still caches its answer. Returns the
     /// state confirmed now: `.unknown` when not verified, failed or not answered in time.
+    /// `Swift.Duration`: on the Mac MacTypes' C typedef `Duration` (SInt32) can be in scope too.
     @MainActor
-    static func resolve(timeout: Duration = .seconds(30)) async -> State {
+    static func resolve(timeout: Swift.Duration = .seconds(30)) async -> State {
         if let confirmed { return confirmed }
         let check: Task<State, Never>
         if let running {
@@ -197,8 +203,8 @@ struct HealthShareWeek {
     }
 
     // HEALTHSHARE
-    /// From the week's settings (`hshare.state` and `HealthShare.keys(week:)`, the other settings are ignored).
-    init(settings: [StoredSetting], week: WeekKey) {
+    /// From the week's settings (`hshare.state`, `HealthShare.keys(week:)`), as far back as this device's window (`today`).
+    init(settings: [StoredSetting], week: WeekKey, today: DayKey = .today()) {
         guard HealthShareGate.isAllowed else {
             self = .none
             return
@@ -212,12 +218,21 @@ struct HealthShareWeek {
         // HEALTHSHARE
         let keys = Set(HealthShare.keys(week: week))
         let records: [HealthShareDay] = settings.filter { keys.contains($0.key) }.compactMap { HealthShareDay(value: $0.value, key: $0.key) }
-        self.init(state: state, records: records)
+        self.init(state: state.readable(today: today), records: records)
     }
 
     /// The writer's window holds `day` – its values (or that there are none) are the iPhone's.
     func covers(_ day: DayKey) -> Bool {
         state?.covers(day) ?? false
+    }
+
+    // HEALTHSHARE: "aus Health am iPhone" – or "am iPad" when an iPad writes (§1.4.8); `writerSymbol` the device's symbol.
+    var sharedCaption: String { HealthShare.sharedCaption(state) }
+    var writerSymbol: String { state?.writerKind == "iPad" ? "ipad" : "iphone" }
+
+    // HEALTHSHARE: "Health am iPhone: 72,6 kg – dort übernehmen" (the writer's kind, §1.4.8).
+    func suggestionText(_ value: Double, unit: String) -> String {
+        HealthShare.suggestionText(Format.measure(value, unit: unit), state: state)
     }
 
     /// The value the iPhone took over for `code` on `day`.
@@ -266,15 +281,17 @@ extension TrackerStore {
     /// lies in the writer's window – this device then scores the week like the iPhone (`canScore`, §1.3.1 (b)).
     // HEALTHSHARE
     func healthShareCovers(_ week: WeekKey, today: DayKey = .today()) -> Bool {
-        guard let state = readHealthShareState else { return false }
+        // Not further back than this device's own window – older days may be deleted already (§1.4.6).
+        guard let state = readHealthShareState?.readable(today: today) else { return false }
         let days: [DayKey] = week.days.filter { $0 <= today }
         return !days.isEmpty && days.allSatisfy { state.covers($0) }
     }
 
-    /// The shared values of `code` on the days in `dayKeys` (inside the writer's window), except the code-and-day keys in
-    /// `except` (own Health values) – `lastValue` and `measureSeries` count them like `HealthValue`s. Empty on the writer.
-    func sharedHealthEntries(code: String, dayKeys: [String], except: Set<String> = []) -> [EntryRecord] {
-        guard let state = readHealthShareState else { return [] }
+    /// The shared values of `code` on the days in `dayKeys` (inside the writer's window, not older than this device's own,
+    /// by `today`), except the code-and-day keys in `except` (own Health values) – `lastValue` and `measureSeries` count
+    /// them like `HealthValue`s. Empty on the writer.
+    func sharedHealthEntries(code: String, dayKeys: [String], except: Set<String> = [], today: DayKey = .today()) -> [EntryRecord] {
+        guard let state = readHealthShareState?.readable(today: today) else { return [] }
         let days: [DayKey] = dayKeys.compactMap { DayKey($0) }.filter { state.covers($0) }
         guard !days.isEmpty else { return [] }
         // HEALTHSHARE
@@ -321,8 +338,10 @@ extension TrackerStore {
         return withoutUndo { () -> Int in
             var change = RecordChange()
             writeHealthShareDays(today: today, days: days, read: read, by: me, now: now, change: &change)
-            let wanted = HealthShareState.sharing(by: me, today: today, now: now)
-            if state == nil || state?.on == false || state?.from != wanted.from || state?.through != wanted.through {
+            // The device's kind goes along ("aus Health am iPad" on the others, §1.4.8).
+            let wanted = HealthShareState.sharing(by: me, today: today, now: now, device: SyncDeviceKind.current)
+            if state == nil || state?.on == false || state?.from != wanted.from || state?.through != wanted.through
+                || state?.device != wanted.device {
                 // HEALTHSHARE
                 writeSetting(HealthShare.stateKey, wanted.value, now: now, change: &change)
             }
@@ -348,7 +367,9 @@ extension TrackerStore {
                 writeSetting(setting.key, nil, now: now, change: &change)
             }
             // HEALTHSHARE
-            writeSetting(HealthShare.stateKey, HealthShareState.sharing(by: me, today: today, now: now).value, now: now, change: &change)
+            let state = HealthShareState.sharing(by: me, today: today, now: now, device: SyncDeviceKind.current)
+            // HEALTHSHARE
+            writeSetting(HealthShare.stateKey, state.value, now: now, change: &change)
             writeHealthShareDays(today: today, days: nil, read: read, by: me, now: now, change: &change)
             guard !change.isEmpty else { return 0 }
             commit(change, origin: .maintenance)

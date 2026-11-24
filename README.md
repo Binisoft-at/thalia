@@ -15,13 +15,14 @@ Built on the [Binisoft handbook](https://github.com/Binisoft-at/binisoft-handboo
   tutoring hours, measurements with +/− and Apple Health suggestions, the items due today with
   ✓ ½ ✗ N/A, notes (trigger, success, contact, parked idea). **Tag abschließen** in the evening:
   check evidence, fill gaps, confirm categories (own score possible), reflect.
-- **Woche** – the tracker sheet: ten items per category × Mo–So, week score with the ten goals at
-  10 % each, weekly targets with an even-pace marker, day types, **Woche abschließen** with the
+- **Woche** – the tracker sheet: ten items per category × Mo–So, week score with the annual goals
+  equally weighted, weekly targets with an even-pace marker, day types, **Woche abschließen** with the
   report and the planning prompt for the next Sunday conversation.
 - **Ziele** – the ten annual goals, year progress, the KW49 review, trends.
 - **Rückblick** – every week's score (paper history before KW42 shown apart) and its report.
 - **Import & export** – the planning prompt → ChatGPT → CSV → preview → import; your own CSV; export
-  and backup in the same format. Format: [docs/IMPORT.md](docs/IMPORT.md).
+  and backup in the same format („Sicherung erstellen…“, plus a weekly automatic backup on iPhone and Mac).
+  Format: [docs/IMPORT.md](docs/IMPORT.md).
 - **Everywhere** – iPhone, iPad, Mac (menus, shortcuts), Apple Watch (ring, open items, counters,
   power-hours with Bereich and Wofür, measurements, complication), widgets and Control Center buttons,
   Shortcuts, reminders (morning start, evening review, Sunday).

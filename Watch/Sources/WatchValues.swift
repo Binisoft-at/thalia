@@ -292,10 +292,10 @@ struct WatchMeasureRow: View {
     private var healthCaption: String? {
         let day: DayKey = context.today
         // HEALTHSHARE
-        if context.sharedHealthValue(measure, on: day) != nil { return "aus Health am iPhone" }
+        if context.sharedHealthValue(measure, on: day) != nil { return context.healthShare.sharedCaption }
         // HEALTHSHARE
         if let phone = context.sharedHealthSuggestion(measure, on: day) {
-            return "Health am iPhone: \(Format.measure(phone, unit: measure.unit)) – dort übernehmen"
+            return context.healthShare.suggestionText(phone, unit: measure.unit)
         }
         guard context.isHealthElsewhere(measure, on: day) else { return nil }
         return WeekContext.healthElsewhereHint

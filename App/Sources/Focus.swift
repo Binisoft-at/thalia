@@ -446,7 +446,7 @@ private struct AreaRow: View {
                     }
                 }
                 if let pace, pace.target > 0 {
-                    GoalBar(fraction: pace.fraction, expected: expectedFraction(pace), reached: pace.isReached, tint: tint)
+                    GoalBar(fraction: pace.fraction, expected: expectedFraction(pace), reached: shownStatus(pace) == .reached, tint: tint)
                 }
                 if let dayLine {
                     Text(dayLine)
@@ -484,7 +484,13 @@ private struct AreaRow: View {
     /// without a target the week's power-hours.
     private var status: String {
         guard let pace else { return Format.powerHours(context.weekValue(measure) ?? 0) }
-        return pace.status.label(remaining: pace.remaining, unit: "PH")
+        return shownStatus(pace).label(remaining: pace.remaining, unit: "PH")
+    }
+
+    /// v11 P1.16: the report's rule (`PaceStatus.of`) when the target is known, else the pace's status.
+    private func shownStatus(_ pace: Pace) -> PaceStatus {
+        guard let target else { return pace.status }
+        return PaceStatus.of(target: target, value: pace.done, pace: pace)
     }
 
     /// "6 / 8 PH" (v11 P1.7: rounded for the screen, the target in the direction of its comparison); nil without a
@@ -502,7 +508,7 @@ private struct AreaRow: View {
 
     private var statusColor: Color {
         guard let pace else { return .primary }
-        return StatusTint(pace.status).color
+        return StatusTint(shownStatus(pace)).color
     }
 
     private func expectedFraction(_ pace: Pace) -> Double? {

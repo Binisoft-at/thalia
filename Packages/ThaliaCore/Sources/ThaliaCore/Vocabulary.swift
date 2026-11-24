@@ -199,7 +199,9 @@ public struct Target: Equatable, Hashable, Sendable {
         }
         if comparison == nil, strict, t.first?.isLetter == true { return nil }
         t = Target.rangeWord(t)
-        let numberish = t.trimmingCharacters(in: CharacterSet(charactersIn: "0123456789.,:- ").inverted)
+        var numberish = t.trimmingCharacters(in: CharacterSet(charactersIn: "0123456789.,:- ").inverted)
+        // A unit at the end may end in "." ("≤ 6 Stk."): everything after the last digit goes (v11 P1.3).
+        if let last = numberish.lastIndex(where: \.isNumber) { numberish = String(numberish[...last]) }
         if comparison == nil, let dash = numberish.dropFirst().firstIndex(of: "-") {
             let low = String(numberish[numberish.startIndex..<dash])
             let high = String(numberish[numberish.index(after: dash)...])

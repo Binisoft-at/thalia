@@ -75,7 +75,11 @@ Schlüssel-Präfixen – der TestFlight-Build braucht kein „Deploy Schema Chan
    beendet nach Abschnitt), `position`. Arten:
    - `check` – abhaken (z. B. „Website online“): erledigt, wenn es einen `goal.entry` gibt (Datum = erledigt am).
    - `count` – zählen (z. B. „10 Bücher“): Stand = Summe der Einträge **oder** aus einer Quelle:
-     `list` (fertige Listeneinträge, die „zählt für“ dieses Ergebnis haben; ohne solche: alle fertigen der Art),
+     `list` (fertige Listeneinträge, die „zählt für“ dieses Ergebnis haben; ohne solche: alle fertigen der Art –
+     **seit 1.10.0 (TASKS-v11 P1.11) anders:** die zugeordneten Einträge **und** alle fertigen nicht zugeordneten der Art,
+     jeder einmal; Einträge eines anderen Ergebnisses bleiben draußen, eine Zuordnung auf ein gelöschtes Ergebnis gilt
+     als nicht zugeordnet. „Zählt für“ an einem Hörbuch wirft so die anderen Bücher nicht mehr aus der Zählung; eine
+     Auswahl von Hand geht über eine eigene Art, z. B. „Fachbuch“ und `list:fachbuch`),
      `measure:<Code>` (Summe eines Wochen-Messwerts über Abschnitt/Zieljahr, auch `arbeit:`-PH; `health:`-Quellen nur
      auf dem Gerät gerechnet, nie gespeichert), `app:<quelle>:<kennzahl>[=<ref>]` (Summe/Anzahl aus dem Eingang).
    - `value` – Zielwert (z. B. Vermögen, Gewicht): Stand = letzter Wert aus `measure:<Code>` oder `app:…` oder aus
@@ -307,7 +311,8 @@ dieser Abschnitt.
   (ohne Ziel). Mit einem Ziel für den aktuellen Abschnitt zählen `count`-Ergebnisse samt Tempo im Abschnitt („1 von 2
   in Abschnitt 2 · 3 im Zieljahr“); `value`-Ergebnisse rechnen das Tempo ab dem Wert vor dem Abschnitt.
 - Liste als Quelle ohne zugeordnete Einträge: fertige Einträge der Art zählen, aber keine, die einem anderen Ergebnis
-  zugeordnet sind; ohne Art gilt „buch“.
+  zugeordnet sind; ohne Art gilt „buch“. Seit 1.10.0 (TASKS-v11 P1.11) zählen die fertigen nicht zugeordneten Einträge
+  der Art auch dann, wenn es zugeordnete gibt (Vereinigung, jeder einmal) – siehe §1.2.1.
 - Bezeichnungen alter Wochen kommen aus dem Schnappschuss des nächsten Abschnitts (Stand am Ende des Abschnitts),
   sonst aus dem eigenen. Der stillschweigende „Abschnitt 1“ hat die feste id `first-<periodStart>`.
 - „Über 8,0“ ist umgesetzt als gerundet ≥ 8,00 (`GoalTrack.threshold`) – entschieden (Bini, 23. Nov. 2026; siehe

@@ -928,7 +928,7 @@ private struct WeeklyTargetLine: View {
     /// Where an even pace stands today, 0…1 of the bar; nil once reached.
     private var marker: Double? {
         let pace: Pace = target.pace
-        guard pace.target > 0, pace.expected > 0, !pace.isReached else { return nil }
+        guard pace.target > 0, pace.expected > 0, !pace.isReached, target.shownStatus != .reached else { return nil }
         return min(1, pace.expected / pace.target)
     }
 

@@ -51,6 +51,10 @@ struct ThaliaWatchApp: App {
                         if HealthShareGate.isAllowed {
                             TrackerStore(context: container.mainContext).cleanUpHealthShare(gate: .allowed, today: DayKey.today())
                         }
+                        // HEALTHSHARE: an App Store build (verified this launch) also deletes what arrived since (§1.4.3; stays).
+                        if HealthShareGate.isConfirmedDenied {
+                            TrackerStore(context: container.mainContext).cleanUpHealthShare(gate: .denied, today: DayKey.today())
+                        }
                     }
                 }
         }

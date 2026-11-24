@@ -554,7 +554,8 @@ final class AppModel {
             // would read as no change), and coming from another page it is on screen by then. The column doesn't
             // show meanwhile – it doesn't fit.
             showsWeekSummary = false
-            let wait: Duration = onWeek ? .milliseconds(100) : .milliseconds(350)
+            // `Swift.Duration`: on the Mac AppKit brings MacTypes' C typedef `Duration` (SInt32) into scope.
+            let wait: Swift.Duration = onWeek ? .milliseconds(100) : .milliseconds(350)
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: wait)
                 self?.showsWeekSummary = true
@@ -930,6 +931,10 @@ final class AppModel {
         clearRemindersOfClosedWeeks()
         widgetPublisher?.publishNow()
         updateMenuBarTitle()
+        // HEALTHSHARE: an App Store build (verified this launch) deletes shared records that arrived with this sync and writes
+        // the state off – the TestFlight iPhone stops at its next sync, not only after this device's next launch (§1.4.3;
+        // stays with the clean-up).
+        if HealthShareGate.isConfirmedDenied { store.cleanUpHealthShare(gate: .denied, today: today) }
         // HEALTHSHARE: a sharing state from another device – the writer check and the privacy texts follow (§1.4.5, §1.4.10).
         healthShare.syncArrived(store: store)
         syncTick += 1

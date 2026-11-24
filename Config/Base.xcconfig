@@ -26,7 +26,7 @@ SHARED_CLOUDKIT_CONTAINER = iCloud.$(BUNDLE_ID_PREFIX).shared
 SHARED_KEYCHAIN_GROUP = $(AppIdentifierPrefix)$(BUNDLE_ID_PREFIX).shared
 
 // Versions: bump MARKETING_VERSION for a new version; CI sets the build number (= run number).
-MARKETING_VERSION = 1.9.0
+MARKETING_VERSION = 1.10.0
 CURRENT_PROJECT_VERSION = 1
 
 #include? "Local.xcconfig"

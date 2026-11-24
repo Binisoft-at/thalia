@@ -555,7 +555,7 @@ struct MeasureForm: View {
             // HEALTHSHARE: Mac, watch, iPad – the day's value is the one the iPhone shares (§1.4.8).
             if context.sharedHealthValue(measure, on: day) != nil {
                 Section {
-                    Label(HealthShareController.sharedCaption, systemImage: "iphone")
+                    Label(context.healthShare.sharedCaption, systemImage: context.healthShare.writerSymbol)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } footer: {
@@ -564,7 +564,7 @@ struct MeasureForm: View {
                 // HEALTHSHARE: read on the iPhone, taken over nowhere – only shown.
             } else if let phone = context.sharedHealthSuggestion(measure, on: day) {
                 Section {
-                    Label(HealthShareController.phoneSuggestionText(phone, unit: measure.unit), systemImage: "iphone")
+                    Label(context.healthShare.suggestionText(phone, unit: measure.unit), systemImage: context.healthShare.writerSymbol)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

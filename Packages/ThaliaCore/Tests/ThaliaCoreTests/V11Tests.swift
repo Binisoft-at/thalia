@@ -153,6 +153,19 @@ struct V11TargetWordTests {
         // Stored targets read loosely: the number counts as in 1.9.0.
         #expect(Target.parse("ca 150") == Target(.atLeast, 150) && Target.parse("abends 22:00") == Target(.atLeast, 1320, isTime: true))
     }
+
+    /// Gap fix: a unit at the end may end in "." – the app's own "Stk." (1.9.0 read these as nil).
+    @Test func unitsWithADotAtTheEnd() {
+        for strict in [false, true] {
+            #expect(Target.parse("bis zu 6 Stk.", strict: strict) == Target(.atMost, 6))
+            #expect(Target.parse("≤ 6 Stk.", strict: strict) == Target(.atMost, 6) && Target.parse("≤6 Stk.", strict: strict) == Target(.atMost, 6))
+            #expect(Target.parse("≥ 2,5 Std.", strict: strict) == Target(.atLeast, 2.5))
+            #expect(Target.parse("150-180 Stk.", strict: strict) == Target(.range, 150, upper: 180))
+            #expect(Target.parse("spätestens 23:00 Uhr.", strict: strict) == Target(.atMost, 1380, isTime: true))
+        }
+        #expect(Target.parse("Stk.", strict: true) == nil && Target.parse("Stk.") == nil, "no number, no target")
+        #expect(Target.parse("≥150 g") == Target(.atLeast, 150) && Target.parse("8.5") == Target(.atLeast, 8.5), "as before")
+    }
 }
 
 /// C4: power-hours in minutes (P1.4).
@@ -613,6 +626,8 @@ struct V11ReportTests {
                                    lastWeekReport: nil, setDays: days)
         #expect(text.contains("Schon eingetragen für KW47: Fr 20.11. Urlaub, Sa 21.11. Reisetag („Flug“) – so übernehmen."))
         #expect(text.contains("ohne Tausenderpunkt (8000, nicht 8.000)"))
+        // P6.3 (gap fix): no fixed number of goals – a goal 11 or one replaced would make "zehn" wrong.
+        #expect(text.contains("- Die Jahresziele sind die Grundlage.") && !text.lowercased().contains("zehn jahresziele"))
         let plain = PlanPrompt.text(for: week, goals: template.goals, categories: template.categories, measures: template.measures, lastWeekReport: nil)
         #expect(!plain.contains("Schon eingetragen") && plain.hasSuffix("## Mein Rückblick und Plan für KW47:\n"))
         let past = PastWeekPrompt.text(weeks: [week], items: [], categories: template.categories, goals: template.goals, measures: [])
@@ -671,6 +686,47 @@ struct V11PaceTests {
         #expect(report(7.5, today: week.sunday.adding(days: 1)).contains("(Ziel ≥ 8 – nicht erreicht)"))
         #expect(report(8, today: week.day(.tuesday)).contains("(Ziel ≥ 8 – erreicht)"))
         #expect(report(8, today: week.day(.tuesday)).contains("- Ausgaben: 60 € in der Woche (Ziel < 50 – überschritten)"))
+    }
+
+    /// Gap fix (P1.16 „Bericht und App gleich“): ranges and "=" by the report's rule – `PaceStatus.of` is what the app,
+    /// the week's PDF and the report say.
+    @Test func rangesAndEqualTargetsLikeTheReport() {
+        let saturday = week.day(.saturday)
+        let over = week.sunday.adding(days: 1)
+        let range = Target(.range, 150, upper: 180)
+        func pace(_ done: Double, _ target: Target, today: DayKey) -> Pace {
+            Pace(done: done, target: target.scaleMax, days: .everyDay, week: week, today: today)
+        }
+        // 150–180 with 160: met – "erreicht", during the week and after it (the pace alone said "nicht erreicht").
+        #expect(PaceStatus.of(target: range, value: 160, pace: pace(160, range, today: over)) == .reached)
+        #expect(PaceStatus.of(target: range, value: 160, pace: pace(160, range, today: saturday)) == .reached)
+        // 200: above the range – "nicht erreicht" once the week is over, "im Plan" while it runs (the pace said "erreicht").
+        #expect(PaceStatus.of(target: range, value: 200, pace: pace(200, range, today: over)) == .missed)
+        #expect(PaceStatus.of(target: range, value: 200, pace: pace(200, range, today: saturday)) == .onPlan)
+        // Below the range: the pace's status.
+        #expect(PaceStatus.of(target: range, value: 40, pace: pace(40, range, today: week.day(.thursday))) == .behind)
+        #expect(PaceStatus.of(target: range, value: 120, pace: pace(120, range, today: over)) == .missed)
+        // "= 3": 4 isn't 3.
+        let exact = Target(.equal, 3)
+        #expect(PaceStatus.of(target: exact, value: 4, pace: pace(4, exact, today: over)) == .missed)
+        #expect(PaceStatus.of(target: exact, value: 3, pace: pace(3, exact, today: over)) == .reached)
+        // At least and limits as before.
+        let least = Target(.atLeast, 8)
+        #expect(PaceStatus.of(target: least, value: 7.2, pace: pace(7.2, least, today: saturday)) == pace(7.2, least, today: saturday).status)
+        #expect(PaceStatus.of(target: least, value: 8, pace: pace(8, least, today: saturday)) == .reached)
+        let limit = Target(.below, 50)
+        #expect(PaceStatus.of(target: limit, value: 60, pace: pace(60, limit, today: saturday)) == .overLimit)
+        #expect(PaceStatus.of(target: limit, value: 20, pace: pace(20, limit, today: over)) == .withinLimit)
+        // And the report says the same.
+        let goals = [GoalRecord(key: "1", title: "Ziel A")]
+        let categories = [CategoryRecord(key: "1.1", goalKey: "1", title: "Thema A")]
+        let protein = MeasureRecord(week: week, code: "eiw", categoryKey: "1.1", title: "Eiweiß", unit: "g", target: range, period: .week)
+        func report(_ value: Double) -> String {
+            WeekReport.markdown(WeekReportInput(
+                week: WeekRecord(week: week), goals: goals, categories: categories, items: [], measures: [protein], marks: [],
+                entries: [EntryRecord(code: "eiw", day: week.monday, value: value)], isClosed: true, today: over))
+        }
+        #expect(report(160).contains("(Ziel 150–180 – erreicht)") && report(200).contains("(Ziel 150–180 – nicht erreicht)"))
     }
 }
 
@@ -896,6 +952,48 @@ struct V11HealthShareTests {
         #expect(HealthShareState.newest([state.value, HealthShareState.stopped(by: "mac", now: now.addingTimeInterval(60)).value])?.by == "mac")
         #expect(!state.value.contains("72"), "the state carries no values")
     }
+
+    // HEALTHSHARE: gap fix – a writer that wasn't active for days: a reader counts its window only as far back as its own
+    // (older days may be deleted by `expired` already), so no deleted day counts as covered.
+    @Test func readersWindowNotOlderThanTheirOwn() {
+        let lagging = HealthShareState.sharing(by: "phone", today: today.adding(days: -3), now: now)
+        // HEALTHSHARE
+        let first = today.adding(days: -(HealthShare.window - 1))
+        #expect(lagging.covers(first.adding(days: -2)), "the writer's own window reaches further back")
+        let seen = lagging.readable(today: today)
+        #expect(seen.from == first && seen.through == lagging.through && seen.by == "phone" && seen.on)
+        // HEALTHSHARE
+        #expect(!HealthShare.covers(first.adding(days: -1), state: lagging, today: today) && HealthShare.covers(first, state: lagging, today: today))
+        // HEALTHSHARE: exactly what `expired` deletes is no longer covered.
+        let keys = (1...3).map { HealthShare.key(day: first.adding(days: -$0)) } + [HealthShare.key(day: first)]
+        // HEALTHSHARE
+        let gone = Set(HealthShare.expired(keys: keys, today: today).compactMap { HealthShare.day(settingKey: $0) })
+        // HEALTHSHARE
+        #expect(gone.allSatisfy { !HealthShare.covers($0, state: lagging, today: today) } && gone.count == 3)
+        // An active writer is unchanged; a writer gone for longer than the window covers nothing.
+        let active = HealthShareState.sharing(by: "phone", today: today, now: now)
+        #expect(active.readable(today: today) == active)
+        let gone40 = HealthShareState.sharing(by: "phone", today: today.adding(days: -40), now: now).readable(today: today)
+        #expect(!gone40.covers(today.adding(days: -40)) && !gone40.covers(first))
+    }
+
+    // HEALTHSHARE: gap fix – the texts name the writing device's kind ("am iPad" after an iPad took over, §3.4.2).
+    @Test func textsNameTheWriter() throws {
+        let ipad = HealthShareState.sharing(by: "tablet", today: today, now: now, device: "iPad")
+        #expect(ipad.device == "iPad" && ipad.writerKind == "iPad")
+        #expect(HealthShareState(value: ipad.value) == ipad && ipad.value.contains("\"device\":\"iPad\""))
+        // HEALTHSHARE
+        #expect(HealthShare.sharedCaption(ipad) == "aus Health am iPad")
+        // HEALTHSHARE
+        #expect(HealthShare.suggestionText("72,6 kg", state: ipad) == "Health am iPad: 72,6 kg – dort übernehmen")
+        // Without the field (or a state) as before: the iPhone.
+        let plain = HealthShareState.sharing(by: "phone", today: today, now: now)
+        #expect(plain.device == nil && plain.writerKind == "iPhone" && !plain.value.contains("device"))
+        // HEALTHSHARE
+        #expect(HealthShare.sharedCaption(plain) == "aus Health am iPhone" && HealthShare.sharedCaption(nil) == "aus Health am iPhone")
+        let older = try #require(HealthShareState(value: #"{"by":"phone","on":true,"from":"2026-10-19","through":"2026-11-22","v":1}"#))
+        #expect(older.writerKind == "iPhone" && older.covers(today))
+    }
 }
 
 /// C15: Finn – account balances, result sources, the fixtures (§1.5, P8.3).
@@ -1047,6 +1145,10 @@ struct V11TourTests {
         #expect(results.symbol == "trophy" && results.body.contains("„auf Kurs“ oder „im Rückstand“"))
         #expect(results.body.contains("ab 8,00") && results.macBody.contains("ab 8,00"))
         #expect(steps["past-weeks"]?.body.contains("„Vom Plan“ – Punkte einer geplanten Woche übernehmen") == true)
+        // P6.15: one "Zu heute" on ⌘T – ⇧⌘T is gone (gap fix: the Mac text of step `day`).
+        let day = try #require(steps["day"])
+        #expect(day.macBody.contains("⌘T führt zu heute") && !day.macBody.contains("⇧⌘T") && day.since == 7)
+        for step in shared.allSteps { #expect(!step.body.contains("⇧⌘T") && !step.macBody.contains("⇧⌘T"), "\(step.id)") }
         for step in shared.allSteps where step.since >= 8 {
             #expect(!step.body.contains(" du ") && !step.body.contains("deine"), "\(step.id)")
         }

@@ -257,14 +257,20 @@ struct ThaliaCommands: Commands {
             #endif
         }
         CommandMenu("Gehe zu") {
+            // v11 P4.5: a page change would close a local window with typed input (Ziele, a goal's page, the reading
+            // list) – grey while one holds some, like the sheet commands.
             Button("Heute") { goTo(.today) }
                 .keyboardShortcut("1")
+                .disabled(isBlocked)
             Button("Woche") { goTo(.week) }
                 .keyboardShortcut("2")
+                .disabled(isBlocked)
             Button("Ziele") { goTo(.goals) }
                 .keyboardShortcut("3")
+                .disabled(isBlocked)
             Button("Rückblick") { goTo(.review) }
                 .keyboardShortcut("4")
+                .disabled(isBlocked)
             Divider()
             Button("Heute im Blick") { showGlance() }
                 .keyboardShortcut("0")
@@ -272,6 +278,7 @@ struct ThaliaCommands: Commands {
             // v11 P4.6: the week table's right column (the shortcut moved here from its toolbar button).
             Button("Wochenübersicht") { toggleWeekSummary() }
                 .keyboardShortcut("0", modifiers: [.command, .option])
+                .disabled(isBlocked)
             Button("Fokus (Power-Hours)") { present { .focus($0.selectedDay) } }
                 .keyboardShortcut("5")
                 .disabled(isBlocked)
@@ -289,6 +296,7 @@ struct ThaliaCommands: Commands {
             // v11 P6.15: one "Zu heute" – on Woche the running week, everywhere else today.
             Button("Zu heute") { goToNow() }
                 .keyboardShortcut("t")
+                .disabled(isBlocked)
             Divider()
             Button("Vorige Kategorie") { app.commandTarget.moveTodayPage(by: -1) }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
@@ -354,10 +362,11 @@ struct ThaliaCommands: Commands {
     }
 
     /// The Mac toggles a column, so nothing is lost – unless the window is too narrow for it and the sheet opens
-    /// (P4.1); iPad opens a sheet.
+    /// (P4.1), or it switches to Heute from another page (a local window with typed input would close, P4.5); iPad
+    /// opens a sheet.
     private var isGlanceBlocked: Bool {
         #if os(macOS)
-        return isBlocked && !app.commandTarget.fitsGlanceInspector
+        return isBlocked && (!app.commandTarget.fitsGlanceInspector || !isOnToday)
         #else
         return isBlocked
         #endif
@@ -388,6 +397,7 @@ struct ThaliaCommands: Commands {
 
     /// ⌘1–⌘4. v11 P5.12: ⌘1 gives Today's list the keys 1–4 right away.
     private func goTo(_ tab: AppTab) {
+        guard !isBlocked else { return }
         showMainWindow()
         app.sidebar = tab
         app.tab = tab
@@ -425,7 +435,7 @@ struct ThaliaCommands: Commands {
         let target = app.commandTarget
         #if os(macOS)
         showMainWindow()
-        guard target.fitsGlanceInspector || !target.blocksSheetCommands else { return }
+        guard !isGlanceBlocked else { return }
         #else
         guard !target.blocksSheetCommands else { return }
         #endif
@@ -434,6 +444,7 @@ struct ThaliaCommands: Commands {
 
     /// ⌥⌘0 (P4.6).
     private func toggleWeekSummary() {
+        guard !isBlocked else { return }
         showMainWindow()
         app.commandTarget.toggleWeekSummary()
     }
@@ -457,6 +468,7 @@ struct ThaliaCommands: Commands {
 
     /// ⌘T (P6.15): on Woche back to the running week, everywhere else to today.
     private func goToNow() {
+        guard !isBlocked else { return }
         showMainWindow()
         let target = app.commandTarget
         if isOnWeek {

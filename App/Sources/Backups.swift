@@ -91,7 +91,13 @@ enum BackupWriter {
     /// "Letzte Sicherung: 22.11.2026 am iPhone (vor 3 Tagen) · automatisch: 23.11.2026 auf diesem Gerät", or
     /// "Noch keine Sicherung" – the footer of Einstellungen → Deine Daten.
     static func statusLine(store: TrackerStore, now: Date = Date()) -> String {
-        statusLine(stamp: lastStamp(store: store), lastAuto: lastAuto, now: now)
+        // §1.8.2: the demo and the practice page (in memory) never show this device's real automatic backup.
+        statusLine(stamp: lastStamp(store: store), lastAuto: store.isInMemory ? nil : lastAuto, now: now)
+    }
+
+    /// The orange "auffällig klein" line – only for the real store (never `-Demo` or the practice page, §1.8.2).
+    static func showsSmallNotice(store: TrackerStore) -> Bool {
+        !store.isInMemory && lastAutoWasSmall
     }
 
     nonisolated static func statusLine(stamp: BackupStamp?, lastAuto: Date?, now: Date) -> String {
@@ -152,10 +158,12 @@ enum BackupWriter {
         }
     }
 
-    /// Due when there is none yet or the last one is at least 7 days old.
+    /// Due when there is none yet or the last one is at least 7 days old – or lies in the future (a clock that once ran
+    /// ahead would stop the weekly backup until that day).
     nonisolated static func isDue(today: DayKey, lastAuto: Date?) -> Bool {
         guard let lastAuto else { return true }
-        return today.ordinal - DayKey(date: lastAuto).ordinal >= intervalDays
+        let days: Int = today.ordinal - DayKey(date: lastAuto).ordinal
+        return days < 0 || days >= intervalDays
     }
 
     /// Writes this week's automatic backup when it is due (`isAllowed`, `isDue`): the file with the day in its name,
@@ -340,6 +348,7 @@ struct BackupProgressLabel: View {
 
 /// Einstellungen → Deine Daten → "Sicherungen": the automatic backups of this device (date, size, "Teilen…").
 struct BackupsPage: View {
+    @Environment(AppModel.self) private var app
     @State private var files: [BackupFile] = []
     @State private var isSmall = false
 
@@ -381,9 +390,11 @@ struct BackupsPage: View {
 
     static let emptyText = "iPhone und Mac legen jede Woche selbst eine Sicherung an, sobald iCloud auf diesem Gerät abgeglichen hat."
 
+    /// §1.8.2: the demo and the practice page (in memory) list none of this device's real files – nothing real to share.
     private func refresh() {
-        files = BackupWriter.files()
-        isSmall = BackupWriter.lastAutoWasSmall
+        let store: TrackerStore = app.store
+        files = store.isInMemory ? [] : BackupWriter.files()
+        isSmall = BackupWriter.showsSmallNotice(store: store)
     }
 }
 

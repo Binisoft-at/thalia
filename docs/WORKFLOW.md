@@ -17,7 +17,7 @@ the daily record evidence, and your reflection meaning.
 | ✓ / X / 0.5 / N/A / blank | ✓ ½ ✗ N/A and blank (= not recorded yet) – tap cycles, long-press shows all | everywhere |
 | Desk sheet: PH done, what I worked on | **Arbeit**: + PH (50 min) with Bereich and Wofür, block with result and next step | Heute → Arbeit |
 | Evening: transcribe the desk sheet into the tracker | **Tag abschließen**: check evidence → fill gaps → confirm categories (own score possible) → reflect | Heute → Tag abschließen, 21:45 reminder |
-| Weekly score by hand | Calculated: category → goal → week, every goal 10 % | Woche, Ziele |
+| Weekly score by hand | Calculated: category → goal → week, the goals equally weighted | Woche, Ziele |
 | Score + interpretation back to ChatGPT | **Woche abschließen** → Wochenbericht kopieren + Planungs-Prompt kopieren | Woche → Woche abschließen |
 | Major review KW49 | Goal year with review milestone; goals don't get harder automatically | Ziele, Einstellungen → Jahresziele |
 | Scoring changed in KW42 | Weeks before KW42 marked "vor KW42", shown apart in charts | Rückblick |
@@ -56,9 +56,10 @@ Apple Health values are suggestions too; adopted values stay on the device (guid
 
 - Item: ✓ = 1, ½ = 0.5, ✗ = 0; N/A and blank don't count. Category per day = 10 × earned ÷ applicable.
 - Week: category = average of its valid days → goal = average of its categories → week = average
-  of the **ten goals, 10 % each** (Ernährung 8 + Training 6 → Fit Body 7; Fit Body weighs as much as Schlaf).
+  of the **goals, equally weighted** (Ernährung 8 + Training 6 → Fit Body 7; Fit Body weighs as much as Schlaf).
 - Not scheduled ≠ missed. `woche:3` items: each ✓ ½ ✗ uses a slot; what's left at the end of the
-  week counts as missed on the last possible day. Optional items are never scored.
+  week counts as missed on the last possible day – since 1.10.0 also when that day stays blank. Optional items are
+  never scored.
 - Personal zero rule (`ko`): ✗ sets the category to 0 that day; entries stay intact.
 - Missing coverage stays visible ("9/10 Ziele bewertet – nicht voll vergleichbar").
 - Power-hour = exactly 50 focused minutes; tutoring in real hours: 12 × 50 min + 16 × 60 min = 26 h net.

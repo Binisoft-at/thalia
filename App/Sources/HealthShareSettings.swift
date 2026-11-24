@@ -64,11 +64,6 @@ final class HealthShareController {
         return store.healthShareState?.on ?? false
     }
 
-    /// "Health am iPhone: 72,6 kg – dort übernehmen" (§1.4.8): read on the iPhone, taken over nowhere – only shown.
-    static func phoneSuggestionText(_ value: Double, unit: String) -> String {
-        "Health am iPhone: \(Format.measure(value, unit: unit)) – dort übernehmen"
-    }
-
     // HEALTHSHARE
     /// The gate changed (`HealthShareGate.changed`): the views follow, the switch as stored (a clean-up may have turned it off).
     func gateChanged() {
@@ -203,6 +198,8 @@ struct SharedHealthInput: View {
     let measure: MeasureDefinition
     let day: DayKey
     let value: Double
+    /// "aus Health am iPhone" – or the writing device's kind (`HealthShareWeek.sharedCaption`).
+    var caption: String = HealthShareController.sharedCaption
     @Environment(AppModel.self) private var app
 
     var body: some View {
@@ -210,7 +207,7 @@ struct SharedHealthInput: View {
             Text(Format.measure(value, unit: measure.unit))
                 .font(.system(.callout, design: .rounded).weight(.bold))
                 .monospacedDigit()
-                .accessibilityLabel("\(measure.title): \(Format.measure(value, unit: measure.unit)), \(HealthShareController.sharedCaption)")
+                .accessibilityLabel("\(measure.title): \(Format.measure(value, unit: measure.unit)), \(caption)")
             Button("Eigenen Wert eintragen…") {
                 app.sheet = .measure(code: measure.code, day: day)
             }
