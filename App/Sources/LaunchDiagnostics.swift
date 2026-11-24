@@ -137,6 +137,7 @@ enum LaunchDiagnostics {
         if let window = measured["window"], let sidebar = measured["sidebar"], let detail = measured["detail"] {
             note("detail check at \(second) s: window \(window) − sidebar \(sidebar) − detail \(detail) = \(window - sidebar - detail)")
         }
+        if second == 8 { note("layout at 8 s: \(NSAppWindows.layout())") }
     }
 }
 
@@ -152,6 +153,54 @@ private enum NSAppWindows {
             return "\(kind)[\(id)] visible=\(window.isVisible) main=\(window.canBecomeMain) key=\(window.isKeyWindow) frame=\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width))x\(Int(frame.height)) alpha=\(window.alphaValue)"
         }
         return list.isEmpty ? "none" : list.joined(separator: " | ")
+    }
+
+    /// P4.1: what holds the main window's columns wider than the window – each split view's panes (width,
+    /// fitting width), the split items' least widths, and the toolbar items' fitting widths.
+    @MainActor
+    static func layout() -> String {
+        guard let window = NSApp.windows.first(where: { $0.canBecomeMain && $0.isVisible }) else { return "no window" }
+        var parts: [String] = []
+        if let root = window.contentView {
+            var splits: [NSSplitView] = []
+            collectSplits(root, into: &splits, depth: 0)
+            for (index, split) in splits.prefix(4).enumerated() {
+                let panes: String = split.arrangedSubviews.map { "\(Int($0.frame.width))/fit \(Int($0.fittingSize.width))" }
+                    .joined(separator: ", ")
+                parts.append("split\(index) \(Int(split.frame.width)): [\(panes)]")
+            }
+        }
+        var controllers: [NSSplitViewController] = []
+        if let root = window.contentViewController { collectControllers(root, into: &controllers, depth: 0) }
+        for (index, controller) in controllers.prefix(3).enumerated() {
+            let items: String = controller.splitViewItems.map { item in
+                "min \(Int(item.minimumThickness)) max \(Int(item.maximumThickness)) collapsed \(item.isCollapsed)"
+            }.joined(separator: "; ")
+            parts.append("controller\(index): [\(items)]")
+        }
+        if let toolbar = window.toolbar {
+            let items: String = toolbar.items.map { item in
+                let width: Int = Int(item.view?.fittingSize.width ?? -1)
+                return "\(item.itemIdentifier.rawValue.suffix(24)) \(width)"
+            }.joined(separator: ", ")
+            parts.append("toolbar: \(items)")
+        }
+        return parts.joined(separator: " | ")
+    }
+
+    @MainActor
+    private static func collectSplits(_ view: NSView, into splits: inout [NSSplitView], depth: Int) {
+        guard depth < 40, splits.count < 4 else { return }
+        if let split = view as? NSSplitView { splits.append(split) }
+        for child in view.subviews { collectSplits(child, into: &splits, depth: depth + 1) }
+    }
+
+    @MainActor
+    private static func collectControllers(_ controller: NSViewController, into list: inout [NSSplitViewController],
+                                           depth: Int) {
+        guard depth < 20, list.count < 3 else { return }
+        if let split = controller as? NSSplitViewController { list.append(split) }
+        for child in controller.children { collectControllers(child, into: &list, depth: depth + 1) }
     }
 }
 
