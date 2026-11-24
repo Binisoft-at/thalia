@@ -1,0 +1,3 @@
+run 8 (workflow_dispatch) commit 7a5f56cce4ccb1b9c1e4549ff1d6c2e180e45518
+prune=success upload=success build=58 (diagnose run 8)
+details: https://github.com/Binisoft-at/thalia/actions/runs/45347729036
