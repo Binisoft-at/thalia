@@ -85,10 +85,12 @@ struct WeekTable: View {
                     }
                 } header: {
                     WeekTableHeader(context: context)
+                        .diagWidth("week table header")
                 }
             }
             // R10: the table never gets narrower than its columns.
             .frame(minWidth: WeekTableColumns.minWidth)
+            .diagWidth("week table content")
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }

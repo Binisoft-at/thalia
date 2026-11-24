@@ -1427,28 +1427,65 @@ struct ItemMarkRow: View {
     let day: DayKey
     @Environment(AppModel.self) private var app
     @State private var confirmsDelete = false
+    #if os(macOS)
+    /// v11 P4.1 (Mac): the width the row was given. A row that needs 640 pt (ViewThatFits with a minimum) made
+    /// the Mac list – and with it the page and the split view – at least that wide, past a 1024 pt window
+    /// (CI runs 27–39). The row now takes the width it gets and picks its layout from it.
+    @State private var rowWidth: CGFloat = 0
+    #endif
 
     private var isProgress: Bool { item.schedule == .progress }
 
     var body: some View {
         let mark: Mark? = context.mark(item, on: day)
         let options: [Mark] = context.options(item, on: day)
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 12) {
-                details
-                    .frame(minWidth: 0, idealWidth: 300, maxWidth: .infinity, alignment: .leading)
-                marks(mark: mark, options: options, compact: true)
-                    .frame(width: 300)
-            }
-            .frame(minWidth: 640)
-            VStack(alignment: .leading, spacing: 8) {
-                details
-                marks(mark: mark, options: options, compact: false)
-            }
-        }
+        layout(mark: mark, options: options)
         .padding(.vertical, 2)
         .contextMenu { menu(mark: mark, options: options) }
         .weekItemDeleteDialog(item, isPresented: $confirmsDelete, app: app)
+    }
+
+    /// Buttons beside the title from 640 pt, else below it (R61).
+    @ViewBuilder
+    private func layout(mark: Mark?, options: [Mark]) -> some View {
+        #if os(macOS)
+        Group {
+            if rowWidth >= 640 {
+                wideRow(mark: mark, options: options)
+            } else {
+                narrowRow(mark: mark, options: options)
+            }
+        }
+        .frame(minWidth: 0, idealWidth: 300, maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            if abs(rowWidth - width) >= 1 { rowWidth = width }
+        }
+        .diagWidth("today row")
+        #else
+        ViewThatFits(in: .horizontal) {
+            wideRow(mark: mark, options: options)
+                .frame(minWidth: 640)
+            narrowRow(mark: mark, options: options)
+        }
+        #endif
+    }
+
+    private func wideRow(mark: Mark?, options: [Mark]) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            details
+                .frame(minWidth: 0, idealWidth: 300, maxWidth: .infinity, alignment: .leading)
+            marks(mark: mark, options: options, compact: true)
+                .frame(width: 300)
+        }
+    }
+
+    private func narrowRow(mark: Mark?, options: [Mark]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            details
+            marks(mark: mark, options: options, compact: false)
+        }
     }
 
     /// Title, kind, week progress and the mark's note.

@@ -73,11 +73,14 @@ Letzte Aktualisierung: 2026-11-24 · Arbeitsliste: [TASKS-v11.md](TASKS-v11.md) 
   Abschnitt 2: …“; auf den Zielkarten ist der Schritt zur laufenden Woche gestrichelt und blasser. Watch mit „⇄ …“,
   Zielen und „Arbeitsfrei“; Widgets mit Messwert-Chips.
 - **Mac-Layout** (P4.1, löst die Notiz aus v7 unten): „Heute im Blick“ und „Wochenübersicht“ zeigen sich als Spalte nur,
-  solange sie passen – gemessen wird der Platz neben der sichtbaren Seitenleiste (`AppModel.roomWidth`), Heute braucht
-  900 pt, Woche 750 pt, je ±20 pt; die gespeicherte Wahl bleibt. Passt die Spalte nicht, öffnen ⌘0, Symbolleistenknopf,
-  Tagesring, Seitenleisten-Karte und ⌥⌘0 sie als Blatt. Die Heute-Liste hat höchstens 340 pt, das Mindestfenster bleibt
-  900 pt. Ob der Inspektor in der Detailspalte sitzt, zeigt im nächsten CI-Lauf `mac-log.txt`
-  („diag: detail check at 8 s: window W − sidebar S − detail D = R“, R ≈ 0 erwartet). Dazu: Menübefehle, Erinnerungen
+  solange sie passen – gemessen wird der Platz neben der sichtbaren Seitenleiste (`AppModel.roomWidth` = Fenster minus
+  Seitenleiste, nie die gemessene Detailspalte: die war in CI-Lauf 38 mit 1117 pt breiter als das 1024-pt-Fenster),
+  Heute braucht 900 pt, Woche 1000 pt (die Wochentabelle belegt am Mac rund 750 pt), je ±20 pt; die gespeicherte Wahl
+  bleibt. Passt die Spalte nicht, öffnen ⌘0, Symbolleistenknopf, Tagesring, Seitenleisten-Karte und ⌥⌘0 sie als Blatt.
+  Die Heute-Liste hat höchstens 340 pt, das Mindestfenster bleibt 900 pt. Ursache der zu breiten Heute-Seite (seit
+  mindestens CI-Lauf 27): eine Punktzeile verlangte 640 pt für „Knöpfe neben dem Titel“ und machte die Mac-Liste so
+  breit; am Mac wählt die Zeile ihr Layout jetzt nach der Breite, die sie bekommt. Prüfen in `mac-log.txt`: „diag:
+  detail check at 8 s: window W − sidebar S − detail D = R“, R ≈ 0 erwartet. Dazu: Menübefehle, Erinnerungen
   und Kurzbefehle holen das Hauptfenster (auch wenn nur Einstellungen offen sind), ein „Zu heute“ ⌘T (⇧⌘T entfällt),
   ⌥⌘J, ⌥⌘L, ⌥⌘0, Darstellung → „Seitenleiste ausblenden“, Ablage → „Sicherung erstellen…“, Tasten 1–4 ohne Klick.
 - **Erinnerungen** (P4.17): Morgen, Abend und Woche sind datierte Mitteilungen für die nächsten 7 Tage; die
